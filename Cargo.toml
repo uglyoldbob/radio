@@ -4,3 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+eframe = "0.28.1"
+egui_extras = { version = "0.28.1", features = ["all_loaders"] }
+image = { version = "0.25.2", features = ["jpeg", "png"] } # Add the types you want support for
