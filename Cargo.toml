@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bluer = {version = "0.17.3", features = ["bluetoothd", "rfcomm"] }
 eframe = "0.28.1"
 egui_extras = { version = "0.28.1", features = ["all_loaders"] }
+enum_dispatch = "0.3.13"
+futures = "0.3.30"
 image = { version = "0.25.2", features = ["jpeg", "png"] } # Add the types you want support for
+tokio = { version = "1.40.0", features = ["full"] }
