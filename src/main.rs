@@ -1,4 +1,5 @@
 mod bluetooth;
+mod video;
 
 use eframe::egui::{self, Vec2};
 
@@ -48,6 +49,7 @@ impl SubwindowTrait for MainPage {
 enum Subwindow {
     MainPage(MainPage),
     BluetoothConfig(bluetooth::BluetoothConfig),
+    Video(video::Video),
 }
 
 impl Default for Subwindow {
@@ -157,8 +159,10 @@ impl eframe::App for MyEguiApp {
             .max_height(74.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("B").clicked() {
-                        println!("Activating bluetooth page");
+                    if ui.button(eframe::egui::RichText::new("V").font(eframe::egui::FontId::proportional(64.0))).clicked() {
+                        self.subwindow = Subwindow::Video(video::Video::new());
+                    }
+                    if ui.button(eframe::egui::RichText::new("B").font(eframe::egui::FontId::proportional(64.0))).clicked() {
                         self.subwindow = Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
                     }
                     if ui

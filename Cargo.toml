@@ -8,6 +8,9 @@ bluer = {version = "0.17.3", features = ["bluetoothd", "rfcomm"] }
 eframe = { git = "https://github.com/emilk/egui.git" }
 egui_extras = { git = "https://github.com/emilk/egui.git", features = ["all_loaders"] }
 enum_dispatch = "0.3.13"
+ffimage = "0.10.0"
+ffimage_yuv = "0.10.0"
 futures = "0.3.30"
 image = { version = "0.25.2", features = ["jpeg", "png"] } # Add the types you want support for
 tokio = { version = "1.40.0", features = ["full"] }
+v4l = "0.14.0"
