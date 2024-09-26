@@ -13,7 +13,7 @@ use futures::SinkExt;
 use v4l::buffer::Type;
 use v4l::io::traits::CaptureStream;
 use v4l::prelude::*;
-use v4l::video::Output;
+use v4l::video::Capture;
 use v4l::FourCC;
 
 pub struct Video {
@@ -28,6 +28,12 @@ impl Video {
         std::thread::spawn(move || {
             let mut dev = Device::new(0).expect("Failed to open video device");
 
+            let mut fmt = dev.format().expect("Failed to read format");
+            fmt.width = 320;
+            fmt.height = 240;
+            fmt.fourcc = FourCC::new(b"YUYV");
+            let fmt = dev.set_format(&fmt).expect("Failed to write format");
+
             println!("Video caps: {:?}", dev.query_caps());
             println!("Video controls: {:?}", dev.query_controls());
             println!("Video formats: {:?}", dev.enum_formats());
@@ -39,19 +45,19 @@ impl Video {
                 .expect("Failed to create video buffer stream");
             loop {
                 let (buf, meta) = stream.next().unwrap();
-                let mut buf_rgb = vec![0; buf.len()];
-                println!("Image size {}", buf.len());
+                let mut buf_rgb = vec![0u8; buf.len() / 2 * 3];
                 if let Ok(mut i) = i2.lock() {
-                    *i = vec![0; buf.len()];
+                    *i = vec![0; buf_rgb.len()];
                     let a: &mut [u8] = &mut i;
-                    buf.iter()
+                    let b = buf
+                        .iter()
                         .copied()
                         .pixels::<ffimage_yuv::yuv422::Yuyv<u8>>()
-                        .colorconvert::<[ffimage_yuv::yuv::Yuv<u8>; 2]>()
-                        .flatten()
-                        .colorconvert::<ffimage::color::Rgb<u8>>()
-                        .bytes()
-                        .write(a);
+                        .colorconvert::<[ffimage_yuv::yuv::Yuv<u8>; 2]>();
+                    let c = b.flatten();
+                    let d = c.colorconvert::<ffimage::color::Rgb<u8>>();
+                    let e = d.bytes();
+                    e.write(a);
                 }
             }
         });
@@ -76,14 +82,9 @@ impl SubwindowTrait for Video {
                     let image = egui::ColorImage {
                         size: [320 as usize, 240 as usize],
                         pixels: i
-                            .chunks_exact(2)
+                            .chunks_exact(3)
                             .map(|i| {
-                                let j = (i[1] as u16) | (i[0] as u16) << 8;
-                                egui::Color32::from_rgb(
-                                    (j >> 11) as u8,
-                                    ((j >> 5) & 0x3f) as u8,
-                                    (j & 0x1F) as u8,
-                                )
+                                egui::Color32::from_rgb(i[0], i[1], i[2])
                             })
                             .collect(),
                     };
