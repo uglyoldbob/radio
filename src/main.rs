@@ -75,7 +75,8 @@ fn main() {
         "Uob Radio Gui",
         options,
         Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc, rx, tx2)))),
-    ).unwrap();
+    )
+    .unwrap();
 }
 
 struct CommonWindowProperties {
@@ -85,8 +86,10 @@ struct CommonWindowProperties {
 }
 
 impl CommonWindowProperties {
-    pub fn new(rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
-        tx: tokio::sync::mpsc::Sender<MessageToAsync>,) -> Self {
+    pub fn new(
+        rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
+        tx: tokio::sync::mpsc::Sender<MessageToAsync>,
+    ) -> Self {
         Self {
             bluetooth: bluetooth::BluetoothData::new(),
             rx,
@@ -138,7 +141,10 @@ impl eframe::App for MyEguiApp {
         while let Ok(m) = self.common.rx.try_recv() {
             match m {
                 MessageFromAsync::NewBluetoothDevice(addr) => {
-                    self.common.bluetooth.devices.insert(addr, bluetooth::BluetoothDeviceInfo::new());
+                    self.common
+                        .bluetooth
+                        .devices
+                        .insert(addr, bluetooth::BluetoothDeviceInfo::new());
                 }
                 MessageFromAsync::OldBluetoothDevice(addr) => {
                     //self.common.bluetooth_devices.remove_entry(&addr);
@@ -159,11 +165,24 @@ impl eframe::App for MyEguiApp {
             .max_height(74.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button(eframe::egui::RichText::new("V").font(eframe::egui::FontId::proportional(64.0))).clicked() {
+                    if ui
+                        .button(
+                            eframe::egui::RichText::new("V")
+                                .font(eframe::egui::FontId::proportional(64.0)),
+                        )
+                        .clicked()
+                    {
                         self.subwindow = Subwindow::Video(video::Video::new());
                     }
-                    if ui.button(eframe::egui::RichText::new("B").font(eframe::egui::FontId::proportional(64.0))).clicked() {
-                        self.subwindow = Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
+                    if ui
+                        .button(
+                            eframe::egui::RichText::new("B")
+                                .font(eframe::egui::FontId::proportional(64.0)),
+                        )
+                        .clicked()
+                    {
+                        self.subwindow =
+                            Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
                     }
                     if ui
                         .add(

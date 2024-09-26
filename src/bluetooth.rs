@@ -5,10 +5,10 @@ use std::time::Duration;
 
 use crate::MessageFromAsync;
 
-use super::SubwindowTrait;
 use super::CommonWindowProperties;
-use super::Subwindow;
 use super::MessageToAsync;
+use super::Subwindow;
+use super::SubwindowTrait;
 use bluer::AdapterEvent;
 use bluer::DeviceProperty;
 use eframe::egui;
@@ -22,26 +22,64 @@ pub struct BluetoothData {
 }
 
 async fn query_adapter(adapter: &bluer::Adapter) -> bluer::Result<()> {
-    println!("    Address:                    {}", adapter.address().await?);
-    println!("    Address type:               {}", adapter.address_type().await?);
+    println!(
+        "    Address:                    {}",
+        adapter.address().await?
+    );
+    println!(
+        "    Address type:               {}",
+        adapter.address_type().await?
+    );
     println!("    Friendly name:              {}", adapter.alias().await?);
-    println!("    Modalias:                   {:?}", adapter.modalias().await?);
-    println!("    Powered:                    {:?}", adapter.is_powered().await?);
-    println!("    Discoverabe:                {:?}", adapter.is_discoverable().await?);
-    println!("    Pairable:                   {:?}", adapter.is_pairable().await?);
-    println!("    UUIDs:                      {:?}", adapter.uuids().await?);
+    println!(
+        "    Modalias:                   {:?}",
+        adapter.modalias().await?
+    );
+    println!(
+        "    Powered:                    {:?}",
+        adapter.is_powered().await?
+    );
+    println!(
+        "    Discoverabe:                {:?}",
+        adapter.is_discoverable().await?
+    );
+    println!(
+        "    Pairable:                   {:?}",
+        adapter.is_pairable().await?
+    );
+    println!(
+        "    UUIDs:                      {:?}",
+        adapter.uuids().await?
+    );
     println!();
-    println!("    Active adv. instances:      {}", adapter.active_advertising_instances().await?);
-    println!("    Supp.  adv. instances:      {}", adapter.supported_advertising_instances().await?);
-    println!("    Supp.  adv. includes:       {:?}", adapter.supported_advertising_system_includes().await?);
-    println!("    Adv. capabilites:           {:?}", adapter.supported_advertising_capabilities().await?);
-    println!("    Adv. features:              {:?}", adapter.supported_advertising_features().await?);
+    println!(
+        "    Active adv. instances:      {}",
+        adapter.active_advertising_instances().await?
+    );
+    println!(
+        "    Supp.  adv. instances:      {}",
+        adapter.supported_advertising_instances().await?
+    );
+    println!(
+        "    Supp.  adv. includes:       {:?}",
+        adapter.supported_advertising_system_includes().await?
+    );
+    println!(
+        "    Adv. capabilites:           {:?}",
+        adapter.supported_advertising_capabilities().await?
+    );
+    println!(
+        "    Adv. features:              {:?}",
+        adapter.supported_advertising_features().await?
+    );
 
     Ok(())
 }
 
-pub async fn bluetooth(tx: tokio::sync::mpsc::Sender<MessageFromAsync>,
-    rx: &mut tokio::sync::mpsc::Receiver<MessageToAsync>) {
+pub async fn bluetooth(
+    tx: tokio::sync::mpsc::Sender<MessageFromAsync>,
+    rx: &mut tokio::sync::mpsc::Receiver<MessageToAsync>,
+) {
     println!("Starting bluetooth code");
     let bluetooth = bluer::Session::new().await.unwrap();
     println!("Got a bluetooth session");
@@ -50,45 +88,52 @@ pub async fn bluetooth(tx: tokio::sync::mpsc::Sender<MessageFromAsync>,
     blue_agent.request_default = true;
     blue_agent.request_pin_code = Some(Box::new(move |a| {
         async move {
-            println!("Pin requested {:?}", a); 
+            println!("Pin requested {:?}", a);
             Ok("1234".to_string())
-        }.boxed()
+        }
+        .boxed()
     }));
     blue_agent.request_passkey = Some(Box::new(move |a| {
         async move {
-            println!("passkey requested {:?}", a); 
+            println!("passkey requested {:?}", a);
             Ok(42)
-        }.boxed()
+        }
+        .boxed()
     }));
     blue_agent.display_passkey = Some(Box::new(move |a| {
         async move {
-            println!("Need to display passkey {:?}", a); 
+            println!("Need to display passkey {:?}", a);
             Ok(())
-        }.boxed()
+        }
+        .boxed()
     }));
     blue_agent.display_pin_code = Some(Box::new(move |a| {
         async move {
-            println!("Need to display pin code {:?}", a); 
+            println!("Need to display pin code {:?}", a);
             Ok(())
-        }.boxed()
+        }
+        .boxed()
     }));
     blue_agent.request_confirmation = Some(Box::new(move |a| {
         async move {
             println!("Confirmation requested {:?}", a);
             Ok(())
-        }.boxed()
+        }
+        .boxed()
     }));
     blue_agent.request_authorization = Some(Box::new(move |a| {
         async move {
-            println!("authorization requested {:?}", a); 
+            println!("authorization requested {:?}", a);
             Ok(())
-        }.boxed()
+        }
+        .boxed()
     }));
     blue_agent.authorize_service = Some(Box::new(move |a| {
         async move {
-            println!("authorize service requested {:?}", a); 
+            println!("authorize service requested {:?}", a);
             Ok(())
-        }.boxed()
+        }
+        .boxed()
     }));
     let blue_agent_handle = bluetooth.register_agent(blue_agent).await;
     println!("Registered a bluetooth agent");
@@ -109,14 +154,16 @@ pub async fn bluetooth(tx: tokio::sync::mpsc::Sender<MessageFromAsync>,
         ..Default::default()
     };
 
-    let mut bluetooth_devices: HashMap<bluer::Address, (&bluer::Adapter, Option<bluer::Device>)> = HashMap::new();
+    let mut bluetooth_devices: HashMap<bluer::Address, (&bluer::Adapter, Option<bluer::Device>)> =
+        HashMap::new();
     let adapter_names = bluetooth.adapter_names().await.unwrap();
     let adapters: Vec<bluer::Adapter> = adapter_names
         .iter()
         .filter_map(|n| bluetooth.adapter(n).ok())
         .collect();
 
-    tx.send(MessageFromAsync::BluetoothPresent(!adapters.is_empty())).await;
+    tx.send(MessageFromAsync::BluetoothPresent(!adapters.is_empty()))
+        .await;
 
     println!("Enabling bluetooth stuff now");
     for adapter in &adapters {
@@ -184,7 +231,8 @@ pub async fn bluetooth(tx: tokio::sync::mpsc::Sender<MessageFromAsync>,
                 if let Ok(d) = adapter.device(*addr) {
                     if let Ok(ps) = d.all_properties().await {
                         for p in ps {
-                            tx.send(MessageFromAsync::BluetoothDeviceProperty(*addr, p)).await;
+                            tx.send(MessageFromAsync::BluetoothDeviceProperty(*addr, p))
+                                .await;
                         }
                     }
                     *dev = Some(d);
@@ -288,8 +336,7 @@ impl BluetoothDeviceInfo {
     }
 }
 
-pub struct BluetoothConfig {
-}
+pub struct BluetoothConfig {}
 
 impl BluetoothConfig {
     pub fn new() -> Self {
@@ -308,30 +355,33 @@ impl SubwindowTrait for BluetoothConfig {
             if !common.bluetooth.scanning {
                 if ui.button("Scan").clicked() {
                     common.bluetooth.scanning = true;
-                    let _ = common.tx.blocking_send(MessageToAsync::BluetoothScan(common.bluetooth.scanning));
+                    let _ = common
+                        .tx
+                        .blocking_send(MessageToAsync::BluetoothScan(common.bluetooth.scanning));
                 }
-            }
-            else {
+            } else {
                 if ui.button("Stop scanning").clicked() {
                     common.bluetooth.scanning = false;
-                    let _ = common.tx.blocking_send(MessageToAsync::BluetoothScan(common.bluetooth.scanning));
+                    let _ = common
+                        .tx
+                        .blocking_send(MessageToAsync::BluetoothScan(common.bluetooth.scanning));
                 }
             }
-            egui::scroll_area::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
-                let mut bd: Vec<(&bluer::Address, &BluetoothDeviceInfo)> = common.bluetooth.devices.iter().collect();
-                bd.sort_by(|(_a1, a2), (_b1, b2)| {
-                    b2.rssi.cmp(&a2.rssi)
+            egui::scroll_area::ScrollArea::vertical()
+                .auto_shrink([false; 2])
+                .show(ui, |ui| {
+                    let mut bd: Vec<(&bluer::Address, &BluetoothDeviceInfo)> =
+                        common.bluetooth.devices.iter().collect();
+                    bd.sort_by(|(_a1, a2), (_b1, b2)| b2.rssi.cmp(&a2.rssi));
+                    for (a, dev) in bd {
+                        let t = format!("RSSI: {:?}, icon {:?}", dev.rssi, dev.icon);
+                        if let Some(a) = &dev.alias {
+                            ui.label(format!("Device: {} {}", a, t));
+                        } else {
+                            ui.label(format!("Device {:?} {}", a, t));
+                        }
+                    }
                 });
-                for (a, dev) in bd {
-                    let t = format!("RSSI: {:?}, icon {:?}", dev.rssi, dev.icon);
-                    if let Some(a) = &dev.alias {
-                        ui.label(format!("Device: {} {}", a, t));
-                    }
-                    else {
-                        ui.label(format!("Device {:?} {}", a, t));
-                    }
-                }
-            });
         });
         None
     }
