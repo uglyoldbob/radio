@@ -15,6 +15,127 @@ use v4l::prelude::*;
 use v4l::video::Capture;
 use v4l::FourCC;
 
+#[derive(Debug)]
+enum ControlData {
+    Integer {
+        val: i64,
+        min: i64,
+        default: i64,
+        max: i64,
+    },
+    Boolean {
+        val: bool,
+        default: bool,
+    },
+    String(String),
+    Bitmask(u64),
+    U8 {
+        val: u8,
+        min: u8,
+        default: u8,
+        max: u8,
+    },
+    U16 {
+        val: u16,
+        min: u16,
+        default: u16,
+        max: u16,
+    },
+    U32 {
+        val: u32,
+        min: u32,
+        default: u32,
+        max: u32,
+    },
+}
+
+#[derive(Debug)]
+pub struct ControlElement {
+    id: u32,
+    name: String,
+    data: ControlData,
+}
+
+impl ControlElement {
+    fn new(d: &v4l::control::Description) -> Result<Self, String> {
+        let cd = match d.typ {
+            v4l::control::Type::Integer => Ok(ControlData::Integer {
+                val: d.default,
+                min: d.minimum,
+                max: d.maximum,
+                default: d.default,
+            }),
+            v4l::control::Type::Boolean => Ok(ControlData::Boolean {
+                val: d.default != 0,
+                default: d.default != 0,
+            }),
+            v4l::control::Type::Menu => Err(format!("Unsupported control Menu {}", d.name)),
+            v4l::control::Type::Button => Err(format!("Unsupported control Button {}", d.name)),
+            v4l::control::Type::Integer64 => Ok(ControlData::Integer {
+                val: d.default,
+                min: d.minimum,
+                max: d.maximum,
+                default: d.default,
+            }),
+            v4l::control::Type::CtrlClass => Err(format!("Unsupported control CtrlClass {}", d.name)),
+            v4l::control::Type::String => Ok(ControlData::String("dummy".to_string())),
+            v4l::control::Type::Bitmask => Ok(ControlData::Bitmask(d.default as u64)),
+            v4l::control::Type::IntegerMenu => Err(format!("Unsupported control IntegerMenu {}", d.name)),
+            v4l::control::Type::U8 => Ok(ControlData::U8 {
+                val: d.default as u8,
+                min: d.minimum as u8,
+                max: d.maximum as u8,
+                default: d.default as u8,
+            }),
+            v4l::control::Type::U16 => Ok(ControlData::U16 {
+                val: d.default as u16,
+                min: d.minimum as u16,
+                max: d.maximum as u16,
+                default: d.default as u16,
+            }),
+            v4l::control::Type::U32 => Ok(ControlData::U32 {
+                val: d.default as u32,
+                min: d.minimum as u32,
+                max: d.maximum as u32,
+                default: d.default as u32,
+            }),
+            v4l::control::Type::Area => Err(format!("Unsupported control Area {}", d.name)),
+        };
+        Ok(Self {
+            id: d.id,
+            name: d.name.clone(),
+            data: cd?,
+        })
+    }
+
+    pub fn egui_show(&mut self, ui: &mut egui::Ui) -> bool {
+        ui.label(self.name.clone());
+        match &mut self.data {
+            ControlData::Integer { val, min, default, max } => {
+                ui.add(egui::Slider::new(val, *min..=*max).text(self.name.clone())).changed()
+            },
+            ControlData::Boolean { val, default } => {
+                ui.checkbox(val, self.name.clone()).changed()
+            }
+            ControlData::String(s) => {
+                ui.text_edit_singleline(s).changed()
+            }
+            ControlData::Bitmask(m) => {
+                ui.label(format!("{:X}", m)).changed()
+            }
+            ControlData::U8 { val, min, default, max } => {
+                ui.add(egui::Slider::new(val, *min..=*max).text(self.name.clone())).changed()
+            }
+            ControlData::U16 { val, min, default, max } => {
+                ui.add(egui::Slider::new(val, *min..=*max).text(self.name.clone())).changed()
+            }
+            ControlData::U32 { val, min, default, max } => {
+                ui.add(egui::Slider::new(val, *min..=*max).text(self.name.clone())).changed()
+            }
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 struct RgbPixel {
@@ -154,20 +275,30 @@ impl VideoFrame {
     }
 }
 
+pub struct VideoSource {
+    pub image: Arc<Mutex<VideoFrame>>,
+    pub texture: Option<egui::TextureHandle>,
+    pub vsend: std::sync::mpsc::Sender<bool>,
+    pub controls: Vec<ControlElement>,
+}
+
+impl Drop for VideoSource {
+    fn drop(&mut self) {
+        self.vsend.send(true).unwrap();
+    }
+}
+
 pub struct Video {
-    image: Arc<Mutex<VideoFrame>>,
-    texture: Option<egui::TextureHandle>,
-    vsend: std::sync::mpsc::Sender<bool>,
+    which_video: usize,
 }
 
 impl Video {
-    pub fn new() -> Self {
+    pub fn video_start(mut dev: Device) -> VideoSource {
         let image = Arc::new(Mutex::new(VideoFrame::new()));
         let (a, b) = std::sync::mpsc::channel();
         let i2 = image.clone();
+        let controls : Vec<ControlElement> = dev.query_controls().unwrap().iter().filter_map(|c| ControlElement::new(c).ok()).collect();
         std::thread::spawn(move || {
-            let mut dev = Device::new(0).expect("Failed to open video device");
-
             let mut fmt = dev.format().expect("Failed to read format");
             fmt.width = 320;
             fmt.height = 240;
@@ -179,6 +310,7 @@ impl Video {
                 i.height = fmt.height as u16;
             }
             println!("Video caps: {:?}", dev.query_caps());
+
             println!("Video controls: {:?}", dev.query_controls());
             println!("Video formats: {:?}", dev.enum_formats());
             println!(
@@ -198,17 +330,18 @@ impl Video {
                 }
             }
         });
-        Self {
-            image,
+        VideoSource {image,
             texture: None,
             vsend: a,
+            controls,
         }
     }
-}
 
-impl Drop for Video {
-    fn drop(&mut self) {
-        self.vsend.send(true).unwrap();
+
+    pub fn new() -> Self {
+        Self {
+            which_video: 0,
+        }
     }
 }
 
@@ -220,40 +353,47 @@ impl SubwindowTrait for Video {
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.label("This is the video page");
-            let mut size = ui.available_size();
-
-            if let Ok(i) = self.image.lock() {
-                if let Some(pd) = &i.pixel_data {
-                    let zoom = (size.x / (i.width as f32)).min(size.y / (i.height as f32));
-                    size = egui::Vec2 {
-                        x: i.width as f32 * zoom,
-                        y: i.height as f32 * zoom,
-                    };
-                    let image = egui::ColorImage {
-                        size: [i.width as usize, i.height as usize],
-                        pixels: pd.get_egui(),
-                    };
-                    if let None = self.texture {
-                        self.texture =
-                            Some(ctx.load_texture("camera0", image, egui::TextureOptions::LINEAR));
-                    } else if let Some(t) = &mut self.texture {
-                        t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                ui.label("This is the video page");
+                let mut size = ui.available_size();
+                let vsrc = &mut common.video_sources[self.which_video];
+                if ui.button("Debug controls").clicked() {
+                    for c in &vsrc.controls {
+                        println!("Control: {:?}", c);
                     }
                 }
-            }
-            if let Some(t) = &self.texture {
-                ui.add(egui::Image::from_texture(egui::load::SizedTexture {
-                    id: t.id(),
-                    size,
-                }));
-            }
-            if let Ok(mut i) = self.image.lock() {
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut i.hmirror, "H Mirror");
-                    ui.checkbox(&mut i.vmirror, "V Mirror");
-                });
-            }
+                if let Ok(i) = vsrc.image.lock() {
+                    if let Some(pd) = &i.pixel_data {
+                        let zoom = (size.x / (i.width as f32)).min(size.y / (i.height as f32));
+                        size = egui::Vec2 {
+                            x: i.width as f32 * zoom,
+                            y: i.height as f32 * zoom,
+                        };
+                        let image = egui::ColorImage {
+                            size: [i.width as usize, i.height as usize],
+                            pixels: pd.get_egui(),
+                        };
+                        if let None = vsrc.texture {
+                            vsrc.texture =
+                                Some(ctx.load_texture("camera0", image, egui::TextureOptions::LINEAR));
+                        } else if let Some(t) = &mut vsrc.texture {
+                            t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                        }
+                    }
+                }
+                if let Some(t) = &vsrc.texture {
+                    ui.add(egui::Image::from_texture(egui::load::SizedTexture {
+                        id: t.id(),
+                        size,
+                    }));
+                }
+                if let Ok(mut i) = vsrc.image.lock() {
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut i.hmirror, "H Mirror");
+                        ui.checkbox(&mut i.vmirror, "V Mirror");
+                    });
+                }
+            });
         });
         None
     }

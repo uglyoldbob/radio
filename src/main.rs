@@ -1,4 +1,5 @@
 mod bluetooth;
+mod settings;
 mod video;
 
 use eframe::egui::{self, Vec2};
@@ -50,6 +51,7 @@ enum Subwindow {
     MainPage(MainPage),
     BluetoothConfig(bluetooth::BluetoothConfig),
     Video(video::Video),
+    Settings(settings::Settings),
 }
 
 impl Default for Subwindow {
@@ -81,6 +83,7 @@ fn main() {
 
 struct CommonWindowProperties {
     bluetooth: bluetooth::BluetoothData,
+    video_sources: Vec<video::VideoSource>,
     rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
     tx: tokio::sync::mpsc::Sender<MessageToAsync>,
 }
@@ -90,8 +93,13 @@ impl CommonWindowProperties {
         rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
         tx: tokio::sync::mpsc::Sender<MessageToAsync>,
     ) -> Self {
+        let mut vs = Vec::new();
+        if let Ok(d) = v4l::Device::new(0) {
+            vs.push(video::Video::video_start(d));
+        }
         Self {
             bluetooth: bluetooth::BluetoothData::new(),
+            video_sources: vs,
             rx,
             tx,
         }
@@ -165,14 +173,16 @@ impl eframe::App for MyEguiApp {
             .max_height(74.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if ui
-                        .button(
-                            eframe::egui::RichText::new("V")
-                                .font(eframe::egui::FontId::proportional(64.0)),
-                        )
-                        .clicked()
-                    {
-                        self.subwindow = Subwindow::Video(video::Video::new());
+                    if !self.common.video_sources.is_empty() {
+                        if ui
+                            .button(
+                                eframe::egui::RichText::new("V")
+                                    .font(eframe::egui::FontId::proportional(64.0)),
+                            )
+                            .clicked()
+                        {
+                            self.subwindow = Subwindow::Video(video::Video::new());
+                        }
                     }
                     if ui
                         .button(
@@ -195,6 +205,16 @@ impl eframe::App for MyEguiApp {
                         .clicked
                     {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    if ui
+                        .button(
+                            eframe::egui::RichText::new("S")
+                                .font(eframe::egui::FontId::proportional(64.0)),
+                        )
+                        .clicked()
+                    {
+                        self.subwindow =
+                            Subwindow::Settings(settings::Settings::new());
                     }
                     ui.label(format!("Focus: {:?}", ui.input(|r| r.viewport().focused)));
                     if self.check {
