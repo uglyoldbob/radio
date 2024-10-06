@@ -15,7 +15,11 @@ use v4l::prelude::*;
 use v4l::video::Capture;
 use v4l::FourCC;
 
-#[derive(Debug)]
+pub enum VideoMessage {
+    Quit,
+    ControlData { id: u32, value: v4l::control::Value },
+}
+
 enum ControlData {
     Integer {
         val: i64,
@@ -49,15 +53,18 @@ enum ControlData {
     },
 }
 
-#[derive(Debug)]
 pub struct ControlElement {
-    id: u32,
-    name: String,
+    pub id: u32,
+    pub name: String,
     data: ControlData,
+    pub value: Option<v4l::control::Value>,
 }
 
 impl ControlElement {
-    fn new(d: &v4l::control::Description) -> Result<Self, String> {
+    fn new(
+        d: &v4l::control::Description,
+        value: Option<v4l::control::Value>,
+    ) -> Result<Self, String> {
         let cd = match d.typ {
             v4l::control::Type::Integer => Ok(ControlData::Integer {
                 val: d.default,
@@ -77,10 +84,14 @@ impl ControlElement {
                 max: d.maximum,
                 default: d.default,
             }),
-            v4l::control::Type::CtrlClass => Err(format!("Unsupported control CtrlClass {}", d.name)),
+            v4l::control::Type::CtrlClass => {
+                Err(format!("Unsupported control CtrlClass {}", d.name))
+            }
             v4l::control::Type::String => Ok(ControlData::String("dummy".to_string())),
             v4l::control::Type::Bitmask => Ok(ControlData::Bitmask(d.default as u64)),
-            v4l::control::Type::IntegerMenu => Err(format!("Unsupported control IntegerMenu {}", d.name)),
+            v4l::control::Type::IntegerMenu => {
+                Err(format!("Unsupported control IntegerMenu {}", d.name))
+            }
             v4l::control::Type::U8 => Ok(ControlData::U8 {
                 val: d.default as u8,
                 min: d.minimum as u8,
@@ -105,32 +116,221 @@ impl ControlElement {
             id: d.id,
             name: d.name.clone(),
             data: cd?,
+            value,
         })
+    }
+
+    pub fn send_update(&mut self, sender: &mut std::sync::mpsc::Sender<VideoMessage>) {
+        if let Some(v) = &self.value {
+            let v2 = match v {
+                v4l::control::Value::None => v4l::control::Value::None,
+                v4l::control::Value::Integer(a) => v4l::control::Value::Integer(a.to_owned()),
+                v4l::control::Value::Boolean(a) => v4l::control::Value::Boolean(a.to_owned()),
+                v4l::control::Value::String(a) => v4l::control::Value::String(a.to_owned()),
+                v4l::control::Value::CompoundU8(a) => v4l::control::Value::CompoundU8(a.to_owned()),
+                v4l::control::Value::CompoundU16(a) => {
+                    v4l::control::Value::CompoundU16(a.to_owned())
+                }
+                v4l::control::Value::CompoundU32(a) => {
+                    v4l::control::Value::CompoundU32(a.to_owned())
+                }
+                v4l::control::Value::CompoundPtr(a) => {
+                    v4l::control::Value::CompoundPtr(a.to_owned())
+                }
+            };
+            sender.send(crate::video::VideoMessage::ControlData {
+                id: self.id,
+                value: v2,
+            });
+        }
     }
 
     pub fn egui_show(&mut self, ui: &mut egui::Ui) -> bool {
         ui.label(self.name.clone());
         match &mut self.data {
-            ControlData::Integer { val, min, default, max } => {
-                ui.add(egui::Slider::new(val, *min..=*max).text(self.name.clone())).changed()
-            },
+            ControlData::Integer {
+                val,
+                min,
+                default,
+                max,
+            } => {
+                let a = self
+                    .value
+                    .as_mut()
+                    .map(|a| match a {
+                        v4l::control::Value::None => None,
+                        v4l::control::Value::Integer(a) => Some(a),
+                        v4l::control::Value::Boolean(_) => None,
+                        v4l::control::Value::String(_) => None,
+                        v4l::control::Value::CompoundU8(vec) => None,
+                        v4l::control::Value::CompoundU16(vec) => None,
+                        v4l::control::Value::CompoundU32(vec) => None,
+                        v4l::control::Value::CompoundPtr(vec) => None,
+                    })
+                    .flatten();
+                let mut r = false;
+                if let Some(a) = a {
+                    r = ui
+                        .add(egui::Slider::new(a, *min..=*max).text(self.name.clone()))
+                        .changed();
+                }
+                r
+            }
             ControlData::Boolean { val, default } => {
-                ui.checkbox(val, self.name.clone()).changed()
+                let a = self
+                    .value
+                    .as_mut()
+                    .map(|a| match a {
+                        v4l::control::Value::None => None,
+                        v4l::control::Value::Integer(_) => None,
+                        v4l::control::Value::Boolean(b) => Some(b),
+                        v4l::control::Value::String(_) => None,
+                        v4l::control::Value::CompoundU8(vec) => None,
+                        v4l::control::Value::CompoundU16(vec) => None,
+                        v4l::control::Value::CompoundU32(vec) => None,
+                        v4l::control::Value::CompoundPtr(vec) => None,
+                    })
+                    .flatten();
+                let mut r = false;
+                if let Some(a) = a {
+                    r = ui.checkbox(a, self.name.clone()).changed()
+                }
+                r
             }
             ControlData::String(s) => {
-                ui.text_edit_singleline(s).changed()
+                let a = self
+                    .value
+                    .as_mut()
+                    .map(|a| match a {
+                        v4l::control::Value::None => None,
+                        v4l::control::Value::Integer(_) => None,
+                        v4l::control::Value::Boolean(_) => None,
+                        v4l::control::Value::String(s) => Some(s),
+                        v4l::control::Value::CompoundU8(vec) => None,
+                        v4l::control::Value::CompoundU16(vec) => None,
+                        v4l::control::Value::CompoundU32(vec) => None,
+                        v4l::control::Value::CompoundPtr(vec) => None,
+                    })
+                    .flatten();
+                let mut r = false;
+                if let Some(a) = a {
+                    r = ui.text_edit_singleline(a).changed()
+                }
+                r
             }
             ControlData::Bitmask(m) => {
-                ui.label(format!("{:X}", m)).changed()
+                let a = self
+                    .value
+                    .as_mut()
+                    .map(|a| match a {
+                        v4l::control::Value::None => None,
+                        v4l::control::Value::Integer(i) => Some(i),
+                        v4l::control::Value::Boolean(_) => None,
+                        v4l::control::Value::String(_) => None,
+                        v4l::control::Value::CompoundU8(vec) => None,
+                        v4l::control::Value::CompoundU16(vec) => None,
+                        v4l::control::Value::CompoundU32(vec) => None,
+                        v4l::control::Value::CompoundPtr(vec) => None,
+                    })
+                    .flatten();
+                let mut r = false;
+                if let Some(a) = a {
+                    ui.label(format!("{:X}", a));
+                }
+                r
             }
-            ControlData::U8 { val, min, default, max } => {
-                ui.add(egui::Slider::new(val, *min..=*max).text(self.name.clone())).changed()
+            ControlData::U8 {
+                val,
+                min,
+                default,
+                max,
+            } => {
+                let a = self
+                    .value
+                    .as_mut()
+                    .map(|a| match a {
+                        v4l::control::Value::None => None,
+                        v4l::control::Value::Integer(a) => Some(a),
+                        v4l::control::Value::Boolean(_) => None,
+                        v4l::control::Value::String(_) => None,
+                        v4l::control::Value::CompoundU8(vec) => None,
+                        v4l::control::Value::CompoundU16(vec) => None,
+                        v4l::control::Value::CompoundU32(vec) => None,
+                        v4l::control::Value::CompoundPtr(vec) => None,
+                    })
+                    .flatten();
+                let mut r = false;
+                if let Some(a) = a {
+                    r = ui
+                        .add(
+                            egui::Slider::new(a, (*min as i64)..=(*max as i64))
+                                .text(self.name.clone()),
+                        )
+                        .changed()
+                }
+                r
             }
-            ControlData::U16 { val, min, default, max } => {
-                ui.add(egui::Slider::new(val, *min..=*max).text(self.name.clone())).changed()
+            ControlData::U16 {
+                val,
+                min,
+                default,
+                max,
+            } => {
+                let a = self
+                    .value
+                    .as_mut()
+                    .map(|a| match a {
+                        v4l::control::Value::None => None,
+                        v4l::control::Value::Integer(a) => Some(a),
+                        v4l::control::Value::Boolean(_) => None,
+                        v4l::control::Value::String(_) => None,
+                        v4l::control::Value::CompoundU8(vec) => None,
+                        v4l::control::Value::CompoundU16(vec) => None,
+                        v4l::control::Value::CompoundU32(vec) => None,
+                        v4l::control::Value::CompoundPtr(vec) => None,
+                    })
+                    .flatten();
+                let mut r = false;
+                if let Some(a) = a {
+                    r = ui
+                        .add(
+                            egui::Slider::new(a, (*min as i64)..=(*max as i64))
+                                .text(self.name.clone()),
+                        )
+                        .changed()
+                }
+                r
             }
-            ControlData::U32 { val, min, default, max } => {
-                ui.add(egui::Slider::new(val, *min..=*max).text(self.name.clone())).changed()
+            ControlData::U32 {
+                val,
+                min,
+                default,
+                max,
+            } => {
+                let a = self
+                    .value
+                    .as_mut()
+                    .map(|a| match a {
+                        v4l::control::Value::None => None,
+                        v4l::control::Value::Integer(a) => Some(a),
+                        v4l::control::Value::Boolean(_) => None,
+                        v4l::control::Value::String(_) => None,
+                        v4l::control::Value::CompoundU8(vec) => None,
+                        v4l::control::Value::CompoundU16(vec) => None,
+                        v4l::control::Value::CompoundU32(vec) => None,
+                        v4l::control::Value::CompoundPtr(vec) => None,
+                    })
+                    .flatten();
+                let mut r = false;
+                if let Some(a) = a {
+                    r = ui
+                        .add(
+                            egui::Slider::new(a, (*min as i64)..=(*max as i64))
+                                .text(self.name.clone()),
+                        )
+                        .changed()
+                }
+                r
             }
         }
     }
@@ -143,7 +343,7 @@ struct RgbPixel {
 }
 
 #[derive(Clone)]
-enum PixelData {
+pub enum PixelData {
     Yuyv(Vec<u8>),
     Rgb(Vec<u8>),
     Egui(Vec<egui::Color32>),
@@ -196,7 +396,7 @@ impl PixelData {
         }
     }
 
-    fn get_egui(&self) -> Vec<egui::Color32> {
+    pub fn get_egui(&self) -> Vec<egui::Color32> {
         match self {
             PixelData::Yuyv(vec) => {
                 let a = Self::yuyv_to_rgb(&vec);
@@ -249,12 +449,12 @@ impl PixelData {
     }
 }
 
-struct VideoFrame {
-    width: u16,
-    height: u16,
-    pixel_data: Option<PixelData>,
-    hmirror: bool,
-    vmirror: bool,
+pub struct VideoFrame {
+    pub width: u16,
+    pub height: u16,
+    pub pixel_data: Option<PixelData>,
+    pub hmirror: bool,
+    pub vmirror: bool,
 }
 
 impl VideoFrame {
@@ -277,19 +477,19 @@ impl VideoFrame {
 
 pub struct VideoSource {
     pub image: Arc<Mutex<VideoFrame>>,
-    pub texture: Option<egui::TextureHandle>,
-    pub vsend: std::sync::mpsc::Sender<bool>,
+    pub vsend: std::sync::mpsc::Sender<VideoMessage>,
     pub controls: Vec<ControlElement>,
 }
 
 impl Drop for VideoSource {
     fn drop(&mut self) {
-        self.vsend.send(true).unwrap();
+        self.vsend.send(VideoMessage::Quit).unwrap();
     }
 }
 
 pub struct Video {
     which_video: usize,
+    texture: Option<egui::TextureHandle>,
 }
 
 impl Video {
@@ -297,9 +497,14 @@ impl Video {
         let image = Arc::new(Mutex::new(VideoFrame::new()));
         let (a, b) = std::sync::mpsc::channel();
         let i2 = image.clone();
-        let controls : Vec<ControlElement> = dev.query_controls().unwrap().iter().filter_map(|c| ControlElement::new(c).ok()).collect();
+        let mut fmt = dev.format().expect("Failed to read format");
+        let controls: Vec<ControlElement> = dev
+            .query_controls()
+            .unwrap()
+            .iter()
+            .filter_map(|c| ControlElement::new(c, dev.control(c.id).ok().map(|a| a.value)).ok())
+            .collect();
         std::thread::spawn(move || {
-            let mut fmt = dev.format().expect("Failed to read format");
             fmt.width = 320;
             fmt.height = 240;
             fmt.fourcc = FourCC::new(b"YUYV");
@@ -325,22 +530,27 @@ impl Video {
                     i.pixel_data = Some(PixelData::Yuyv(buf.to_vec()).to_rgb());
                     i.mirroring();
                 }
-                if let Ok(_a) = b.try_recv() {
-                    break;
+                if let Ok(a) = b.try_recv() {
+                    match a {
+                        VideoMessage::Quit => break,
+                        VideoMessage::ControlData { id, value } => {
+                            dev.set_control(v4l::control::Control { id, value });
+                        }
+                    }
                 }
             }
         });
-        VideoSource {image,
-            texture: None,
+        VideoSource {
+            image,
             vsend: a,
             controls,
         }
     }
 
-
     pub fn new() -> Self {
         Self {
             which_video: 0,
+            texture: None,
         }
     }
 }
@@ -357,11 +567,6 @@ impl SubwindowTrait for Video {
                 ui.label("This is the video page");
                 let mut size = ui.available_size();
                 let vsrc = &mut common.video_sources[self.which_video];
-                if ui.button("Debug controls").clicked() {
-                    for c in &vsrc.controls {
-                        println!("Control: {:?}", c);
-                    }
-                }
                 if let Ok(i) = vsrc.image.lock() {
                     if let Some(pd) = &i.pixel_data {
                         let zoom = (size.x / (i.width as f32)).min(size.y / (i.height as f32));
@@ -373,25 +578,22 @@ impl SubwindowTrait for Video {
                             size: [i.width as usize, i.height as usize],
                             pixels: pd.get_egui(),
                         };
-                        if let None = vsrc.texture {
-                            vsrc.texture =
-                                Some(ctx.load_texture("camera0", image, egui::TextureOptions::LINEAR));
-                        } else if let Some(t) = &mut vsrc.texture {
+                        if let None = self.texture {
+                            self.texture = Some(ctx.load_texture(
+                                "camera0",
+                                image,
+                                egui::TextureOptions::LINEAR,
+                            ));
+                        } else if let Some(t) = &mut self.texture {
                             t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
                         }
                     }
                 }
-                if let Some(t) = &vsrc.texture {
+                if let Some(t) = &self.texture {
                     ui.add(egui::Image::from_texture(egui::load::SizedTexture {
                         id: t.id(),
                         size,
                     }));
-                }
-                if let Ok(mut i) = vsrc.image.lock() {
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut i.hmirror, "H Mirror");
-                        ui.checkbox(&mut i.vmirror, "V Mirror");
-                    });
                 }
             });
         });

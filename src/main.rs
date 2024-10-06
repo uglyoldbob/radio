@@ -213,8 +213,7 @@ impl eframe::App for MyEguiApp {
                         )
                         .clicked()
                     {
-                        self.subwindow =
-                            Subwindow::Settings(settings::Settings::new());
+                        self.subwindow = Subwindow::Settings(settings::Settings::new());
                     }
                     ui.label(format!("Focus: {:?}", ui.input(|r| r.viewport().focused)));
                     if self.check {
