@@ -1,0 +1,3 @@
+[submodule "radiohw/USB_C_Industrial_Camera_FPGA_USB3"]
+	path = radiohw/USB_C_Industrial_Camera_FPGA_USB3
+	url = https://github.com/circuitvalley/USB_C_Industrial_Camera_FPGA_USB3.git
