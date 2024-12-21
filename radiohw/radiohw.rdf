@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RadiantProject version="4.2" radiant="2024.1.1.259.1" title="radiohw" device="LIFCL-40-9MG289C" performance_grade="9_High-Performance_1.0V" family_int="je5d00" device_int="je5d30" package_int="CSBGA289" operation_int="COM" speed_int="12" default_implementation="impl_1">
+    <Options/>
+    <Implementation title="impl_1" dir="impl_1" description="impl_1" synthesis="lse" default_strategy="Strategy1">
+        <Options def_top="radio" top="radio"/>
+        <Source name="pcie_1x/pcie_1x.ipx" type="IPX_Module" type_short="IPX">
+            <Options/>
+        </Source>
+        <Source name="source/impl_1/main.vhd" type="VHDL" type_short="VHDL">
+            <Options top_module="radio"/>
+        </Source>
+    </Implementation>
+    <Strategy name="Strategy1" file="radiohw1.sty"/>
+</RadiantProject>
