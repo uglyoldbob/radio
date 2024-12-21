@@ -74,7 +74,7 @@ architecture Behavioral of radio is
 			mipi_data_p_in: in std_logic_vector(3 downto 0);
 			mipi_data_n_in: in std_logic_vector(3 downto 0);
 			pclk_o: out std_logic;
-			data_o: out std_logic;
+			data_o: out std_logic_vector(31 downto 0);
 			fsync_o: out std_logic;
 			cam_xce_o: out std_logic;
 			cam_pwr_en_o: out std_logic;
