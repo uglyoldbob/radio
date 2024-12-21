@@ -1,1 +1,13 @@
 /target
+radiohw/*.log
+radiohw/*.xml
+radiohw/*.html
+radiohw/.*
+radiohw/impl_1/*
+radiohw/pcie_1x/testbench/*
+radiohw/radiohw_tcr.dir/*
+radiohw/radiosim/*.log
+radiohw/radiosim/*.f
+radiohw/radiosim/*.sort
+radiohw/radiosim/*.tops
+radiohw/radiosim/*.lst

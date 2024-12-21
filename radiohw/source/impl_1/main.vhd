@@ -173,6 +173,8 @@ architecture Behavioral of radio is
 	signal pcie_int1: std_logic;
 	signal pcie_int2: std_logic;
 	
+	signal i2c_mclk: std_logic;
+	
 	signal pcie_transactions_pending: std_logic_vector(3 downto 0);
 begin
 
@@ -182,12 +184,7 @@ begin
 	--pcie_user_reset_n
 	--reset
 	
-	process (clock)
-	begin
-		if rising_edge(clock) then
-			reset <= '0';
-		end if;
-	end process;
+	por: entity work.por generic map(cycles => 10) port map(reset => reset, clock => clock);
 	
 	pcie_present_n <= reset;
 	
@@ -225,55 +222,57 @@ begin
 		mipi_clk_p_in => mipi_csi_c_clk(0),
 		mipi_clk_n_in => mipi_csi_c_clk(1));
 	
-	pcie: pcie_1x port map(
-		rxp_i => pcie_rx(0),
-		rxn_i => pcie_rx(1),
-		refclkp_i => pcie_refclk(0),
-		refclkn_i => pcie_refclk(1),
-		aux_clk_i => pcie_aux_clk,
-		txp_o => pcie_tx(0),
-		txn_o => pcie_tx(1),
-		refret_i=> pcie_refret,
-		rext_i => pcie_rext,
-		perst_n_i=> pcie_perst_n,
-		rst_usr_n_i => pcie_user_reset_n,
-		clk_usr_i => pcie_user_clk,
-		clk_usr_o => pcie_phy_clk,
-		u_pl_link_up_o => pcie_status_phy,
-		u_dl_link_up_o => pcie_status_data,
-		u_tl_link_up_o => pcie_status_trans,
-		m_w_hready_i => pcie_ahb1_ready,
-		m_w_hresp_i => pcie_ahb1_response,
-		m_w_hrdata_i => pcie_ahb1_data_out,
-		m_w_haddr_o => pcie_ahb1_addr,
-		m_w_hburst_o => pcie_ahb1_burst,
-		m_w_hsize_o => pcie_ahb1_size,
-		m_w_htrans_o => pcie_ahb1_type,
-		m_w_hwrite_o => pcie_ahb1_write,
-		m_w_hwdata_o => pcie_ahb1_data_in,
-		m_r_hready_i => pcie_ahb2_ready,
-		m_r_hresp_i => pcie_ahb2_response,
-		m_r_hrdata_i => pcie_ahb2_data_out,
-		m_r_haddr_o => pcie_ahb2_addr,
-		m_r_hburst_o => pcie_ahb2_burst,
-		m_r_hsize_o => pcie_ahb2_size,
-		m_r_htrans_o => pcie_ahb2_type,
-		m_r_hwrite_o => pcie_ahb2_write,
-		m_r_hwdata_o => pcie_ahb2_data_in,
-		c_apb_pclk_i => pcie_apb_clk,
-		c_apb_preset_n_i => pcie_apb_reset_n,
-		c_apb_paddr_i => pcie_apb_addr,
-		c_apb_psel_i => pcie_apb_select,
-		c_apb_penable_i => pcie_apb_enable,
-		c_apb_pwrite_i => pcie_apb_write,
-		c_apb_pwdata_i => pcie_apb_dout,
-		c_apb_prdata_o => pcie_apb_din,
-		c_apb_pready_o => pcie_apb_ready,
-		c_apb_pslverr_o => pcie_apb_err,
-		int_normal_o => pcie_int1,
-		int_critical_o => pcie_int2,
-		user_aux_power_detected_i => pcie_aux_power,
-		user_transactions_pending_i=> pcie_transactions_pending);
+	pcie_gen: if sim = '0' generate
+		pcie: pcie_1x port map(
+			rxp_i => pcie_rx(0),
+			rxn_i => pcie_rx(1),
+			refclkp_i => pcie_refclk(0),
+			refclkn_i => pcie_refclk(1),
+			aux_clk_i => pcie_aux_clk,
+			txp_o => pcie_tx(0),
+			txn_o => pcie_tx(1),
+			refret_i=> pcie_refret,
+			rext_i => pcie_rext,
+			perst_n_i=> pcie_perst_n,
+			rst_usr_n_i => pcie_user_reset_n,
+			clk_usr_i => pcie_user_clk,
+			clk_usr_o => pcie_phy_clk,
+			u_pl_link_up_o => pcie_status_phy,
+			u_dl_link_up_o => pcie_status_data,
+			u_tl_link_up_o => pcie_status_trans,
+			m_w_hready_i => pcie_ahb1_ready,
+			m_w_hresp_i => pcie_ahb1_response,
+			m_w_hrdata_i => pcie_ahb1_data_out,
+			m_w_haddr_o => pcie_ahb1_addr,
+			m_w_hburst_o => pcie_ahb1_burst,
+			m_w_hsize_o => pcie_ahb1_size,
+			m_w_htrans_o => pcie_ahb1_type,
+			m_w_hwrite_o => pcie_ahb1_write,
+			m_w_hwdata_o => pcie_ahb1_data_in,
+			m_r_hready_i => pcie_ahb2_ready,
+			m_r_hresp_i => pcie_ahb2_response,
+			m_r_hrdata_i => pcie_ahb2_data_out,
+			m_r_haddr_o => pcie_ahb2_addr,
+			m_r_hburst_o => pcie_ahb2_burst,
+			m_r_hsize_o => pcie_ahb2_size,
+			m_r_htrans_o => pcie_ahb2_type,
+			m_r_hwrite_o => pcie_ahb2_write,
+			m_r_hwdata_o => pcie_ahb2_data_in,
+			c_apb_pclk_i => pcie_apb_clk,
+			c_apb_preset_n_i => pcie_apb_reset_n,
+			c_apb_paddr_i => pcie_apb_addr,
+			c_apb_psel_i => pcie_apb_select,
+			c_apb_penable_i => pcie_apb_enable,
+			c_apb_pwrite_i => pcie_apb_write,
+			c_apb_pwdata_i => pcie_apb_dout,
+			c_apb_prdata_o => pcie_apb_din,
+			c_apb_pready_o => pcie_apb_ready,
+			c_apb_pslverr_o => pcie_apb_err,
+			int_normal_o => pcie_int1,
+			int_critical_o => pcie_int2,
+			user_aux_power_detected_i => pcie_aux_power,
+			user_transactions_pending_i=> pcie_transactions_pending);
+		end generate;
 
 end Behavioral;
 

@@ -90,6 +90,15 @@
         <Source name="USB_C_Industrial_Camera_FPGA_USB3/FPGA_Firmware/Source/src/sample_generator.v" type="Verilog" type_short="Verilog">
             <Options/>
         </Source>
+        <Source name="source/impl_1/por.vhd" type="VHDL" type_short="VHDL">
+            <Options/>
+        </Source>
+        <Source name="source/impl_1/main_tb.vhd" type="VHDL" type_short="VHDL" syn_sim="SimOnly">
+            <Options/>
+        </Source>
+        <Source name="radiosim/radiosim.spf" type="Simulation Project File" type_short="SPF">
+            <Options/>
+        </Source>
     </Implementation>
     <Strategy name="Strategy1" file="radiohw1.sty"/>
 </RadiantProject>
