@@ -88,25 +88,33 @@ pub async fn bluetooth(
     blue_agent.request_default = true;
     blue_agent.request_pin_code = None;
     blue_agent.request_passkey = None;
-    blue_agent.display_passkey = Some(Box::new(move |a| {
+    blue_agent.display_passkey = Some(Box::new(|a| {
         async move {
             println!("Need to display passkey {:?}", a);
+            a.cancel.await.unwrap();
             Ok(())
         }
         .boxed()
     }));
-    blue_agent.display_pin_code = Some(Box::new(move |a| {
+    blue_agent.display_pin_code = Some(Box::new(|a| {
         async move {
             println!("Need to display pin code {:?}", a);
+            a.cancel.await.unwrap();
             Ok(())
         }
         .boxed()
     }));
-    blue_agent.request_confirmation = None;
+    blue_agent.request_confirmation = Some(Box::new(|a| {
+        async move {
+            println!("Need to confirm {:?}", a);
+            Ok(())
+        }
+        .boxed()
+    }));
     blue_agent.request_authorization = None;
     blue_agent.authorize_service = None;
     let blue_agent_handle = bluetooth.register_agent(blue_agent).await;
-    println!("Registered a bluetooth agent");
+    println!("Registered a bluetooth agent {}", blue_agent_handle.is_ok());
 
     let profile = bluer::rfcomm::Profile {
         uuid: bluer::Uuid::from_str("0000111e-0000-1000-8000-00805f9b34fb").unwrap(),
