@@ -86,20 +86,8 @@ pub async fn bluetooth(
 
     let mut blue_agent = bluer::agent::Agent::default();
     blue_agent.request_default = true;
-    blue_agent.request_pin_code = Some(Box::new(move |a| {
-        async move {
-            println!("Pin requested {:?}", a);
-            Ok("1234".to_string())
-        }
-        .boxed()
-    }));
-    blue_agent.request_passkey = Some(Box::new(move |a| {
-        async move {
-            println!("passkey requested {:?}", a);
-            Ok(42)
-        }
-        .boxed()
-    }));
+    blue_agent.request_pin_code = None;
+    blue_agent.request_passkey = None;
     blue_agent.display_passkey = Some(Box::new(move |a| {
         async move {
             println!("Need to display passkey {:?}", a);
@@ -114,27 +102,9 @@ pub async fn bluetooth(
         }
         .boxed()
     }));
-    blue_agent.request_confirmation = Some(Box::new(move |a| {
-        async move {
-            println!("Confirmation requested {:?}", a);
-            Ok(())
-        }
-        .boxed()
-    }));
-    blue_agent.request_authorization = Some(Box::new(move |a| {
-        async move {
-            println!("authorization requested {:?}", a);
-            Ok(())
-        }
-        .boxed()
-    }));
-    blue_agent.authorize_service = Some(Box::new(move |a| {
-        async move {
-            println!("authorize service requested {:?}", a);
-            Ok(())
-        }
-        .boxed()
-    }));
+    blue_agent.request_confirmation = None;
+    blue_agent.request_authorization = None;
+    blue_agent.authorize_service = None;
     let blue_agent_handle = bluetooth.register_agent(blue_agent).await;
     println!("Registered a bluetooth agent");
 
