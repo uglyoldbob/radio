@@ -1,0 +1,357 @@
+{
+  "design": {
+    "design_info": {
+      "boundary_crc": "0x0",
+      "device": "xcau7p-sbvc484-1-e",
+      "gen_directory": "../../../../auto.gen/sources_1/bd/main",
+      "name": "main",
+      "rev_ctrl_bd_flag": "RevCtrlBdOff",
+      "synth_flow_mode": "Hierarchical",
+      "tool_version": "2024.2.1"
+    },
+    "design_tree": {
+      "mipi_csi2_rx_subsyst_0": "",
+      "mipi_csi2_rx_subsyst_1": "",
+      "mipi_csi2_rx_subsyst_2": "",
+      "i2s_receiver_0": "",
+      "i2s_receiver_1": "",
+      "i2s_receiver_2": "",
+      "xdma_0": ""
+    },
+    "components": {
+      "mipi_csi2_rx_subsyst_0": {
+        "vlnv": "xilinx.com:ip:mipi_csi2_rx_subsystem:6.0",
+        "ip_revision": "3",
+        "xci_name": "main_mipi_csi2_rx_subsyst_0_0",
+        "xci_path": "ip/main_mipi_csi2_rx_subsyst_0_0/main_mipi_csi2_rx_subsyst_0_0.xci",
+        "inst_hier_path": "mipi_csi2_rx_subsyst_0",
+        "parameters": {
+          "CMN_NUM_LANES": {
+            "value": "4"
+          },
+          "CMN_NUM_PIXELS": {
+            "value": "4"
+          },
+          "CSI_BUF_DEPTH": {
+            "value": "4096"
+          },
+          "C_EN_CSI_V2_0": {
+            "value": "true"
+          },
+          "C_EN_VCX": {
+            "value": "true"
+          },
+          "C_RCVE_DESKEW_SEQ": {
+            "value": "true"
+          },
+          "DPY_EN_REG_IF": {
+            "value": "true"
+          },
+          "DPY_LINE_RATE": {
+            "value": "2500"
+          }
+        },
+        "interface_ports": {
+          "mipi_phy_if": {
+            "mode": "Slave",
+            "vlnv_bus_definition": "xilinx.com:interface:mipi_phy:1.0",
+            "vlnv": "xilinx.com:interface:mipi_phy_rtl:1.0"
+          },
+          "csirxss_s_axi": {
+            "mode": "Slave",
+            "vlnv_bus_definition": "xilinx.com:interface:aximm:1.0",
+            "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
+            "parameters": {
+              "ADDR_WIDTH": {
+                "value": "13"
+              },
+              "DATA_WIDTH": {
+                "value": "32"
+              },
+              "PROTOCOL": {
+                "value": "AXI4LITE"
+              }
+            },
+            "memory_map_ref": "csirxss_s_axi"
+          },
+          "video_out": {
+            "mode": "Master",
+            "vlnv_bus_definition": "xilinx.com:interface:axis:1.0",
+            "vlnv": "xilinx.com:interface:axis_rtl:1.0"
+          }
+        },
+        "addressing": {
+          "memory_maps": {
+            "csirxss_s_axi": {
+              "address_blocks": {
+                "Reg": {
+                  "base_address": "0x0000",
+                  "range": "8K",
+                  "width": "13",
+                  "usage": "register",
+                  "bank_blocks": {
+                    "rx;/rx/s_axi/reg0;xilinx.com:ip:mipi_csi2_rx_ctrl:1.0;/rx;s_axi;NONE;NONE": {
+                      "base_address": "0x0000",
+                      "range": "4K",
+                      "width": "12",
+                      "usage": "register"
+                    },
+                    "phy;/phy/s_axi/Reg;xilinx.com:ip:mipi_dphy:4.3;/phy;s_axi;NONE;NONE": {
+                      "base_address": "0x1000",
+                      "range": "4K",
+                      "width": "12",
+                      "usage": "register"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "mipi_csi2_rx_subsyst_1": {
+        "vlnv": "xilinx.com:ip:mipi_csi2_rx_subsystem:6.0",
+        "ip_revision": "3",
+        "xci_name": "main_mipi_csi2_rx_subsyst_1_0",
+        "xci_path": "ip/main_mipi_csi2_rx_subsyst_1_0/main_mipi_csi2_rx_subsyst_1_0.xci",
+        "inst_hier_path": "mipi_csi2_rx_subsyst_1",
+        "parameters": {
+          "CMN_NUM_LANES": {
+            "value": "4"
+          },
+          "CMN_NUM_PIXELS": {
+            "value": "4"
+          },
+          "CSI_BUF_DEPTH": {
+            "value": "4096"
+          },
+          "C_EN_CSI_V2_0": {
+            "value": "true"
+          },
+          "C_EN_VCX": {
+            "value": "true"
+          },
+          "C_RCVE_DESKEW_SEQ": {
+            "value": "true"
+          },
+          "DPY_EN_REG_IF": {
+            "value": "true"
+          },
+          "DPY_LINE_RATE": {
+            "value": "2500"
+          }
+        },
+        "interface_ports": {
+          "mipi_phy_if": {
+            "mode": "Slave",
+            "vlnv_bus_definition": "xilinx.com:interface:mipi_phy:1.0",
+            "vlnv": "xilinx.com:interface:mipi_phy_rtl:1.0"
+          },
+          "csirxss_s_axi": {
+            "mode": "Slave",
+            "vlnv_bus_definition": "xilinx.com:interface:aximm:1.0",
+            "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
+            "parameters": {
+              "ADDR_WIDTH": {
+                "value": "13"
+              },
+              "DATA_WIDTH": {
+                "value": "32"
+              },
+              "PROTOCOL": {
+                "value": "AXI4LITE"
+              }
+            },
+            "memory_map_ref": "csirxss_s_axi"
+          },
+          "video_out": {
+            "mode": "Master",
+            "vlnv_bus_definition": "xilinx.com:interface:axis:1.0",
+            "vlnv": "xilinx.com:interface:axis_rtl:1.0"
+          }
+        },
+        "addressing": {
+          "memory_maps": {
+            "csirxss_s_axi": {
+              "address_blocks": {
+                "Reg": {
+                  "base_address": "0x0000",
+                  "range": "8K",
+                  "width": "13",
+                  "usage": "register",
+                  "bank_blocks": {
+                    "rx;/rx/s_axi/reg0;xilinx.com:ip:mipi_csi2_rx_ctrl:1.0;/rx;s_axi;NONE;NONE": {
+                      "base_address": "0x0000",
+                      "range": "4K",
+                      "width": "12",
+                      "usage": "register"
+                    },
+                    "phy;/phy/s_axi/Reg;xilinx.com:ip:mipi_dphy:4.3;/phy;s_axi;NONE;NONE": {
+                      "base_address": "0x1000",
+                      "range": "4K",
+                      "width": "12",
+                      "usage": "register"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "mipi_csi2_rx_subsyst_2": {
+        "vlnv": "xilinx.com:ip:mipi_csi2_rx_subsystem:6.0",
+        "ip_revision": "3",
+        "xci_name": "main_mipi_csi2_rx_subsyst_2_0",
+        "xci_path": "ip/main_mipi_csi2_rx_subsyst_2_0/main_mipi_csi2_rx_subsyst_2_0.xci",
+        "inst_hier_path": "mipi_csi2_rx_subsyst_2",
+        "parameters": {
+          "CMN_NUM_LANES": {
+            "value": "4"
+          },
+          "CMN_NUM_PIXELS": {
+            "value": "4"
+          },
+          "CSI_BUF_DEPTH": {
+            "value": "4096"
+          },
+          "C_EN_CSI_V2_0": {
+            "value": "true"
+          },
+          "C_EN_VCX": {
+            "value": "true"
+          },
+          "C_RCVE_DESKEW_SEQ": {
+            "value": "true"
+          },
+          "DPY_EN_REG_IF": {
+            "value": "true"
+          },
+          "DPY_LINE_RATE": {
+            "value": "2500"
+          }
+        },
+        "interface_ports": {
+          "mipi_phy_if": {
+            "mode": "Slave",
+            "vlnv_bus_definition": "xilinx.com:interface:mipi_phy:1.0",
+            "vlnv": "xilinx.com:interface:mipi_phy_rtl:1.0"
+          },
+          "csirxss_s_axi": {
+            "mode": "Slave",
+            "vlnv_bus_definition": "xilinx.com:interface:aximm:1.0",
+            "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
+            "parameters": {
+              "ADDR_WIDTH": {
+                "value": "13"
+              },
+              "DATA_WIDTH": {
+                "value": "32"
+              },
+              "PROTOCOL": {
+                "value": "AXI4LITE"
+              }
+            },
+            "memory_map_ref": "csirxss_s_axi"
+          },
+          "video_out": {
+            "mode": "Master",
+            "vlnv_bus_definition": "xilinx.com:interface:axis:1.0",
+            "vlnv": "xilinx.com:interface:axis_rtl:1.0"
+          }
+        },
+        "addressing": {
+          "memory_maps": {
+            "csirxss_s_axi": {
+              "address_blocks": {
+                "Reg": {
+                  "base_address": "0x0000",
+                  "range": "8K",
+                  "width": "13",
+                  "usage": "register",
+                  "bank_blocks": {
+                    "rx;/rx/s_axi/reg0;xilinx.com:ip:mipi_csi2_rx_ctrl:1.0;/rx;s_axi;NONE;NONE": {
+                      "base_address": "0x0000",
+                      "range": "4K",
+                      "width": "12",
+                      "usage": "register"
+                    },
+                    "phy;/phy/s_axi/Reg;xilinx.com:ip:mipi_dphy:4.3;/phy;s_axi;NONE;NONE": {
+                      "base_address": "0x1000",
+                      "range": "4K",
+                      "width": "12",
+                      "usage": "register"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "i2s_receiver_0": {
+        "vlnv": "xilinx.com:ip:i2s_receiver:1.0",
+        "ip_revision": "9",
+        "xci_name": "main_i2s_receiver_0_0",
+        "xci_path": "ip/main_i2s_receiver_0_0/main_i2s_receiver_0_0.xci",
+        "inst_hier_path": "i2s_receiver_0",
+        "parameters": {
+          "C_NUM_CHANNELS": {
+            "value": "4"
+          }
+        }
+      },
+      "i2s_receiver_1": {
+        "vlnv": "xilinx.com:ip:i2s_receiver:1.0",
+        "ip_revision": "9",
+        "xci_name": "main_i2s_receiver_1_0",
+        "xci_path": "ip/main_i2s_receiver_1_0/main_i2s_receiver_1_0.xci",
+        "inst_hier_path": "i2s_receiver_1",
+        "parameters": {
+          "C_NUM_CHANNELS": {
+            "value": "4"
+          }
+        }
+      },
+      "i2s_receiver_2": {
+        "vlnv": "xilinx.com:ip:i2s_receiver:1.0",
+        "ip_revision": "9",
+        "xci_name": "main_i2s_receiver_2_0",
+        "xci_path": "ip/main_i2s_receiver_2_0/main_i2s_receiver_2_0.xci",
+        "inst_hier_path": "i2s_receiver_2",
+        "parameters": {
+          "C_NUM_CHANNELS": {
+            "value": "4"
+          }
+        }
+      },
+      "xdma_0": {
+        "vlnv": "xilinx.com:ip:xdma:4.1",
+        "ip_revision": "32",
+        "xci_name": "main_xdma_0_0",
+        "xci_path": "ip/main_xdma_0_0/main_xdma_0_0.xci",
+        "inst_hier_path": "xdma_0",
+        "interface_ports": {
+          "M_AXI": {
+            "vlnv": "xilinx.com:interface:aximm_rtl:1.0",
+            "mode": "Master",
+            "address_space_ref": "M_AXI",
+            "base_address": {
+              "minimum": "0x00000000",
+              "maximum": "0xFFFFFFFFFFFFFFFF",
+              "width": "64"
+            }
+          }
+        },
+        "addressing": {
+          "address_spaces": {
+            "M_AXI": {
+              "range": "16E",
+              "width": "64"
+            }
+          }
+        }
+      }
+    }
+  }
+}
