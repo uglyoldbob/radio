@@ -197,6 +197,7 @@ pub async fn bluetooth(
         while let Ok(m) = rx.try_recv() {
             match m {
                 MessageToAsync::BluetoothScan(f) => {
+                    println!("Set bluetooth scan to {}", f);
                     scan = f;
                 }
                 MessageToAsync::Quit => {
