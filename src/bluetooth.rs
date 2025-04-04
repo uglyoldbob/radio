@@ -180,6 +180,20 @@ pub async fn bluetooth(
     println!("Registering a profile");
 
     let mut h = bluetooth.register_profile(profile).await;
+    tokio::task::spawn(async move {
+        if let Ok(h) = &mut h {
+            if let Some(a) = h.next().await {
+                println!("Got a connection to car audio");
+                let con = a.accept().unwrap();
+                let (mut r, mut w) = con.into_split();
+                w.write(&vec![0_u8, 0, 0, 0]).await.unwrap();
+                match r.read_u8().await {
+                    Ok(a) => println!("Recieved bluetooth byte {:x}", a),
+                    Err(e) => println!("Error receiving bluetooth data {:?}", e),
+                }
+            }
+        }
+    });
 
     for adapter in &adapters {
         query_adapter(adapter).await;
@@ -237,19 +251,6 @@ pub async fn bluetooth(
                         }
                     }
                     *dev = Some(d);
-                }
-            }
-        }
-
-        if let Ok(h) = &mut h {
-            if let Some(a) = h.next().await {
-                println!("Got a connection to car audio");
-                let con = a.accept().unwrap();
-                let (mut r, mut w) = con.into_split();
-                w.write(&vec![0_u8, 0, 0, 0]).await.unwrap();
-                match r.read_u8().await {
-                    Ok(a) => println!("Recieved bluetooth byte {:x}", a),
-                    Err(e) => println!("Error receiving bluetooth data {:?}", e),
                 }
             }
         }
