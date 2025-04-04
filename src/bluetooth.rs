@@ -180,7 +180,7 @@ pub async fn bluetooth(
     println!("Registering a profile");
 
     let mut h = bluetooth.register_profile(profile).await;
-    tokio::task::spawn(async move {
+    let profile = tokio::task::spawn(async move {
         if let Ok(h) = &mut h {
             if let Some(a) = h.next().await {
                 println!("Got a connection to car audio");
@@ -256,6 +256,8 @@ pub async fn bluetooth(
         }
         tokio::time::sleep(Duration::from_millis(1)).await;
     }
+    drop(blue_agent_handle);
+    profile.await.unwrap();
 }
 
 impl BluetoothData {

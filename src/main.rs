@@ -61,6 +61,7 @@ impl Default for Subwindow {
 }
 
 fn main() {
+    simple_logger::SimpleLogger::new().init().unwrap();
     let (tx, rx) = tokio::sync::mpsc::channel(20);
     let (tx2, rx2) = tokio::sync::mpsc::channel(20);
     let options = eframe::NativeOptions {
