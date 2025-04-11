@@ -1,0 +1,5 @@
+[app]
+name = "uob_radio"
+stylized-name = "UobRadio"
+identifier = "com.uglyoldbob.uob_radio"
+template-pack = "egui"
