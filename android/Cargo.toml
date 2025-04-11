@@ -8,6 +8,8 @@ edition = "2021"
 
 [dependencies]
 dioxus = { version = "0.6.0", features = ["fullstack"] }
+log = "0.4.27"
+android_logger = "0.15"
 
 [features]
 default = ["mobile"]

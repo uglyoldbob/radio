@@ -14,6 +14,9 @@ const FAVICON: Asset = asset!("/assets/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/styling/main.css");
 
 fn main() {
+    android_logger::init_once(
+        android_logger::Config::default().with_max_level(log::LevelFilter::Debug),
+    );
     // The `launch` function is the main entry point for a dioxus app. It takes a component and renders it with the platform feature
     // you have enabled
     dioxus::launch(App);
@@ -25,15 +28,29 @@ fn main() {
 /// Components should be annotated with `#[component]` to support props, better error messages, and autocomplete
 #[component]
 fn App() -> Element {
+    let mut count = use_signal(|| 0);
+    use_effect(move || {
+        // When we read count, it becomes a dependency of the effect
+        let current_count = count();
+    });
+    let mut p = String::new();
+    let paths = std::fs::read_dir("./");
+    if let Ok(paths) = paths {
+        for path in paths {
+            p.push_str(&format!("{:?}\n", path));
+        }
+    }
+    else {
+        p.push_str(&format!("{:?}", paths));
+    }
     // The `rsx!` macro lets us define HTML inside of rust. It expands to an Element with all of our HTML inside.
     rsx! {
         // In addition to element and text (which we will see later), rsx can contain other components. In this case,
         // we are using the `document::Link` component to add a link to our favicon and main CSS file into the head of our app.
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
-
-
-        Hero {}
+        button { onclick: move |_| {count += 1; log::error!("I am groot");}, "Increment" }
+        div { "Count is {count} {p}" }
         Echo {}
     }
 }
