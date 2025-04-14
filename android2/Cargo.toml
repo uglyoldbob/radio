@@ -6,7 +6,7 @@ edition = "2018"
 resolver = "2"
 
 [lib]
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["cdylib", "lib"]
 
 [package.metadata.cargo-android]
 app-dependencies = [
@@ -18,7 +18,7 @@ app-theme-parent = "Theme.MaterialComponents.DayNight.DarkActionBar"
 
 [dependencies]
 log = "0.4"
-winit = { version = "0.30.7", features = [ "android-game-activity" ] }
+winit = { version = "0.30.7", features = [ "android-native-activity" ] }
 wgpu = "25.0.0"
 pollster = "0.2"
 egui = "0.31.1"
@@ -29,40 +29,7 @@ egui_demo_lib = "0.31.1"
 env_logger = "0.9"
 
 [target.'cfg(target_os = "android")'.dependencies]
-android_logger = "0.11.0"
-
-[patch.crates-io]
-
-# Since Egui currently depends on Winit 0.27 we can't update the examples to use
-# Winit master just yet, and use this branch of Winit with an updated backend
-# based on android-activity
-winit = { git = "https://github.com/rib/winit", branch = "android-activity" }
-#winit = { path = "../../../winit" }
-
-# Note:
-# Since android-activity is responsible for invoking the `android_main`
-# entrypoint for a native Rust application there can only be a single
-# implementation of the crate linked with the application.
-#
-# To avoid conflicts it's generally recommend to rely on Winit to pull
-# in a compatible version of android-activity but if you'd like to build
-# this example against the local checkout of android-activity you should
-# specify a patch here to make sure you also affect the version that Winit
-# uses.
-#
-# Note: also check that the local android-activity/Cargo.toml version matches
-# the version of android-activity that Winit depends on (in case you need to check
-# out a release branch locally to be compatible)
-#android-activity = { path = "../../android-activity" }
-
-# Egui 0.19 is missing some fixes for Android so we need to build against
-# git master for now
-egui = { git = "https://github.com/emilk/egui" }
-eframe = { git = "https://github.com/emilk/egui" }
-egui_demo_lib = { git = "https://github.com/emilk/egui" }
-#egui = { path = "../../../egui/crates/egui" }
-#eframe = { path = "../../../egui/crates/eframe" }
-#egui_demo_lib = { path = "../../../egui/crates/egui_demo_lib" }
+android_logger = "0.15.0"
 
 [features]
 default = []

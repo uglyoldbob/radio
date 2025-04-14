@@ -11,36 +11,41 @@ struct DemoApp {
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.demo_windows.ui(ctx);
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.label("I am groot");
+        });
     }
 }
 
 impl DemoApp {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        log::error!("I am GROOT");
         Self::default()
     }
 }
 
 fn _main(mut options: NativeOptions) {
+    log::error!("I am groot");
     options.renderer = Renderer::Wgpu;
-    eframe::run_native(
+    log::error!("I am groot 2");
+    let run = eframe::run_native(
         "My egui App",
         options,
         Box::new(|cc| Ok(Box::new(DemoApp::new(cc)))),
     );
+    log::error!("I am NOT groot {:?}", run);
 }
 
 #[cfg(target_os = "android")]
 #[no_mangle]
 fn android_main(app: AndroidApp) {
     use winit::platform::android::EventLoopBuilderExtAndroid;
-
-    android_logger::init_once(android_logger::Config::default().with_min_level(log::Level::Info));
+    std::env::set_var("RUST_BACKTRACE", "1");
+    android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Trace));
 
     let mut options = NativeOptions::default();
-    options.event_loop_builder = Some(Box::new(move |builder| {
-        builder.with_android_app(app);
-    }));
+    options.viewport.fullscreen = Some(true);
+    options.android_app = Some(app);
     _main(options);
 }
 
