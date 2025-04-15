@@ -1694,6 +1694,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "jni-min-helper"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c2f570a2a1b8c3a2ae039da0b354318a2a6f603d3a7843a2e7524b8d1c9ed1b"
+dependencies = [
+ "java-locator",
+ "jni",
+ "log",
+ "ndk-context",
+]
+
+[[package]]
 name = "jni-sys"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3183,12 +3195,14 @@ checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 name = "uob_radio"
 version = "0.1.0"
 dependencies = [
+ "android-properties",
  "android_logger",
  "bincode",
  "eframe",
  "egui",
  "env_logger",
  "jni",
+ "jni-min-helper",
  "log",
  "ouroboros",
  "pollster 0.2.5",
