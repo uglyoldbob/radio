@@ -21,10 +21,15 @@ bincode = {version = "2.0.1", features = ["serde"]}
 egui = "0.31.1"
 eframe = { version = "0.31.1", features = [ "wgpu" ] }
 log = "0.4"
+ouroboros = "0.18.5"
 pollster = "0.2"
 wgpu = "25.0.0"
 winit = { version = "0.30.7", features = [ "android-native-activity" ] }
 serde = {version = "1.0.219", features = ["derive"]}
+
+[dependencies.jni]
+version = "0.21.1"
+features = ["invocation", "default"]
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger = "0.9"

@@ -1,6 +1,8 @@
 use eframe::egui;
 use eframe::{NativeOptions, Renderer};
 
+mod bluetooth;
+
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
@@ -16,13 +18,31 @@ enum AppConfigError {
     UnableToCreate,
 }
 
-struct DemoApp {
+#[ouroboros::self_referencing]
+pub struct Java {
+    context: jni::objects::JObject<'static>,
+    java: jni::JavaVM,
+    #[borrows(java)]
+    #[not_covariant]
+    pub env: jni::AttachGuard<'this>,
+}
+
+impl Java {
+    pub fn use_env<F: FnOnce(&mut jni::JNIEnv)>(&mut self, f: F) {
+        self.with_env_mut(|a| f(a));
+    }
+}
+
+pub struct DemoApp {
     local_storage: Option<std::path::PathBuf>,
     settings: Result<AppConfig, AppConfigError>,
+    bluetooth: bluetooth::Bluetooth,
+    java: Java,
 }
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.java.use_env(|env| log::error!("PLACEHOLDER"));
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label(format!("Config: {:?}", self.settings));
         });
@@ -36,7 +56,8 @@ impl DemoApp {
             config.push("config.bin");
             let settings = if let Ok(false) = std::fs::exists(&config) {
                 let settings = AppConfig::default();
-                let encoded: Vec<u8> = bincode::serde::encode_to_vec(&settings, bincode::config::standard()).unwrap();
+                let encoded: Vec<u8> =
+                    bincode::serde::encode_to_vec(&settings, bincode::config::standard()).unwrap();
                 let f = std::fs::File::create(&config);
                 if let Ok(mut f) = f {
                     use std::io::Write;
@@ -47,24 +68,20 @@ impl DemoApp {
                             Err(AppConfigError::UnableToCreate)
                         }
                     }
-                }
-                else {
+                } else {
                     log::error!("Unable to create config file2: {:?}", f);
                     Err(AppConfigError::UnableToCreate)
                 }
-            }
-            else {
+            } else {
                 let f = std::fs::read(&config);
                 if let Ok(a) = f {
                     let s = bincode::serde::decode_from_slice(&a, bincode::config::standard());
                     if let Ok((s, len)) = s {
                         Ok(s)
-                    }
-                    else {
+                    } else {
                         Err(AppConfigError::Corrupt)
                     }
-                }
-                else {
+                } else {
                     Err(AppConfigError::Corrupt)
                 }
             };
@@ -72,43 +89,45 @@ impl DemoApp {
         }
     }
 
-    fn new(cc: &eframe::CreationContext<'_>, options: NativeOptions) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, options: NativeOptions, java: jni::JavaVM, context: jni::objects::JObject<'static>) -> Self {
+        let java = JavaBuilder {
+            java,
+            context,
+            env_builder: |java| java.attach_current_thread().unwrap(),
+        }.build();
         let mut s = Self {
             local_storage: options.android_app.unwrap().internal_data_path(),
             settings: Err(AppConfigError::NotLoaded),
+            bluetooth: bluetooth::Bluetooth::new(),
+            java,
         };
         s.load_config();
         s
     }
 }
 
-fn _main(mut options: NativeOptions) {
+fn _main(mut options: NativeOptions, java: jni::JavaVM, context: jni::objects::JObject<'static>) {
     options.renderer = Renderer::Wgpu;
     let o = options.clone();
     let run = eframe::run_native(
         "UobRadio",
         options,
-        Box::new(|cc| Ok(Box::new(DemoApp::new(cc, o)))),
-    ).unwrap();
+        Box::new(move |cc| Ok(Box::new(DemoApp::new(cc, o, java, context)))),
+    )
+    .unwrap();
 }
 
 #[cfg(target_os = "android")]
 #[no_mangle]
 fn android_main(app: AndroidApp) {
-    android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Trace));
+    android_logger::init_once(
+        android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
+    );
     log::error!("UobRadio startup");
+    let mut vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr() as *mut *const jni::sys::JNIInvokeInterface_) }.unwrap();
+    let context = unsafe { jni::objects::JObject::from_raw(app.activity_as_ptr() as *mut jni::sys::_jobject) };
     let mut options = NativeOptions::default();
     options.viewport.fullscreen = Some(true);
     options.android_app = Some(app);
-    _main(options);
-}
-
-#[cfg(not(target_os = "android"))]
-fn main() {
-    env_logger::builder()
-        .filter_level(log::LevelFilter::Warn) // Default Log Level
-        .parse_default_env()
-        .init();
-
-    _main(NativeOptions::default());
+    _main(options, vm, context);
 }
