@@ -20,7 +20,7 @@ enum AppConfigError {
 
 #[ouroboros::self_referencing]
 pub struct Java {
-    context: jni::objects::JObject<'static>,
+    app: AndroidApp,
     java: jni::JavaVM,
     #[borrows(java)]
     #[not_covariant]
@@ -28,8 +28,9 @@ pub struct Java {
 }
 
 impl Java {
-    pub fn use_env<F: FnOnce(&mut jni::JNIEnv)>(&mut self, f: F) {
-        self.with_env_mut(|a| f(a));
+    pub fn use_env<F: FnOnce(&mut jni::JNIEnv, jni::objects::JObject)>(&mut self, f: F) {
+        let context = unsafe { jni::objects::JObject::from_raw(self.borrow_app().activity_as_ptr() as *mut jni::sys::_jobject) };
+        self.with_env_mut(|a| f(a, context));
     }
 }
 
@@ -42,7 +43,25 @@ pub struct DemoApp {
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.java.use_env(|env| log::error!("PLACEHOLDER"));
+        self.java.use_env(|env, context| {
+            log::error!("PLACEHOLDER");
+            let file_key_jstring = env.new_string("groot").unwrap();
+
+            // Call getSharedPreferences(String name, int mode)
+            let a = env.call_method(
+                context,
+                "getSharedPreferences",
+                "(Ljava/lang/String;I)Landroid/content/SharedPreferences;",
+                &[
+                    jni::objects::JValue::Object(&file_key_jstring),
+                    jni::objects::JValue::Int(0), // Context.MODE_PRIVATE = 0
+                ],
+            )
+                .unwrap()
+                .l()
+                .unwrap();
+            log::error!("JNI CALL IS {:?}", a);
+        });
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label(format!("Config: {:?}", self.settings));
         });
@@ -89,10 +108,10 @@ impl DemoApp {
         }
     }
 
-    fn new(cc: &eframe::CreationContext<'_>, options: NativeOptions, java: jni::JavaVM, context: jni::objects::JObject<'static>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>, options: NativeOptions, java: jni::JavaVM, app: AndroidApp) -> Self {
         let java = JavaBuilder {
+            app,
             java,
-            context,
             env_builder: |java| java.attach_current_thread().unwrap(),
         }.build();
         let mut s = Self {
@@ -106,13 +125,13 @@ impl DemoApp {
     }
 }
 
-fn _main(mut options: NativeOptions, java: jni::JavaVM, context: jni::objects::JObject<'static>) {
+fn _main(mut options: NativeOptions, java: jni::JavaVM, app: AndroidApp) {
     options.renderer = Renderer::Wgpu;
     let o = options.clone();
     let run = eframe::run_native(
         "UobRadio",
         options,
-        Box::new(move |cc| Ok(Box::new(DemoApp::new(cc, o, java, context)))),
+        Box::new(move |cc| Ok(Box::new(DemoApp::new(cc, o, java, app)))),
     )
     .unwrap();
 }
@@ -128,6 +147,7 @@ fn android_main(app: AndroidApp) {
     let context = unsafe { jni::objects::JObject::from_raw(app.activity_as_ptr() as *mut jni::sys::_jobject) };
     let mut options = NativeOptions::default();
     options.viewport.fullscreen = Some(true);
+    let app2 = app.clone();
     options.android_app = Some(app);
-    _main(options, vm, context);
+    _main(options, vm, app2);
 }
