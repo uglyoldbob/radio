@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
+use std::convert::TryInto;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -13,6 +14,10 @@ use std::time::SystemTime;
 pub struct Bluetooth {
     adapter: OnceLock<jni::objects::GlobalRef>,
     java: Arc<Mutex<super::Java>>,
+    /// An instance of Intent, created with registerReceiver
+    receiver: Option<jni::objects::GlobalRef>,
+    /// The broadcast_receiver for the bluetooth uuid
+    blue_uuid_receiver: Option<jni_min_helper::BroadcastReceiver>,
 }
 
 /// The UUID for the well-known SPP profile.
@@ -54,38 +59,37 @@ impl std::fmt::Debug for BluetoothSocket {
 impl BluetoothSocket {
     const ARRAY_SIZE: usize = 32 * 1024;
 
-    fn build(obj: jni::objects::GlobalRef, java: Arc<Mutex<super::Java>>, uuid: &str,) -> Result<Self, std::io::Error> {
+    fn build(
+        obj: jni::objects::GlobalRef,
+        java: Arc<Mutex<super::Java>>,
+        uuid: &str,
+    ) -> Result<Self, std::io::Error> {
         let mut java2 = java.lock().unwrap();
         let input_stream = java2.use_env(|env, _context| {
             // the streams may (or may NOT) be usable after reconnection (check Android SDK source)
-            env
-                .call_method(&obj, "getInputStream", "()Ljava/io/InputStream;", &[])
+            env.call_method(&obj, "getInputStream", "()Ljava/io/InputStream;", &[])
                 .get_object(env)
                 .globalize(env)
                 .map_err(|e| jerr(env, e))
         })?;
         let output_stream = java2.use_env(|env, _context| {
-            env
-                .call_method(&obj, "getOutputStream", "()Ljava/io/OutputStream;", &[])
+            env.call_method(&obj, "getOutputStream", "()Ljava/io/OutputStream;", &[])
                 .get_object(env)
                 .globalize(env)
                 .map_err(|e| jerr(env, e))
         })?;
         let jmethod_write = java2.use_env(|env, _context| {
-            env
-                .get_method_id("java/io/OutputStream", "write", "([BII)V")
+            env.get_method_id("java/io/OutputStream", "write", "([BII)V")
                 .map_err(|e| jerr(env, e))
         })?;
         let jmethod_flush = java2.use_env(|env, _context| {
-            env
-                .get_method_id("java/io/OutputStream", "flush", "()V")
+            env.get_method_id("java/io/OutputStream", "flush", "()V")
                 .map_err(|e| jerr(env, e))
         })?;
 
         let array_size = Self::ARRAY_SIZE as i32;
         let array_write = java2.use_env(|env, _context| {
-            env
-                .new_byte_array(array_size)
+            env.new_byte_array(array_size)
                 .global_ref(env)
                 .map_err(|e| jerr(env, e))
         })?;
@@ -112,9 +116,7 @@ impl BluetoothSocket {
     #[inline(always)]
     pub fn is_connected(&self) -> Result<bool, std::io::Error> {
         let mut java2 = self.java.lock().unwrap();
-        java2.use_env(|env, _context| {
-            self.is_connected2(env)
-        })
+        java2.use_env(|env, _context| self.is_connected2(env))
     }
 
     /// Gets the connection status of this socket.
@@ -131,16 +133,16 @@ impl BluetoothSocket {
     /// implementation is probably incapable of reconnecting the device, just like
     /// `java.net.Socket`.
     pub fn connect(&mut self) -> Result<(), std::io::Error> {
-        let mut java = self.java.lock().unwrap();
         if self.is_connected()? {
             return Ok(());
         }
+        let mut java = self.java.lock().unwrap();
         log::warn!("Connecting to {}", self.uuid);
         let app = java.get_app();
         let connected = java.use_env(|env, _context| {
             env.call_method(&self.internal, "connect", "()V", &[])
-                .clear_ex()
-                .map_err(|e| jerr(env, e))?;
+                .map_err(|e| jerr(env, e))
+                .inspect_err(|e| log::error!("Connect error is {:?}", e))?;
             self.is_connected2(env)
         })?;
         log::warn!("Connected status is {}", connected);
@@ -203,7 +205,9 @@ impl BluetoothSocket {
                             jni::sys::jvalue {
                                 l: array_read.as_raw(),
                             },
-                            jni::sys::jvalue { i: 0 as jni::sys::jint },
+                            jni::sys::jvalue {
+                                i: 0 as jni::sys::jint,
+                            },
                             jni::sys::jvalue {
                                 i: read_size as jni::sys::jint,
                             },
@@ -224,7 +228,7 @@ impl BluetoothSocket {
                         std::slice::from_raw_parts_mut(vec_read.as_mut_ptr() as *mut i8, len)
                     };
                     env.get_byte_array_region(array_read, 0, tmp_read)
-                    .map_err(|e| jerr(env, e))?;
+                        .map_err(|e| jerr(env, e))?;
                     buf_read
                         .lock()
                         .unwrap()
@@ -279,8 +283,8 @@ impl BluetoothSocket {
         let mut java = self.java.lock().unwrap();
         java.use_env(|env, _context| -> Result<(), std::io::Error> {
             env.call_method(&self.internal, "close", "()V", &[])
-            .clear_ex()
-            .map_err(|e|jerr(env, e))
+                .clear_ex()
+                .map_err(|e| jerr(env, e))
         })?;
         if let Some(th) = self.thread_read.take() {
             let _ = th.join();
@@ -335,27 +339,25 @@ impl std::io::Write for BluetoothSocket {
 
         let array_write: &jni::objects::JByteArray<'_> = self.array_write.as_obj().into();
         let mut java = self.java.lock().unwrap();
-        let al = java.use_env(|env, _context| {
-            env.get_array_length(array_write).map_err(|e|jerr(env, e))
-        })? as usize;
+        let al = java
+            .use_env(|env, _context| env.get_array_length(array_write).map_err(|e| jerr(env, e)))?
+            as usize;
         if al < buf.len() {
             self.array_write = java.use_env(|env, _context| {
                 // replace the prepared reusable Java array with a larger array
-                env
-                    .byte_array_from_slice(buf)
+                env.byte_array_from_slice(buf)
                     .global_ref(env)
-                    .map_err(|e|jerr(env, e))
+                    .map_err(|e| jerr(env, e))
             })?;
-        }
-        else {
+        } else {
             java.use_env(|env, _context| -> std::io::Result<()> {
                 // Safety: casts `&[u8]` to `&[i8]` for `set_byte_array_region`.
-                let buf = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const i8, buf.len()) };
+                let buf =
+                    unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const i8, buf.len()) };
                 env.set_byte_array_region(array_write, 0, buf)
-                    .map_err(|e|jerr(env, e))
+                    .map_err(|e| jerr(env, e))
             })?;
         }
-        
 
         use jni::signature::*;
         java.use_env(|env, _context| {
@@ -369,7 +371,9 @@ impl std::io::Write for BluetoothSocket {
                         jni::sys::jvalue {
                             l: self.array_write.as_raw(),
                         },
-                        jni::sys::jvalue { i: 0 as jni::sys::jint },
+                        jni::sys::jvalue {
+                            i: 0 as jni::sys::jint,
+                        },
                         jni::sys::jvalue {
                             i: buf.len() as jni::sys::jint,
                         },
@@ -402,7 +406,7 @@ impl std::io::Write for BluetoothSocket {
                 )
             }
             .clear_ex()
-            .map_err(|e|jerr(env, e))
+            .map_err(|e| jerr(env, e))
         })
     }
 }
@@ -434,6 +438,17 @@ impl BluetoothDevice {
         })
     }
 
+    pub fn get_uuids_with_sdp(&self) {
+        let mut java = self.java.lock().unwrap();
+        let result = java.use_env(|env, _context| {
+            let dev_name = env
+                .call_method(&self.internal, "fetchUuidsWithSdp", "()Z", &[])
+                .get_boolean();
+            dev_name.map_err(|e| jerr(env, e))
+        });
+        log::error!("get uuids returned {:?}", result);
+    }
+
     pub fn get_bond_state(&self) -> Result<i32, std::io::Error> {
         let mut java = self.java.lock().unwrap();
         java.use_env(|env, _context| {
@@ -451,41 +466,47 @@ impl BluetoothDevice {
         uuid: &str,
         is_secure: bool,
     ) -> Option<&mut BluetoothSocket> {
+        log::warn!("Checking rfcomm for {}", uuid);
         let mut java = self.java.lock().unwrap();
         if !self.rfcomm_sockets.contains_key(uuid) {
-            let socket = java.use_env(|env, _context| {
-                let uuid = uuid.new_jobject(env).map_err(|e| jerr(env, e))?;
-                let uuid = env
-                    .call_static_method(
-                        "java/util/UUID",
-                        "fromString",
-                        "(Ljava/lang/String;)Ljava/util/UUID;",
+            log::warn!("Building rfcomm for {}", uuid);
+            let socket = java
+                .use_env(|env, _context| {
+                    let uuid = uuid.new_jobject(env).map_err(|e| jerr(env, e))?;
+                    let uuid = env
+                        .call_static_method(
+                            "java/util/UUID",
+                            "fromString",
+                            "(Ljava/lang/String;)Ljava/util/UUID;",
+                            &[(&uuid).into()],
+                        )
+                        .get_object(env)
+                        .map_err(|e| jerr(env, e))?;
+
+                    let method_name = if is_secure {
+                        "createRfcommSocketToServiceRecord"
+                    } else {
+                        "createInsecureRfcommSocketToServiceRecord"
+                    };
+                    env.call_method(
+                        &self.internal,
+                        method_name,
+                        "(Ljava/util/UUID;)Landroid/bluetooth/BluetoothSocket;",
                         &[(&uuid).into()],
                     )
                     .get_object(env)
-                    .map_err(|e| jerr(env, e))?;
-    
-                let method_name = if is_secure {
-                    "createRfcommSocketToServiceRecord"
-                } else {
-                    "createInsecureRfcommSocketToServiceRecord"
-                };
-                env.call_method(
-                    &self.internal,
-                    method_name,
-                    "(Ljava/util/UUID;)Landroid/bluetooth/BluetoothSocket;",
-                    &[(&uuid).into()],
-                )
-                .get_object(env)
-                .globalize(env)
-                // TODO: distinguish IOException and other unexpected exceptions
-                .map_err(|e| jerr(env, e))
-            }).ok()?;
+                    .globalize(env)
+                    // TODO: distinguish IOException and other unexpected exceptions
+                    .map_err(|e| jerr(env, e))
+                })
+                .ok()?;
             drop(java);
+            log::warn!("Building2 rfcomm for {}", uuid);
             let socket = BluetoothSocket::build(socket, self.java.clone(), uuid);
             if let Ok(a) = socket {
                 self.rfcomm_sockets.insert(uuid.to_string(), a);
             }
+            log::warn!("Done building rfcomm for {}", uuid);
         }
         self.rfcomm_sockets.get_mut(uuid)
     }
@@ -520,10 +541,24 @@ pub(crate) fn jerr(env: &mut jni::JNIEnv, err: jni::errors::Error) -> std::io::E
 }
 
 impl Bluetooth {
-    pub fn new(java: Arc<Mutex<super::Java>>,) -> Self {
+    pub fn new(java: Arc<Mutex<super::Java>>) -> Self {
         Self {
             adapter: OnceLock::new(),
             java,
+            receiver: None,
+            blue_uuid_receiver: None,
+        }
+    }
+
+    pub fn cancel_discovery(&mut self) {
+        self.check_adapter();
+        let mut java = self.java.lock().unwrap();
+        if let Some(adap) = self.adapter.get() {
+            java.use_env(|env, _context| {
+                let _ = env
+                    .call_method(adap, "cancelDiscovery", "()Z", &[])
+                    .clear_ex();
+            });
         }
     }
 
@@ -531,13 +566,35 @@ impl Bluetooth {
         let mut java = self.java.lock().unwrap();
         java.use_env(|env, context| {
             if self.adapter.get().is_none() {
-                let a = self.get_adapter(env, &context).unwrap();
+                let a = Self::get_adapter(env, &context).unwrap();
                 log::error!("Adapter is {:?}", a);
                 let _ = self.adapter.set(a);
             } else {
                 log::error!("BLUETOOTH ADAPTER ALREADY SET");
             }
         });
+        drop(java);
+        if self.receiver.is_none() {
+            let arg1 = jni_min_helper::BroadcastReceiver::build(|env, context, intent| {
+                log::error!("Broadcast receiver runs now {:?}", intent);
+                let action = env
+                    .call_method(intent, "getAction", "()Ljava/lang/String;", &[])
+                    .get_object(env)?;
+                if action.is_null() {
+                    return Err(jni::errors::Error::NullPtr("No action"));
+                }
+                let action = action.get_string(env).map_err(|e| jerr(env, e));
+                log::error!("Action is {:?}", action);
+                Ok(())
+            })
+            .unwrap();
+            let r = register_receiver(&self.java, &arg1);
+            self.blue_uuid_receiver.replace(arg1);
+            if let Some(r) = r {
+                log::error!("Receiver is {:?}", r);
+                self.receiver.replace(r);
+            }
+        }
     }
 
     pub fn enable(&mut self) {
@@ -602,7 +659,6 @@ impl Bluetooth {
     }
 
     fn get_adapter<'a>(
-        &self,
         env: &mut jni::JNIEnv<'a>,
         context: &jni::objects::JObject,
     ) -> Result<jni::objects::GlobalRef, std::io::Error> {
@@ -642,4 +698,38 @@ impl Bluetooth {
             ))
         }
     }
+}
+
+fn register_receiver(
+    java: &Arc<Mutex<super::Java>>,
+    arg1: &jni_min_helper::BroadcastReceiver,
+) -> Option<jni::objects::GlobalRef> {
+    let mut java2 = java.lock().unwrap();
+    let mut sig = String::new();
+    sig.push_str("(");
+    sig.push_str("Landroid/content/BroadcastReceiver;");
+    sig.push_str("Landroid/content/IntentFilter;");
+    sig.push_str(")Landroid/content/Intent;");
+    java2.use_env(|env, context| {
+        let mut args = Vec::new();
+        let intent_str = "android.bluetooth.device.action.UUID"
+            .new_jobject(env)
+            .unwrap();
+        let arg2 = env.new_object(
+            "android/content/IntentFilter",
+            "(Ljava/lang/String;)V",
+            &[(&intent_str).into()],
+        );
+        let arg2 = arg2.unwrap();
+        args.push(arg1.as_ref());
+        args.push(&arg2);
+        let args2: Vec<jni::objects::JValueGen<&jni::objects::JObject>> =
+            args.iter().map(|a| a.try_into().unwrap()).collect();
+        let e = env
+            .call_method(context, "registerReceiver", &sig, args2.as_slice())
+            .get_object(env)
+            .map_err(|e| jerr(env, e))
+            .ok()?;
+        env.new_global_ref(&e).map_err(|e| jerr(env, e)).ok()
+    })
 }

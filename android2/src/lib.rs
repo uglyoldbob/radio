@@ -63,7 +63,8 @@ impl Java {
             app,
             java: vm,
             env_builder: |java: &jni::JavaVM| java.attach_current_thread().unwrap(),
-        }.build()
+        }
+        .build()
     }
 }
 
@@ -90,9 +91,23 @@ impl eframe::App for DemoApp {
                     d.get_name(),
                     d.get_bond_state()
                 ));
+                d.get_uuids_with_sdp();
                 if ui.button("Connect").clicked() {
                     let socket = d.get_rfcomm_socket(bluetooth::SPP_UUID, true);
                     if let Some(socket) = socket {
+                        self.bluetooth.cancel_discovery();
+                        log::warn!("About to connect");
+                        let mut times = 0;
+                        let a = loop {
+                            times += 1;
+                            let s = socket.connect();
+                            if s.is_ok() {
+                                break s.ok();
+                            }
+                            if times == 10 {
+                                break None;
+                            }
+                        };
                         if socket.connect().is_ok() {
                             ui.label("Connection is ok");
                         }
@@ -143,11 +158,7 @@ impl DemoApp {
         }
     }
 
-    fn new(
-        _cc: &eframe::CreationContext<'_>,
-        options: NativeOptions,
-        app: AndroidApp,
-    ) -> Self {
+    fn new(_cc: &eframe::CreationContext<'_>, options: NativeOptions, app: AndroidApp) -> Self {
         let java = Java::make(app);
         let java = Arc::new(Mutex::new(java));
         let mut s = Self {
@@ -178,7 +189,7 @@ fn android_main(app: AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(log::LevelFilter::Debug) // limit log level
-            .with_tag("uob_radio") // logs will show under mytag tag
+            .with_tag("uob_radio"), // logs will show under mytag tag
     );
     log::info!("UobRadio startup");
     let mut options = NativeOptions::default();
