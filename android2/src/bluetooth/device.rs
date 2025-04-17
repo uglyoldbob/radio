@@ -22,12 +22,26 @@ impl BluetoothDevice {
         }
     }
 
+    pub fn get_address(&mut self) -> Result<String, std::io::Error> {
+        let mut java = self.java.lock().unwrap();
+        java.use_env(|env, _context| {
+            let dev_name = env
+                .call_method(&self.internal, "getAddress", "()Ljava/lang/String;", &[])
+                .get_object(env)
+                .map_err(|e| jerr(env, e))?;
+            if dev_name.is_null() {
+                return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+            }
+            dev_name.get_string(env).map_err(|e| jerr(env, e))
+        })
+    }
+
     pub fn get_uuids(&mut self) -> Result<Vec<Uuid>, std::io::Error> {
         let p = self.get_parcel_uuids();
         match p {
             Ok(p) => {
                 use std::convert::TryInto;
-                p.into_iter().map(|a| a.try_into()).collect()
+                Ok(p.into_iter().map(|a| a.try_into().unwrap()).collect())
             }
             Err(e) => {
                 Err(e)
@@ -48,7 +62,6 @@ impl BluetoothDevice {
             let mut vec = Vec::with_capacity(len as usize);
             for i in 0..len {
                 let uuid = env.get_object_array_element(jarr, i).global_ref(env).map_err(|e| jerr(env, e))?;
-                log::error!("UUID {} is {:?}", i, uuid);
                 vec.push(ParcelUuid::new(uuid, java2.clone()));
             }
             Ok(vec)
@@ -71,13 +84,12 @@ impl BluetoothDevice {
 
     pub fn get_uuids_with_sdp(&self) {
         let mut java = self.java.lock().unwrap();
-        let result = java.use_env(|env, _context| {
+        let _result = java.use_env(|env, _context| {
             let dev_name = env
                 .call_method(&self.internal, "fetchUuidsWithSdp", "()Z", &[])
                 .get_boolean();
             dev_name.map_err(|e| jerr(env, e))
         });
-        log::error!("get uuids returned {:?}", result);
     }
 
     pub fn get_bond_state(&self) -> Result<i32, std::io::Error> {
@@ -97,7 +109,7 @@ impl BluetoothDevice {
         uuid: Uuid,
         is_secure: bool,
     ) -> Option<&mut BluetoothSocket> {
-        let uuid = uuid.to_str();
+        let uuid = uuid.as_str();
         log::warn!("Checking rfcomm for {}", uuid);
         let mut java = self.java.lock().unwrap();
         if !self.rfcomm_sockets.contains_key(uuid) {

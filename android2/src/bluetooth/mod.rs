@@ -105,7 +105,7 @@ impl Bluetooth {
                 Ok(())
             })
             .unwrap();
-            let r = register_receiver(&self.java, &arg1);
+            let r = register_receiver(&self.java, &arg1, "android.bluetooth.device.action.UUID");
             self.blue_uuid_receiver.replace(arg1);
             if let Some(r) = r {
                 log::error!("Receiver is {:?}", r);
@@ -229,6 +229,7 @@ impl Bluetooth {
 fn register_receiver(
     java: &Arc<Mutex<super::Java>>,
     arg1: &jni_min_helper::BroadcastReceiver,
+    intent_str: &str,
 ) -> Option<jni::objects::GlobalRef> {
     let mut java2 = java.lock().unwrap();
     let mut sig = String::new();
@@ -238,7 +239,7 @@ fn register_receiver(
     sig.push_str(")Landroid/content/Intent;");
     java2.use_env(|env, context| {
         let mut args = Vec::new();
-        let intent_str = "android.bluetooth.device.action.UUID"
+        let intent_str = intent_str
             .new_jobject(env)
             .unwrap();
         let arg2 = env.new_object(

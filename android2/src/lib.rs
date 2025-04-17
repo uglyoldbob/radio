@@ -3,13 +3,14 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 
-use std::convert::TryInto;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
 use eframe::{NativeOptions, Renderer};
 
 mod bluetooth;
+mod comms;
 
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
@@ -69,60 +70,93 @@ impl Java {
     }
 }
 
+#[derive(Debug)]
+struct BluetoothConfig {
+    connect_nap: bool,
+}
+
+impl BluetoothConfig {
+    fn new() -> Self {
+        Self {
+            connect_nap: false,
+        }
+    }
+}
+
 /// The main struct for holding data for the gui of the application
 pub struct DemoApp {
     local_storage: Option<std::path::PathBuf>,
     settings: Result<AppConfig, AppConfigError>,
     bluetooth: bluetooth::Bluetooth,
     _java: Arc<Mutex<Java>>,
+    known_uuids: BTreeMap<String, Vec<bluetooth::Uuid>>,
+    bluetooth_devs: BTreeMap<String, BluetoothConfig>,
+    radios: comms::UobRadios,
 }
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.bluetooth.enable();
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.label(format!("Config: {:?}", self.settings));
-            ui.label(format!(
-                "bluetooth enabled: {}",
-                self.bluetooth.is_enabled()
-            ));
-            for mut d in self.bluetooth.get_bonded_devices().unwrap() {
-                ui.label(format!(
-                    "bluetooth device: {:?} {:?}",
-                    d.get_name(),
-                    d.get_bond_state()
-                ));
-                d.get_uuids_with_sdp();
-                if ui.button("UUIDS").clicked() {
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                if ui.button("Find radios").clicked() {
+                    let rs = comms::UobRadio::detect_radios();
+                    if let Ok(radios) = rs {
+                        self.radios = radios;
+                    }
+                }
+                for (address, radio) in self.radios.iter_mut() {
+                    ui.label(format!("Radio at {:?}: {:?}", address, radio));
+                }
+                for mut d in self.bluetooth.get_bonded_devices().unwrap() {
+                    d.get_uuids_with_sdp();
                     let uuids = d.get_uuids();
                     if let Ok(uuids) = uuids {
-                        for uuid in uuids {
-                            log::error!("UUID: {:?}", uuid);
+                        if uuids.contains(&bluetooth::Uuid::NetworkingNap) {
+                            let address = d.get_address().unwrap();
+                            if !self.bluetooth_devs.contains_key(&address) {
+                                self.bluetooth_devs.insert(address.clone(), BluetoothConfig::new());
+                            }
+                            if let Some(config) = self.bluetooth_devs.get_mut(&address) {
+                                ui.label(format!("Config is {:?}", config));
+                                if ui.button("Connect").clicked() {
+                                    config.connect_nap = true;
+                                }
+                                if config.connect_nap {
+                                    self.bluetooth.cancel_discovery();
+                                    log::warn!("About to connect");
+                                    let socket = d.get_rfcomm_socket(bluetooth::Uuid::NetworkingNap, true);
+                                    if let Some(socket) = socket {
+                                        if socket.connect().is_ok() {
+                                            ui.label("Connection is ok");
+                                            config.connect_nap = false;
+                                        }
+                                        else {
+                                            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                                        }
+                                    }
+                                }
+                            }
+                            ui.label(format!(
+                                "bluetooth device: {:?} {:?}",
+                                d.get_name(),
+                                d.get_bond_state()
+                            ));
+                            if let Some(uuids) = self.known_uuids.get(&address) {
+                                for uuid in uuids {
+                                    ui.label(format!("UUID: {:?}", uuid));
+                                }
+                            }
+                            if ui.button("UUIDS").clicked() {
+                                let uuids = d.get_uuids();
+                                if let Ok(uuids) = uuids {
+                                    self.known_uuids.insert(address.clone(), uuids);
+                                }
+                            }
                         }
                     }
                 }
-                if ui.button("Connect").clicked() {
-                    let socket = d.get_rfcomm_socket(bluetooth::Uuid::SPP, true);
-                    if let Some(socket) = socket {
-                        self.bluetooth.cancel_discovery();
-                        log::warn!("About to connect");
-                        let mut times = 0;
-                        let _a = loop {
-                            times += 1;
-                            let s = socket.connect();
-                            if s.is_ok() {
-                                break s.ok();
-                            }
-                            if times == 10 {
-                                break None;
-                            }
-                        };
-                        if socket.connect().is_ok() {
-                            ui.label("Connection is ok");
-                        }
-                    }
-                }
-            }
+            });
         });
     }
 }
@@ -175,6 +209,9 @@ impl DemoApp {
             settings: Err(AppConfigError::NotLoaded),
             bluetooth: bluetooth::Bluetooth::new(java.clone()),
             _java: java,
+            known_uuids: BTreeMap::new(),
+            bluetooth_devs: BTreeMap::new(),
+            radios: comms::UobRadios::new(),
         };
         s.load_config();
         s

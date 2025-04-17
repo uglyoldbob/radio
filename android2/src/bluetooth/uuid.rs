@@ -1,16 +1,18 @@
 //! UUID stuff for android bluetooth
 
-use std::{convert::TryFrom, sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex};
 use super::super::Java;
 use jni_min_helper::*;
 use super::jerr;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Uuid {
     SPP,
     A2dpSource,
     A2dpSink,
     Base,
+    HspHs,
+    HspAg,
     HfpAg,
     HfpHs,
     ObexOpp,
@@ -20,10 +22,12 @@ pub enum Uuid {
     ObexPse,
     ObexSync,
     AvrcpRemote,
+    NetworkingNap,
+    Unknown(String),
 }
 
 impl Uuid {
-    pub fn to_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         match self {
             Uuid::SPP => "00001101-0000-1000-8000-00805F9B34FB",
             Uuid::A2dpSource => "0000110a-0000-1000-8000-00805f9b34fb",
@@ -38,36 +42,39 @@ impl Uuid {
             Uuid::ObexMas => "00001132-0000-1000-8000-00805f9b34fb",
             Uuid::ObexMns => "00001133-0000-1000-8000-00805f9b34fb",
             Uuid::Base => "00000000-0000-1000-8000-00805f9b34fb",
+            Uuid::NetworkingNap => "00001116-0000-1000-8000-00805f9b34fb",
+            Uuid::HspHs => "00001108-0000-1000-8000-00805f9b34fb",
+            Uuid::HspAg => "00001112-0000-1000-8000-00805f9b34fb",
+            Uuid::Unknown(s) => s,
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_str(s: &str) -> Self {
         match s {
-            "00001101-0000-1000-8000-00805F9B34FB" => Some(Uuid::SPP),
-            "0000110a-0000-1000-8000-00805f9b34fb" => Some(Uuid::A2dpSource),
-            "0000111e-0000-1000-8000-00805f9b34fb" => Some(Uuid::HfpHs),
-            "00001105-0000-1000-8000-00805f9b34fb" => Some(Uuid::ObexOpp),
-            "00001106-0000-1000-8000-00805f9b34fb" => Some(Uuid::ObexFtp),
-            "00001104-0000-1000-8000-00805f9b34fb" => Some(Uuid::ObexSync),
-            "0000110b-0000-1000-8000-00805f9b34fb" => Some(Uuid::A2dpSink),
-            "0000110e-0000-1000-8000-00805f9b34fb" => Some(Uuid::AvrcpRemote),
-            "0000112f-0000-1000-8000-00805f9b34fb" => Some(Uuid::ObexPse),
-            "0000111f-0000-1000-8000-00805f9b34fb" => Some(Uuid::HfpAg),
-            "00001132-0000-1000-8000-00805f9b34fb" => Some(Uuid::ObexMas),
-            "00001133-0000-1000-8000-00805f9b34fb" => Some(Uuid::ObexMns),
-            "00000000-0000-1000-8000-00805f9b34fb" => Some(Uuid::Base),
-            _ => None,
+            "00001101-0000-1000-8000-00805F9B34FB" => Uuid::SPP,
+            "0000110a-0000-1000-8000-00805f9b34fb" => Uuid::A2dpSource,
+            "0000111e-0000-1000-8000-00805f9b34fb" => Uuid::HfpHs,
+            "00001105-0000-1000-8000-00805f9b34fb" => Uuid::ObexOpp,
+            "00001106-0000-1000-8000-00805f9b34fb" => Uuid::ObexFtp,
+            "00001104-0000-1000-8000-00805f9b34fb" => Uuid::ObexSync,
+            "0000110b-0000-1000-8000-00805f9b34fb" => Uuid::A2dpSink,
+            "0000110e-0000-1000-8000-00805f9b34fb" => Uuid::AvrcpRemote,
+            "0000112f-0000-1000-8000-00805f9b34fb" => Uuid::ObexPse,
+            "0000111f-0000-1000-8000-00805f9b34fb" => Uuid::HfpAg,
+            "00001132-0000-1000-8000-00805f9b34fb" => Uuid::ObexMas,
+            "00001133-0000-1000-8000-00805f9b34fb" => Uuid::ObexMns,
+            "00000000-0000-1000-8000-00805f9b34fb" => Uuid::Base,
+            "00001116-0000-1000-8000-00805f9b34fb" => Uuid::NetworkingNap,
+            "00001108-0000-1000-8000-00805f9b34fb" => Uuid::HspHs,
+            "00001112-0000-1000-8000-00805f9b34fb" => Uuid::HspAg,
+            _ => Uuid::Unknown(s.to_string()),
         }
     }
 }
 
-impl TryFrom<ParcelUuid> for Uuid {
-    type Error = std::io::Error;
-    fn try_from(value: ParcelUuid) -> Result<Self, Self::Error> {
-        match value.to_string() {
-            Ok(v) => Uuid::from_str(&v).ok_or(std::io::Error::new(std::io::ErrorKind::NotFound, format!("Unknown uuid {}", v))),
-            Err(e) => Err(e),
-        }
+impl From<ParcelUuid> for Uuid {
+    fn from(value: ParcelUuid) -> Self {
+        Uuid::from_str(&value.to_string().unwrap())
     }
 }
 
