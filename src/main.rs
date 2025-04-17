@@ -2,6 +2,9 @@ mod bluetooth;
 mod settings;
 mod video;
 
+#[path = "../android2/src/comms.rs"]
+mod comms;
+
 use eframe::egui::{self, Vec2};
 
 #[enum_dispatch::enum_dispatch]
@@ -130,6 +133,9 @@ impl MyEguiApp {
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
         // for e.g. egui::PaintCallback.
+        std::thread::spawn(|| {
+            comms::UobRadio::listener();
+        });
         Self {
             subwindow: Subwindow::MainPage(MainPage {}),
             check: false,

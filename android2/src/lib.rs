@@ -102,7 +102,11 @@ impl eframe::App for DemoApp {
                 if ui.button("Find radios").clicked() {
                     let rs = comms::UobRadio::detect_radios();
                     if let Ok(radios) = rs {
+                        log::error!("Got some radios {}", radios.len());
                         self.radios = radios;
+                    }
+                    else {
+                        log::error!("Failed to get any radios at all {:?}", rs);
                     }
                 }
                 for (address, radio) in self.radios.iter_mut() {
