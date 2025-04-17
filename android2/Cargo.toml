@@ -28,6 +28,7 @@ pollster = "0.2"
 wgpu = "25.0.0"
 winit = { version = "0.30.7", features = [ "android-native-activity" ] }
 serde = {version = "1.0.219", features = ["derive"]}
+zune-jpeg = "0.4.13"
 
 [dependencies.jni]
 version = "0.21.1"

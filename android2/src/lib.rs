@@ -12,6 +12,100 @@ use eframe::{NativeOptions, Renderer};
 mod bluetooth;
 mod comms;
 
+/// Represents a color pixel with rgb and alpha components
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct RgbPixel {
+    colors: [u8; 4],
+}
+
+impl RgbPixel {
+    /// Build from r g and b, making it fully non-transparent
+    pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+        Self {
+            colors: [r, g, b, 255],
+        }
+    }
+    /// Build from a solid gray channel
+    pub const fn from_gray(g: u8) -> Self {
+        Self {
+            colors: [g, g, g, 255],
+        }
+    }
+}
+
+/// A generic pixel based image
+#[derive(Debug, Clone)]
+pub struct PixelImage<T> {
+    /// The actual pixels of the image
+    pixels: Vec<T>,
+    /// The width of the image in pixels.
+    pub width: u16,
+    /// The height of the image in pixels.
+    pub height: u16,
+}
+
+impl PixelImage<RgbPixel> {
+    /// Construct from raw image data of the specified dimensions
+    pub fn from_raw(width: u16, height: u16, data: &[u8]) -> Self {
+        let pixels: Vec<RgbPixel> = data.iter().map(|p| RgbPixel::from_gray(*p)).collect();
+        Self {
+            pixels,
+            width,
+            height,
+        }
+    }
+    /// Build from gray zune jpeg data
+    pub fn from_zune_jpeg_gray(data: Vec<u8>, ii: &zune_jpeg::ImageInfo) -> Self {
+        let w = ii.width;
+        let h = ii.height;
+        let pixels: Vec<RgbPixel> = data.iter().map(|p| RgbPixel::from_gray(*p)).collect();
+        Self {
+            pixels,
+            width: w,
+            height: h,
+        }
+    }
+    /// Build from color zune jpeg data
+    pub fn from_zune_jpeg(data: Vec<u8>, ii: &zune_jpeg::ImageInfo) -> Self {
+        let w = ii.width;
+        let h = ii.height;
+        let pixels: Vec<RgbPixel> = data
+            .chunks_exact(3)
+            .map(|p| RgbPixel::from_rgb(p[0], p[1], p[2]))
+            .collect();
+        Self {
+            pixels,
+            width: w,
+            height: h,
+        }
+    }
+    /// Build a new image of the specified dimensions
+    pub fn new(w: u16, h: u16) -> Self {
+        let cap = w as usize * h as usize;
+        let m = vec![RgbPixel { colors: [0; 4] }; cap];
+        Self {
+            pixels: m,
+            width: w,
+            height: h,
+        }
+    }
+}
+
+impl From<PixelImage<RgbPixel>> for egui::ColorImage {
+    fn from(value: PixelImage<RgbPixel>) -> Self {
+        let pixels = value
+            .pixels
+            .iter()
+            .map(|p| egui::Color32::from_rgb(p.colors[0], p.colors[1], p.colors[2]))
+            .collect();
+        Self {
+            size: [value.width as usize, value.height as usize],
+            pixels,
+        }
+    }
+}
+
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
@@ -94,6 +188,37 @@ pub struct DemoApp {
         std::sync::mpsc::Sender<comms::MessageToApp>,
         std::sync::mpsc::Receiver<comms::MessageToApp>,
     ),
+    texture: Option<egui::TextureHandle>,
+}
+
+impl DemoApp {
+    fn update_shown_image(
+        &mut self,
+        image: crate::PixelImage<crate::RgbPixel>,
+        ctx: &egui::Context,
+    ) {
+        if self.texture.is_none() {
+            self.texture = Some(ctx.load_texture(
+                "Camera Image1",
+                egui::ColorImage::from(image.clone()),
+                egui::TextureOptions::NEAREST,
+            ));
+        } else if let Some(t) = &mut self.texture {
+            if t.size()[0] != image.width as usize || t.size()[1] != image.height as usize {
+                self.texture = Some(ctx.load_texture(
+                    "Camera Image1",
+                    egui::ColorImage::from(image.clone()),
+                    egui::TextureOptions::NEAREST,
+                ));
+            } else {
+                t.set_partial(
+                    [0, 0],
+                    egui::ColorImage::from(image.clone()),
+                    egui::TextureOptions::NEAREST,
+                );
+            }
+        }
+    }
 }
 
 impl eframe::App for DemoApp {
@@ -106,6 +231,32 @@ impl eframe::App for DemoApp {
                 }
                 comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
                     log::error!("Recieved data for camera {} length {}", index, jpeg.len());
+                    let mut decoder = zune_jpeg::JpegDecoder::new(&jpeg);
+                    if let Ok(img) = decoder.decode() {
+                        let info = decoder.info().unwrap();
+                        if info.components == 3 && info.pixel_density == 8 {
+                            let picture =
+                                crate::PixelImage::<crate::RgbPixel>::from_zune_jpeg(img, &info);
+                            self.update_shown_image(picture, ctx);
+                            log::error!("Got a color jpeg");
+                        } else if info.components == 1 && info.pixel_density == 8 {
+                            let picture = crate::PixelImage::<crate::RgbPixel>::from_zune_jpeg_gray(
+                                img, &info,
+                            );
+                            self.update_shown_image(picture, ctx);
+                            log::error!("Got a gray jpeg");
+                        } else {
+                            log::error!(
+                                "Unexpected image properties {}x{} {} {}",
+                                info.width,
+                                info.height,
+                                info.components,
+                                info.pixel_density
+                            );
+                        }
+                    } else {
+                        log::error!("Invalid jpeg received");
+                    }
                 }
             }
         }
@@ -126,6 +277,17 @@ impl eframe::App for DemoApp {
                     if ui.button("Camera enable").clicked() {
                         radio.send_camera_request(true, 0);
                     }
+                }
+                if let Some(t) = &self.texture {
+                    let size = ui.available_size();
+                    let zoom = (size.x / t.size()[0] as f32).min(size.y / t.size()[1] as f32);
+                    let r = ui.add(egui::Image::from_texture(egui::load::SizedTexture {
+                        id: t.id(),
+                        size: egui::Vec2 {
+                            x: t.size()[0] as f32 * zoom,
+                            y: t.size()[1] as f32 * zoom,
+                        },
+                    }));
                 }
                 for mut d in self.bluetooth.get_bonded_devices().unwrap() {
                     d.get_uuids_with_sdp();
@@ -235,6 +397,7 @@ impl DemoApp {
             bluetooth_devs: BTreeMap::new(),
             radios: comms::UobRadios::new(),
             uob_radio_pipe: std::sync::mpsc::channel(),
+            texture: None,
         };
         s.load_config();
         s
