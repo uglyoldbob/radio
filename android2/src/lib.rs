@@ -111,6 +111,9 @@ impl eframe::App for DemoApp {
                 }
                 for (address, radio) in self.radios.iter_mut() {
                     ui.label(format!("Radio at {:?}: {:?}", address, radio));
+                    if ui.button("Camera enable").clicked() {
+                        radio.send_camera_request(true, 0);
+                    }
                 }
                 for mut d in self.bluetooth.get_bonded_devices().unwrap() {
                     d.get_uuids_with_sdp();
