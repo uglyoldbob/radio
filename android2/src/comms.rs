@@ -1,12 +1,35 @@
 //! Module for communicating with a uobradio
 
-use std::{collections::BTreeMap, net::{SocketAddr, UdpSocket}};
+use std::{collections::BTreeMap, net::{SocketAddr, UdpSocket}, thread::JoinHandle};
 
 pub type UobRadios = BTreeMap<SocketAddr, UobRadio>;
 
 #[derive(Debug)]
 pub struct UobRadio {
     address: SocketAddr,
+    /// Used to indicate that the app thread should stop
+    s: std::sync::mpsc::Sender<()>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl UobRadio {
+    fn new(address: SocketAddr) -> Self {
+        let (s, r) = std::sync::mpsc::channel();
+        Self {
+            address: address,
+            s,
+            thread: Some(std::thread::spawn(move || {
+                Self::app_listener(address, r);
+            })),
+        }
+    }
+}
+
+impl Drop for UobRadio {
+    fn drop(&mut self) {
+        let _ = self.s.send(());
+        let _ = self.thread.take().unwrap().join();
+    }
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -18,7 +41,7 @@ pub enum MessageFromApp {
 #[derive(serde::Serialize, serde::Deserialize)]
 pub enum MessageToApp {
     PingReply,
-    CameraData(u8),
+    CameraDataJpeg(u8, Vec<u8>),
 }
 
 impl UobRadio {
@@ -28,9 +51,11 @@ impl UobRadio {
         let mut response = vec![0; 1500];
         loop {
             while let Ok((n, addr)) = socket.recv_from(&mut response) {
+                let mut addr = addr.clone();
                 println!("Got request from {:?} {} {:x?}", addr, n, &response[0..n]);
+                addr.set_port(13456);
                 let packet = bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
-                if let Ok((packet, len)) = packet {
+                if let Ok((packet, _len)) = packet {
                     match packet {
                         MessageFromApp::Ping => {
                             println!("got ping packet");
@@ -39,6 +64,9 @@ impl UobRadio {
                         }
                         MessageFromApp::RequestCamera(enabled, index) => {
                             println!("got camera request {} {}", enabled, index);
+                            let response = bincode::serde::encode_to_vec(MessageToApp::CameraDataJpeg(0, Vec::new()), bincode::config::standard()).unwrap();
+                            let _ = socket.send_to(&response, addr);
+                            let _ = socket.send_to(&response, addr);
                         }
                     }
                 }
@@ -47,6 +75,32 @@ impl UobRadio {
                 }
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+
+    pub fn app_listener(address: SocketAddr, mut r: std::sync::mpsc::Receiver<()>) {
+        log::error!("Starting thread for receiving data from radio at {:?}", address);
+        let socket = UdpSocket::bind("0.0.0.0:13456");
+        log::error!("socket is {:?}", socket);
+        let socket = socket.unwrap();
+        let _ = socket.set_read_timeout(Some(std::time::Duration::new(1, 0)));
+        let mut response = vec![0; 1500];
+        log::error!("Starting loop for receiving data from radio at {:?}", address);
+        loop {
+            while let Ok((n, addr)) = socket.recv_from(&mut response) {
+                let packet : Result<(MessageToApp, usize), bincode::error::DecodeError> = bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
+                if let Ok((message, _n)) = packet {
+                    match message {
+                        MessageToApp::PingReply => {}
+                        MessageToApp::CameraDataJpeg(index, _jpeg) => {
+                            log::error!("Got jpeg for camera {} from {:?}", index, addr);
+                        }
+                    }
+                }
+            }
+            if r.try_recv().is_ok() {
+                break;
+            }
         }
     }
 
@@ -72,10 +126,10 @@ impl UobRadio {
         if r == packet.len() {
             log::error!("Sent {} bytes", r);
             let mut response = vec![0; 1500];
-            while let Ok((_n, addr)) = socket.recv_from(&mut response) {
-                let packet : Result<(MessageToApp, usize), bincode::error::DecodeError> = bincode::serde::decode_from_slice(&response, bincode::config::standard());
+            while let Ok((n, addr)) = socket.recv_from(&mut response) {
+                let packet : Result<(MessageToApp, usize), bincode::error::DecodeError> = bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
                 if let Ok((MessageToApp::PingReply, _n)) = packet {
-                    let r = UobRadio { address: addr, };
+                    let r = UobRadio::new(addr);
                     radios.insert(addr, r);
                 }
             }
