@@ -116,13 +116,24 @@ impl Bluetooth {
 
     pub fn enable(&mut self) {
         if !self.is_enabled() {
-            log::error!("Bluetooth not enabled. Not implemented yet");
-            //let mut java = self.java.lock().unwrap();
-            /*  java code sample
-               Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-               startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
-            */
-            todo!();
+            log::error!("Bluetooth not enabled. Requesting it to be enabled");
+            let mut java = self.java.lock().unwrap();
+            java.use_env(|env, context| {
+                let arg = "android.bluetooth.adapter.action.REQUEST_ENABLE".new_jobject(env)
+                    .map_err(|e| jerr(env, e)).unwrap();
+                let intent = env.new_object(
+                    "android/content/Intent",
+                    "(Ljava/lang/String;)V",
+                    &[(&arg).into()],
+                ).unwrap();
+                let mut args = Vec::new();
+                args.push(&intent);
+                let mut args2: Vec<jni::objects::JValueGen<&jni::objects::JObject>> =
+                    args.iter().map(|a| a.try_into().unwrap()).collect();
+                args2.push(1.into());
+                let a = env.call_method(context, "startActivityForResult", "(Landroid/content/Intent;I)V", args2.as_slice());
+                log::error!("Results of bluetooth enable is {:?}", a);
+            })
         }
     }
 

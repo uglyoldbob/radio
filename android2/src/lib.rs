@@ -97,7 +97,6 @@ impl eframe::App for DemoApp {
                     let uuids = d.get_uuids();
                     if let Ok(uuids) = uuids {
                         for uuid in uuids {
-                            let uuid: Result<bluetooth::Uuid, std::io::Error> = uuid.try_into();
                             log::error!("UUID: {:?}", uuid);
                         }
                     }

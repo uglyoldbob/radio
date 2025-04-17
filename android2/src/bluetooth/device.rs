@@ -22,7 +22,20 @@ impl BluetoothDevice {
         }
     }
 
-    pub fn get_uuids(&mut self) -> Result<Vec<ParcelUuid>, std::io::Error> {
+    pub fn get_uuids(&mut self) -> Result<Vec<Uuid>, std::io::Error> {
+        let p = self.get_parcel_uuids();
+        match p {
+            Ok(p) => {
+                use std::convert::TryInto;
+                p.into_iter().map(|a| a.try_into()).collect()
+            }
+            Err(e) => {
+                Err(e)
+            }
+        }
+    }
+
+    pub fn get_parcel_uuids(&mut self) -> Result<Vec<ParcelUuid>, std::io::Error> {
         let java2 = self.java.clone();
         let mut java = self.java.lock().unwrap();
         java.use_env(|env, _context| {
