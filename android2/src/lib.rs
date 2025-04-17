@@ -3,6 +3,7 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 
+use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
@@ -92,13 +93,22 @@ impl eframe::App for DemoApp {
                     d.get_bond_state()
                 ));
                 d.get_uuids_with_sdp();
+                if ui.button("UUIDS").clicked() {
+                    let uuids = d.get_uuids();
+                    if let Ok(uuids) = uuids {
+                        for uuid in uuids {
+                            let uuid: Result<bluetooth::Uuid, std::io::Error> = uuid.try_into();
+                            log::error!("UUID: {:?}", uuid);
+                        }
+                    }
+                }
                 if ui.button("Connect").clicked() {
-                    let socket = d.get_rfcomm_socket(bluetooth::SPP_UUID, true);
+                    let socket = d.get_rfcomm_socket(bluetooth::Uuid::SPP, true);
                     if let Some(socket) = socket {
                         self.bluetooth.cancel_discovery();
                         log::warn!("About to connect");
                         let mut times = 0;
-                        let a = loop {
+                        let _a = loop {
                             times += 1;
                             let s = socket.connect();
                             if s.is_ok() {
