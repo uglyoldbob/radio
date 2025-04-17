@@ -86,14 +86,11 @@ impl Bluetooth {
                 let a = Self::get_adapter(env, &context).unwrap();
                 log::error!("Adapter is {:?}", a);
                 let _ = self.adapter.set(a);
-            } else {
-                log::error!("BLUETOOTH ADAPTER ALREADY SET");
             }
         });
         drop(java);
         if self.receiver.is_none() {
             let arg1 = jni_min_helper::BroadcastReceiver::build(|env, _context, intent| {
-                log::error!("Broadcast receiver runs now {:?}", intent);
                 let action = env
                     .call_method(intent, "getAction", "()Ljava/lang/String;", &[])
                     .get_object(env)?;
@@ -101,7 +98,6 @@ impl Bluetooth {
                     return Err(jni::errors::Error::NullPtr("No action"));
                 }
                 let action = action.get_string(env).map_err(|e| jerr(env, e));
-                log::error!("Action is {:?}", action);
                 Ok(())
             })
             .unwrap();
@@ -119,19 +115,28 @@ impl Bluetooth {
             log::error!("Bluetooth not enabled. Requesting it to be enabled");
             let mut java = self.java.lock().unwrap();
             java.use_env(|env, context| {
-                let arg = "android.bluetooth.adapter.action.REQUEST_ENABLE".new_jobject(env)
-                    .map_err(|e| jerr(env, e)).unwrap();
-                let intent = env.new_object(
-                    "android/content/Intent",
-                    "(Ljava/lang/String;)V",
-                    &[(&arg).into()],
-                ).unwrap();
+                let arg = "android.bluetooth.adapter.action.REQUEST_ENABLE"
+                    .new_jobject(env)
+                    .map_err(|e| jerr(env, e))
+                    .unwrap();
+                let intent = env
+                    .new_object(
+                        "android/content/Intent",
+                        "(Ljava/lang/String;)V",
+                        &[(&arg).into()],
+                    )
+                    .unwrap();
                 let mut args = Vec::new();
                 args.push(&intent);
                 let mut args2: Vec<jni::objects::JValueGen<&jni::objects::JObject>> =
                     args.iter().map(|a| a.try_into().unwrap()).collect();
                 args2.push(1.into());
-                let a = env.call_method(context, "startActivityForResult", "(Landroid/content/Intent;I)V", args2.as_slice());
+                let a = env.call_method(
+                    context,
+                    "startActivityForResult",
+                    "(Landroid/content/Intent;I)V",
+                    args2.as_slice(),
+                );
                 log::error!("Results of bluetooth enable is {:?}", a);
             })
         }
@@ -171,8 +176,8 @@ impl Bluetooth {
                 let len = env.get_array_length(jarr).map_err(|e| jerr(env, e))?;
                 let mut vec = Vec::with_capacity(len as usize);
                 for i in 0..len {
-                    vec.push(BluetoothDevice::new(env
-                            .get_object_array_element(jarr, i)
+                    vec.push(BluetoothDevice::new(
+                        env.get_object_array_element(jarr, i)
                             .global_ref(env)
                             .map_err(|e| jerr(env, e))?,
                         self.java.clone(),
@@ -239,9 +244,7 @@ fn register_receiver(
     sig.push_str(")Landroid/content/Intent;");
     java2.use_env(|env, context| {
         let mut args = Vec::new();
-        let intent_str = intent_str
-            .new_jobject(env)
-            .unwrap();
+        let intent_str = intent_str.new_jobject(env).unwrap();
         let arg2 = env.new_object(
             "android/content/IntentFilter",
             "(Ljava/lang/String;)V",

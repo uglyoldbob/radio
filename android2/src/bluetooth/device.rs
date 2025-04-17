@@ -1,11 +1,11 @@
 //! Code for bluetooth devices
 
-use std::collections::BTreeMap;
-use super::BluetoothSocket;
-use std::sync::{Arc, Mutex};
 use super::super::Java;
-use super::{ParcelUuid, Uuid, jerr};
+use super::BluetoothSocket;
+use super::{jerr, ParcelUuid, Uuid};
 use jni_min_helper::*;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 pub struct BluetoothDevice {
     internal: jni::objects::GlobalRef,
@@ -14,7 +14,7 @@ pub struct BluetoothDevice {
 }
 
 impl BluetoothDevice {
-    pub fn new(internal: jni::objects::GlobalRef, java: Arc<Mutex<Java>>,) -> Self {
+    pub fn new(internal: jni::objects::GlobalRef, java: Arc<Mutex<Java>>) -> Self {
         Self {
             internal,
             rfcomm_sockets: BTreeMap::new(),
@@ -43,9 +43,7 @@ impl BluetoothDevice {
                 use std::convert::TryInto;
                 Ok(p.into_iter().map(|a| a.try_into().unwrap()).collect())
             }
-            Err(e) => {
-                Err(e)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -54,14 +52,22 @@ impl BluetoothDevice {
         let mut java = self.java.lock().unwrap();
         java.use_env(|env, _context| {
             let objs = env
-                .call_method(&self.internal, "getUuids", "()[Landroid/os/ParcelUuid;", &[])
+                .call_method(
+                    &self.internal,
+                    "getUuids",
+                    "()[Landroid/os/ParcelUuid;",
+                    &[],
+                )
                 .get_object(env)
                 .map_err(|e| jerr(env, e))?;
             let jarr: &jni::objects::JObjectArray = objs.as_ref().into();
             let len = env.get_array_length(jarr).map_err(|e| jerr(env, e))?;
             let mut vec = Vec::with_capacity(len as usize);
             for i in 0..len {
-                let uuid = env.get_object_array_element(jarr, i).global_ref(env).map_err(|e| jerr(env, e))?;
+                let uuid = env
+                    .get_object_array_element(jarr, i)
+                    .global_ref(env)
+                    .map_err(|e| jerr(env, e))?;
                 vec.push(ParcelUuid::new(uuid, java2.clone()));
             }
             Ok(vec)

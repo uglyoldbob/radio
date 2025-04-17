@@ -77,9 +77,7 @@ struct BluetoothConfig {
 
 impl BluetoothConfig {
     fn new() -> Self {
-        Self {
-            connect_nap: false,
-        }
+        Self { connect_nap: false }
     }
 }
 
@@ -92,20 +90,34 @@ pub struct DemoApp {
     known_uuids: BTreeMap<String, Vec<bluetooth::Uuid>>,
     bluetooth_devs: BTreeMap<String, BluetoothConfig>,
     radios: comms::UobRadios,
+    uob_radio_pipe: (
+        std::sync::mpsc::Sender<comms::MessageToApp>,
+        std::sync::mpsc::Receiver<comms::MessageToApp>,
+    ),
 }
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.bluetooth.enable();
+        while let Ok(m) = self.uob_radio_pipe.1.try_recv() {
+            match m {
+                comms::MessageToApp::PingReply => {
+                    log::error!("got ping packet in update method");
+                }
+                comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
+                    log::error!("Recieved data for camera {} length {}", index, jpeg.len());
+                }
+            }
+        }
+        ctx.request_repaint_after(std::time::Duration::from_millis(10));
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if ui.button("Find radios").clicked() {
-                    let rs = comms::UobRadio::detect_radios();
+                    let rs = comms::UobRadio::detect_radios(self.uob_radio_pipe.0.clone());
                     if let Ok(radios) = rs {
                         log::error!("Got some radios {}", radios.len());
                         self.radios = radios;
-                    }
-                    else {
+                    } else {
                         log::error!("Failed to get any radios at all {:?}", rs);
                     }
                 }
@@ -122,7 +134,8 @@ impl eframe::App for DemoApp {
                         if uuids.contains(&bluetooth::Uuid::NetworkingNap) {
                             let address = d.get_address().unwrap();
                             if !self.bluetooth_devs.contains_key(&address) {
-                                self.bluetooth_devs.insert(address.clone(), BluetoothConfig::new());
+                                self.bluetooth_devs
+                                    .insert(address.clone(), BluetoothConfig::new());
                             }
                             if let Some(config) = self.bluetooth_devs.get_mut(&address) {
                                 ui.label(format!("Config is {:?}", config));
@@ -132,14 +145,16 @@ impl eframe::App for DemoApp {
                                 if config.connect_nap {
                                     self.bluetooth.cancel_discovery();
                                     log::warn!("About to connect");
-                                    let socket = d.get_rfcomm_socket(bluetooth::Uuid::NetworkingNap, true);
+                                    let socket =
+                                        d.get_rfcomm_socket(bluetooth::Uuid::NetworkingNap, true);
                                     if let Some(socket) = socket {
                                         if socket.connect().is_ok() {
                                             ui.label("Connection is ok");
                                             config.connect_nap = false;
-                                        }
-                                        else {
-                                            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                                        } else {
+                                            ctx.request_repaint_after(
+                                                std::time::Duration::from_millis(100),
+                                            );
                                         }
                                     }
                                 }
@@ -219,6 +234,7 @@ impl DemoApp {
             known_uuids: BTreeMap::new(),
             bluetooth_devs: BTreeMap::new(),
             radios: comms::UobRadios::new(),
+            uob_radio_pipe: std::sync::mpsc::channel(),
         };
         s.load_config();
         s

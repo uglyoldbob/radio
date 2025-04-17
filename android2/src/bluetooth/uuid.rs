@@ -1,9 +1,9 @@
 //! UUID stuff for android bluetooth
 
-use std::sync::{Arc, Mutex};
 use super::super::Java;
-use jni_min_helper::*;
 use super::jerr;
+use jni_min_helper::*;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug, PartialEq)]
 pub enum Uuid {
@@ -95,7 +95,7 @@ impl std::fmt::Display for ParcelUuid {
 impl ParcelUuid {
     pub fn new(uuid: jni::objects::GlobalRef, java: Arc<Mutex<Java>>) -> Self {
         Self {
-            internal: uuid, 
+            internal: uuid,
             java,
         }
     }

@@ -1,9 +1,14 @@
 //! bluetooth socket code on android
 
-use std::{collections::VecDeque, sync::{Arc, Mutex}, thread::JoinHandle, time::{Duration, SystemTime}};
 use super::super::Java;
 use super::jerr;
 use jni_min_helper::*;
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+    thread::JoinHandle,
+    time::{Duration, SystemTime},
+};
 
 /// Manages the Bluetooth socket and IO streams. It uses a read buffer and a background thread,
 /// because the timeout of the Java `InputStream` from the `BluetoothSocket` cannot be set.
@@ -17,7 +22,7 @@ pub struct BluetoothSocket {
     input_stream: jni::objects::GlobalRef,
     buf_read: Arc<Mutex<VecDeque<u8>>>,
     thread_read: Option<JoinHandle<Result<(), std::io::Error>>>, // the returned value is unused
-    read_callback: Arc<Mutex<Option<super::ReadCallback>>>,             // None by default
+    read_callback: Arc<Mutex<Option<super::ReadCallback>>>,      // None by default
     read_timeout: Duration,                                      // set for the standard Read trait
 
     output_stream: jni::objects::GlobalRef,
