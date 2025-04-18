@@ -120,6 +120,8 @@ async fn async_main(
     tx: tokio::sync::mpsc::Sender<MessageFromAsync>,
     mut rx: tokio::sync::mpsc::Receiver<MessageToAsync>,
 ) {
+    tokio::task::spawn(async { comms::UobRadio::udp_listener().await });
+    tokio::task::spawn(async { comms::UobRadio::tcp_listener().await });
     bluetooth::bluetooth(tx, &mut rx).await;
 }
 
@@ -133,9 +135,6 @@ impl MyEguiApp {
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
         // for e.g. egui::PaintCallback.
-        std::thread::spawn(|| {
-            comms::UobRadio::listener();
-        });
         Self {
             subwindow: Subwindow::MainPage(MainPage {}),
             check: false,

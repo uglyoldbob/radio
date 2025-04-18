@@ -224,9 +224,16 @@ impl DemoApp {
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.bluetooth.enable();
+        for (address, radio) in self.radios.iter_mut() {
+            if radio.process_received(&mut self.uob_radio_pipe.0).is_err() {
+                log::error!("Reconnecting to radio due to error");
+                radio.disconnect();
+                radio.connect();
+            }
+        }
         while let Ok(m) = self.uob_radio_pipe.1.try_recv() {
             match m {
-                comms::MessageToApp::PingReply => {
+                comms::MessageToApp::PingReply(_port) => {
                     log::error!("got ping packet in update method");
                 }
                 comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
