@@ -149,9 +149,9 @@ impl ControlElement {
         ui.label(self.name.clone());
         match &mut self.data {
             ControlData::Integer {
-                val,
+                val: _,
                 min,
-                default,
+                default: _,
                 max,
             } => {
                 let a = self
@@ -162,10 +162,10 @@ impl ControlElement {
                         v4l::control::Value::Integer(a) => Some(a),
                         v4l::control::Value::Boolean(_) => None,
                         v4l::control::Value::String(_) => None,
-                        v4l::control::Value::CompoundU8(vec) => None,
-                        v4l::control::Value::CompoundU16(vec) => None,
-                        v4l::control::Value::CompoundU32(vec) => None,
-                        v4l::control::Value::CompoundPtr(vec) => None,
+                        v4l::control::Value::CompoundU8(_vec) => None,
+                        v4l::control::Value::CompoundU16(_vec) => None,
+                        v4l::control::Value::CompoundU32(_vec) => None,
+                        v4l::control::Value::CompoundPtr(_vec) => None,
                     })
                     .flatten();
                 let mut r = false;
@@ -468,6 +468,19 @@ impl VideoFrame {
         }
     }
 
+    pub fn get_jpeg(&self) -> Vec<u8> {
+        if let Some(pixels) = & self.pixel_data {
+            let rgb = pixels.get_rgb();
+            let mut thing = Vec::new();
+            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut thing, 75);
+            let a = encoder.encode(&rgb, self.width as u32, self.height as u32, image::ExtendedColorType::Rgb8);
+            thing
+        }
+        else {
+            Vec::new()
+        }
+    }
+
     fn mirroring(&mut self) {
         if let Some(pd) = &mut self.pixel_data {
             pd.mirroring(self.width, self.hmirror, self.vmirror);
@@ -566,7 +579,8 @@ impl SubwindowTrait for Video {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.label("This is the video page");
                 let mut size = ui.available_size();
-                let vsrc = &mut common.video_sources[self.which_video];
+                let mut video_sources = common.video_sources.lock().unwrap();
+                let vsrc = &mut video_sources[self.which_video];
                 if let Ok(i) = vsrc.image.lock() {
                     if let Some(pd) = &i.pixel_data {
                         let zoom = (size.x / (i.width as f32)).min(size.y / (i.height as f32));

@@ -5,6 +5,8 @@ mod video;
 #[path = "../android2/src/comms.rs"]
 mod comms;
 
+use std::{collections::BTreeMap, sync::{Arc, Mutex}};
+
 use eframe::egui::{self, Vec2};
 
 #[enum_dispatch::enum_dispatch]
@@ -22,6 +24,8 @@ enum MessageFromAsync {
     OldBluetoothDevice(bluer::Address),
     BluetoothDeviceProperty(bluer::Address, bluer::DeviceProperty),
     BluetoothPresent(bool),
+    MessageFromAppReceiver(tokio::sync::mpsc::Receiver<comms::MessageFromAppWithAddr>),
+    MessageAboutAppUser(tokio::sync::mpsc::Receiver<comms::MessageAboutAppUser>),
 }
 
 enum MessageToAsync {
@@ -87,9 +91,12 @@ fn main() {
 
 struct CommonWindowProperties {
     bluetooth: bluetooth::BluetoothData,
-    video_sources: Vec<video::VideoSource>,
+    video_sources: Arc<Mutex<Vec<video::VideoSource>>>,
     rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
     tx: tokio::sync::mpsc::Sender<MessageToAsync>,
+    app_rx: Option<tokio::sync::mpsc::Receiver<comms::MessageFromAppWithAddr>>,
+    app_tx: BTreeMap<std::net::SocketAddr, tokio::sync::mpsc::Sender<comms::MessageToApp>>,
+    user_rx: Option<tokio::sync::mpsc::Receiver<comms::MessageAboutAppUser>>,
 }
 
 impl CommonWindowProperties {
@@ -103,9 +110,12 @@ impl CommonWindowProperties {
         }
         Self {
             bluetooth: bluetooth::BluetoothData::new(),
-            video_sources: vs,
+            video_sources: Arc::new(Mutex::new(vs)),
             rx,
             tx,
+            app_rx: None,
+            app_tx: BTreeMap::new(),
+            user_rx: None,
         }
     }
 }
@@ -120,8 +130,12 @@ async fn async_main(
     tx: tokio::sync::mpsc::Sender<MessageFromAsync>,
     mut rx: tokio::sync::mpsc::Receiver<MessageToAsync>,
 ) {
-    tokio::task::spawn(async { comms::UobRadio::udp_listener().await });
-    tokio::task::spawn(async { comms::UobRadio::tcp_listener().await });
+    let chan = tokio::sync::mpsc::channel(32);
+    let chan2 = tokio::sync::mpsc::channel(32);
+    tx.send(MessageFromAsync::MessageFromAppReceiver(chan.1)).await.unwrap();
+    tx.send(MessageFromAsync::MessageAboutAppUser(chan2.1)).await.unwrap();
+    tokio::task::spawn(async { comms::udp_listener().await });
+    tokio::task::spawn(async { comms::tcp_listener(chan.0, chan2.0).await });
     bluetooth::bluetooth(tx, &mut rx).await;
 }
 
@@ -154,6 +168,12 @@ impl eframe::App for MyEguiApp {
         egui_extras::install_image_loaders(ctx);
         while let Ok(m) = self.common.rx.try_recv() {
             match m {
+                MessageFromAsync::MessageAboutAppUser(m) => {
+                    self.common.user_rx.replace(m);
+                }
+                MessageFromAsync::MessageFromAppReceiver(recv) => {
+                    self.common.app_rx.replace(recv);
+                }
                 MessageFromAsync::NewBluetoothDevice(addr) => {
                     self.common
                         .bluetooth
@@ -161,7 +181,7 @@ impl eframe::App for MyEguiApp {
                         .insert(addr, bluetooth::BluetoothDeviceInfo::new());
                 }
                 MessageFromAsync::OldBluetoothDevice(addr) => {
-                    //self.common.bluetooth_devices.remove_entry(&addr);
+                    self.common.bluetooth.devices.remove_entry(&addr);
                 }
                 MessageFromAsync::BluetoothDeviceProperty(addr, prop) => {
                     println!("Received bluetooth device property: {:?}: {:?}", addr, prop);
@@ -174,12 +194,37 @@ impl eframe::App for MyEguiApp {
                 }
             }
         }
+        let mut video_sources = self.common.video_sources.lock().unwrap();
+        if let Some(rx) = &mut self.common.app_rx {
+            while let Ok(m) = rx.try_recv() {
+                match m.message {
+                    comms::MessageFromApp::Ping => {
+                        println!("Got ping from app");
+                    },
+                    comms::MessageFromApp::RequestCamera(index) => {
+                        println!("Request for camera {}", index);
+                        if let Some(send) = self.common.app_tx.get(&m.addr) {
+                            if let Some(v) = video_sources.get(index as usize) {
+                                let frame = v.image.lock().unwrap();
+                                let jpeg = frame.get_jpeg();
+                                let _ = send.blocking_send(comms::MessageToApp::CameraDataJpeg(index, jpeg));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(rx) = &mut self.common.user_rx {
+            if let Ok(m) = rx.try_recv() {
+                self.common.app_tx.insert(m.addr, m.send);
+            }
+        }
         egui::TopBottomPanel::bottom("Bottom Icons")
             .min_height(74.0)
             .max_height(74.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if !self.common.video_sources.is_empty() {
+                    if !video_sources.is_empty() {
                         if ui
                             .button(
                                 eframe::egui::RichText::new("V")
@@ -231,6 +276,7 @@ impl eframe::App for MyEguiApp {
                     }
                 })
             });
+        drop(video_sources);
         if let Some(sub) = self.subwindow.update(ctx, frame, &mut self.common) {
             self.subwindow = sub;
         }

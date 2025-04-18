@@ -2,6 +2,8 @@ mod bluetooth;
 mod settings;
 mod video;
 
+use std::sync::{Arc, Mutex};
+
 use eframe::egui::{self, Vec2};
 
 #[enum_dispatch::enum_dispatch]
@@ -71,7 +73,7 @@ async fn main() -> Result<(), u32> {
 
 struct CommonWindowProperties {
     bluetooth: bluetooth::BluetoothData,
-    video_sources: Vec<video::VideoSource>,
+    video_sources: Arc<Mutex<Vec<video::VideoSource>>>,
     rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
     tx: tokio::sync::mpsc::Sender<MessageToAsync>,
 }
@@ -87,7 +89,7 @@ impl CommonWindowProperties {
         }
         Self {
             bluetooth: bluetooth::BluetoothData::new(),
-            video_sources: vs,
+            video_sources: Arc::new(Mutex::new(vs)),
             rx,
             tx,
         }
@@ -161,7 +163,8 @@ impl eframe::App for MyEguiApp {
             .max_height(74.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if !self.common.video_sources.is_empty() {
+                    let video_sources = self.common.video_sources.lock().unwrap();
+                    if !video_sources.is_empty() {
                         if ui
                             .button(
                                 eframe::egui::RichText::new("V")

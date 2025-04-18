@@ -330,7 +330,7 @@ impl SubwindowTrait for BluetoothConfig {
     fn update(
         &mut self,
         ctx: &egui::Context,
-        frame: &mut eframe::Frame,
+        _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
         egui::CentralPanel::default().show(ctx, |ui| {

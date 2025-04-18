@@ -21,7 +21,7 @@ impl SubwindowTrait for Settings {
     fn update(
         &mut self,
         ctx: &egui::Context,
-        frame: &mut eframe::Frame,
+        _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -29,13 +29,14 @@ impl SubwindowTrait for Settings {
             size.x *= 0.95;
             size.y *= 0.95;
             ui.label("Settings");
-            if !common.video_sources.is_empty() {
+            let mut video_sources = common.video_sources.lock().unwrap();
+            if !video_sources.is_empty() {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         egui::ComboBox::from_label("Select a camera")
                             .selected_text(format!("Camera {}", self.selected_video))
                             .show_ui(ui, |ui| {
-                                for i in 0..common.video_sources.len() {
+                                for i in 0..video_sources.len() {
                                     if ui
                                         .selectable_label(false, format!("Camera {}", i))
                                         .clicked()
@@ -44,7 +45,7 @@ impl SubwindowTrait for Settings {
                                     }
                                 }
                             });
-                        let vsrc = &mut common.video_sources[self.selected_video];
+                        let vsrc = &mut video_sources[self.selected_video];
                         for c in &mut vsrc.controls {
                             if c.egui_show(ui) {
                                 c.send_update(&mut vsrc.vsend);
@@ -55,7 +56,7 @@ impl SubwindowTrait for Settings {
                             ui.checkbox(&mut i.vmirror, "V Mirror");
                         }
                     });
-                    let vsrc = &mut common.video_sources[self.selected_video];
+                    let vsrc = &mut video_sources[self.selected_video];
                     if let Ok(i) = vsrc.image.lock() {
                         if let Some(pd) = &i.pixel_data {
                             let zoom = (size.x / (i.width as f32)).min(size.y / (i.height as f32));

@@ -280,10 +280,8 @@ impl eframe::App for DemoApp {
                     }
                 }
                 for (address, radio) in self.radios.iter_mut() {
+                    radio.send_camera_request(true, 0);
                     ui.label(format!("Radio at {:?}: {:?}", address, radio));
-                    if ui.button("Camera enable").clicked() {
-                        radio.send_camera_request(true, 0);
-                    }
                 }
                 if let Some(t) = &self.texture {
                     let size = ui.available_size();
