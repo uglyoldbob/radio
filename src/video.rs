@@ -579,8 +579,7 @@ impl SubwindowTrait for Video {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.label("This is the video page");
                 let mut size = ui.available_size();
-                let mut video_sources = common.video_sources.lock().unwrap();
-                let vsrc = &mut video_sources[self.which_video];
+                let vsrc = &mut common.video_sources[self.which_video];
                 if let Ok(i) = vsrc.image.lock() {
                     if let Some(pd) = &i.pixel_data {
                         let zoom = (size.x / (i.width as f32)).min(size.y / (i.height as f32));

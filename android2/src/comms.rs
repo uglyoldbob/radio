@@ -21,6 +21,7 @@ pub struct UobRadio {
     address: std::net::SocketAddr,
     comms: Option<std::net::TcpStream>,
     status: RadioReceiveStatus,
+    waiting_until: Option<std::time::Instant>,
 }
 
 #[cfg(target_os = "android")]
@@ -30,6 +31,7 @@ impl UobRadio {
             address,
             comms: None,
             status: RadioReceiveStatus::Disconnected,
+            waiting_until: None,
         }
     }
 }
@@ -46,9 +48,28 @@ impl Drop for UobRadio {
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum Gpio {
+    /// Control the winch output, forwards, reverse. Both together is invalid.
+    WinchControl(bool, bool),
+    /// Enable or disable the leds for the given camera
+    CameraLedControl(u8, bool),
+    /// Lock all doors
+    LockDoors,
+    /// Unlock doors
+    UnlockDoors,
+    /// Control a door window up or down
+    WindowControl {
+        id: u8,
+        up: bool,
+        down: bool,
+    },
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum MessageFromApp {
     Ping,
     RequestCamera(u8),
+    GpioControl(Gpio),
 }
 
 pub struct MessageFromAppWithAddr {
@@ -71,7 +92,11 @@ pub async fn tcp_listener(send: tokio::sync::mpsc::Sender<MessageFromAppWithAddr
                 let send3 = send.clone();
                 let send4 = send2.clone();
                 let _ =
-                    tokio::task::spawn(async move { process_app(stream, addr, send3, send4).await })
+                    tokio::task::spawn(async move { 
+                        let r = process_app(stream, addr, send3, send4).await;
+                        println!("Completed handling user {:?}", r);
+                        r
+                    })
                         .await
                         .unwrap();
             }
@@ -93,27 +118,30 @@ pub async fn process_app(
     println!("Processing an app at {:?}", addr);
     let mut chan = tokio::sync::mpsc::channel(32);
     send2.send(MessageAboutAppUser { addr: addr, send: chan.0 }).await.unwrap();
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     loop {
         let length = stream.read_u32().await.map_err(|_| ())?;
-        println!("Got length of {}", length);
         let mut packet = vec![0; length as usize];
         stream.read_exact(&mut packet).await.map_err(|_| ())?;
-        println!("got packet");
         let packet: Result<(MessageFromApp, usize), bincode::error::DecodeError> =
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
-        println!("Packet is {:?}", packet);
         if let Ok((packet, _length)) = packet {
             let packet2 = MessageFromAppWithAddr { addr: stream.peer_addr().unwrap(), message: packet.clone() };
             let _ = send.send(packet2).await;
             match packet {
                 MessageFromApp::RequestCamera(_index) => {
-                    println!("Waiting for response from radio to send back to user");
-                    if let Some(response) = chan.1.recv().await {
-                        println!("Received response from radio to send back to user");
+                    println!("Processing request for camera image");
+                    let rval = tokio::time::timeout(std::time::Duration::from_secs(1), chan.1.recv()).await;
+                    if let Ok(Some(response)) = rval {
+                        println!("Got message to app");
                         let packet = bincode::serde::encode_to_vec(response, bincode::config::standard()).unwrap();
-                        println!("Sending response with length {}", packet.len());
                         let _ = stream.write_all(&((packet.len() as u32).to_be_bytes()[0..4])).await;
                         let _ = stream.write_all(&packet).await;
+                        println!("Done sending message to app");
+                    }
+                    else {
+                        println!("Timeout waiting for radio to respond with image");
+                        return Err(());
                     }
                 }
                 _ => {}
@@ -129,7 +157,7 @@ pub async fn udp_listener() {
     let mut response = vec![0; 1500];
     loop {
         while let Ok((n, addr)) = socket.recv_from(&mut response).await {
-            let mut addr = addr.clone();
+            let addr = addr.clone();
             println!("Got request from {:?} {} {:x?}", addr, n, &response[0..n]);
             let packet =
                 bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
@@ -144,17 +172,7 @@ pub async fn udp_listener() {
                         .unwrap();
                         let _ = socket.send_to(&response, addr).await;
                     }
-                    MessageFromApp::RequestCamera(index) => {
-                        println!("got camera request {}", index);
-                        addr.set_port(13457);
-                        let response = bincode::serde::encode_to_vec(
-                            MessageToApp::CameraDataJpeg(0, Vec::new()),
-                            bincode::config::standard(),
-                        )
-                        .unwrap();
-                        let _ = socket.send_to(&response, addr).await;
-                        let _ = socket.send_to(&response, addr).await;
-                    }
+                    _ => {}
                 }
             } else {
                 println!("invalid packet received {:x?}", response);
@@ -175,6 +193,7 @@ impl UobRadio {
         if let Some(stream) = &mut self.comms {
             use std::io::Read;
             if let RadioReceiveStatus::WaitForLength = self.status {
+                log::error!("Waiting for length of packet");
                 let mut length: [u8; 4] = [0; 4];
                 match stream.read_exact(&mut length) {
                     Ok(a) => {
@@ -191,6 +210,7 @@ impl UobRadio {
                 }
             }
             if let RadioReceiveStatus::WaitForPacket(length) = self.status {
+                log::error!("Waiting for packet");
                 let mut packet = vec![0; length as usize];
                 match stream.read_exact(&mut packet) {
                     Ok(a) => {
@@ -199,6 +219,10 @@ impl UobRadio {
                             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
                         println!("Packet is {:?}", packet);
                         if let Ok((packet, _length)) = packet {
+                            match &packet {
+                                MessageToApp::CameraDataJpeg(_, _) => self.finish_camera_request(),
+                                _ => {}
+                            }
                             send.send(packet).map_err(|_| ())?;
                         }
                         self.status = RadioReceiveStatus::WaitForLength;
@@ -223,6 +247,8 @@ impl UobRadio {
                 tcp.set_nonblocking(true);
                 self.comms.replace(tcp);
                 self.status = RadioReceiveStatus::WaitForLength;
+                self.waiting_until = None;
+                std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
     }
@@ -231,15 +257,16 @@ impl UobRadio {
     pub fn disconnect(&mut self) {
         self.comms.take();
         self.status = RadioReceiveStatus::Disconnected;
+        self.waiting_until = None;
     }
 
     #[cfg(target_os = "android")]
-    pub fn send_camera_request(&mut self, enabled: bool, index: u8) {
+    pub fn send_gpio(&mut self, gpio: Gpio) {
         self.connect();
         if let Some(comms) = &mut self.comms {
-            log::error!("Sending camera request {} {}", enabled, index);
+            log::error!("Sending gpio request {:?}", gpio);
             let packet = bincode::serde::encode_to_vec(
-                MessageFromApp::RequestCamera(index),
+                MessageFromApp::GpioControl(gpio),
                 bincode::config::standard(),
             )
             .unwrap();
@@ -250,6 +277,36 @@ impl UobRadio {
             let _ = comms.write_all(&(len[0..4]));
             let _ = comms.write_all(&packet);
         }
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn send_camera_request(&mut self, enabled: bool, index: u8) {
+        self.connect();
+        if let Some(inst) = &self.waiting_until {
+            if *inst < std::time::Instant::now() {
+                self.waiting_until = None;
+            }
+        }
+        else {
+            if let Some(comms) = &mut self.comms {
+                let packet = bincode::serde::encode_to_vec(
+                    MessageFromApp::RequestCamera(index),
+                    bincode::config::standard(),
+                )
+                .unwrap();
+                let len = packet.len() as u32;
+                let len = len.to_be_bytes();
+                let _ = comms.write_all(&(len[0..4]));
+                let _ = comms.write_all(&packet);
+                self.waiting_until = Some(std::time::Instant::now() + std::time::Duration::from_secs(1));
+            }
+        }
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn finish_camera_request(&mut self) {
+        log::error!("Finishing camera request");
+        self.waiting_until = None;
     }
 
     #[cfg(target_os = "android")]

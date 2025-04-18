@@ -73,7 +73,7 @@ async fn main() -> Result<(), u32> {
 
 struct CommonWindowProperties {
     bluetooth: bluetooth::BluetoothData,
-    video_sources: Arc<Mutex<Vec<video::VideoSource>>>,
+    video_sources: Vec<video::VideoSource>,
     rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
     tx: tokio::sync::mpsc::Sender<MessageToAsync>,
 }

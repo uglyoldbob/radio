@@ -280,8 +280,25 @@ impl eframe::App for DemoApp {
                     }
                 }
                 for (address, radio) in self.radios.iter_mut() {
+                    radio.connect();
                     radio.send_camera_request(true, 0);
                     ui.label(format!("Radio at {:?}: {:?}", address, radio));
+                    ui.horizontal(|ui| {
+                        let winch_response = ui.add(egui::Button::new("Winch forwards").sense(egui::Sense::drag()));
+                        if winch_response.drag_started() {
+                            radio.send_gpio(comms::Gpio::WinchControl(true, false));
+                        }
+                        else if winch_response.drag_released() {
+                            radio.send_gpio(comms::Gpio::WinchControl(false, false));
+                        }
+                        let winch_response = ui.add(egui::Button::new("Winch backwards").sense(egui::Sense::drag()));
+                        if winch_response.drag_started() {
+                            radio.send_gpio(comms::Gpio::WinchControl(false, true));
+                        }
+                        else if winch_response.drag_released() {
+                            radio.send_gpio(comms::Gpio::WinchControl(false, false));
+                        }
+                    });
                 }
                 if let Some(t) = &self.texture {
                     let size = ui.available_size();

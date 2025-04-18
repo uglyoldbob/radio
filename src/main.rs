@@ -91,7 +91,7 @@ fn main() {
 
 struct CommonWindowProperties {
     bluetooth: bluetooth::BluetoothData,
-    video_sources: Arc<Mutex<Vec<video::VideoSource>>>,
+    video_sources: Vec<video::VideoSource>,
     rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
     tx: tokio::sync::mpsc::Sender<MessageToAsync>,
     app_rx: Option<tokio::sync::mpsc::Receiver<comms::MessageFromAppWithAddr>>,
@@ -110,7 +110,7 @@ impl CommonWindowProperties {
         }
         Self {
             bluetooth: bluetooth::BluetoothData::new(),
-            video_sources: Arc::new(Mutex::new(vs)),
+            video_sources: vs,
             rx,
             tx,
             app_rx: None,
@@ -194,17 +194,40 @@ impl eframe::App for MyEguiApp {
                 }
             }
         }
-        let mut video_sources = self.common.video_sources.lock().unwrap();
+        if let Some(rx) = &mut self.common.user_rx {
+            if let Ok(m) = rx.try_recv() {
+                println!("Received message about app user {}", m.addr);
+                self.common.app_tx.insert(m.addr, m.send);
+            }
+        }
         if let Some(rx) = &mut self.common.app_rx {
             while let Ok(m) = rx.try_recv() {
                 match m.message {
+                    comms::MessageFromApp::GpioControl(g) => {
+                        match g {
+                            comms::Gpio::WinchControl(forwards, backwards) => {
+                                println!("Winch control {} {}", forwards, backwards);
+                            }
+                            comms::Gpio::CameraLedControl(cam, s) => {
+                                println!("Camera {} set led to {}", cam, s);
+                            }
+                            comms::Gpio::LockDoors => {
+                                println!("Request to lock all the doors");
+                            }
+                            comms::Gpio::UnlockDoors => {
+                                println!("Request to unlock all the doors");
+                            }
+                            comms::Gpio::WindowControl { id, up, down } => {
+                                println!("Request to control window {} with {} {}", id, up, down);
+                            }
+                        }
+                    }
                     comms::MessageFromApp::Ping => {
                         println!("Got ping from app");
                     },
                     comms::MessageFromApp::RequestCamera(index) => {
-                        println!("Request for camera {}", index);
                         if let Some(send) = self.common.app_tx.get(&m.addr) {
-                            if let Some(v) = video_sources.get(index as usize) {
+                            if let Some(v) = self.common.video_sources.get(index as usize) {
                                 let frame = v.image.lock().unwrap();
                                 let jpeg = frame.get_jpeg();
                                 let _ = send.blocking_send(comms::MessageToApp::CameraDataJpeg(index, jpeg));
@@ -214,17 +237,12 @@ impl eframe::App for MyEguiApp {
                 }
             }
         }
-        if let Some(rx) = &mut self.common.user_rx {
-            if let Ok(m) = rx.try_recv() {
-                self.common.app_tx.insert(m.addr, m.send);
-            }
-        }
         egui::TopBottomPanel::bottom("Bottom Icons")
             .min_height(74.0)
             .max_height(74.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if !video_sources.is_empty() {
+                    if !self.common.video_sources.is_empty() {
                         if ui
                             .button(
                                 eframe::egui::RichText::new("V")
@@ -276,7 +294,6 @@ impl eframe::App for MyEguiApp {
                     }
                 })
             });
-        drop(video_sources);
         if let Some(sub) = self.subwindow.update(ctx, frame, &mut self.common) {
             self.subwindow = sub;
         }
