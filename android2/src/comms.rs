@@ -11,8 +11,8 @@ pub type UobRadios = BTreeMap<std::net::SocketAddr, UobRadio>;
 pub enum RadioReceiveStatus {
     Disconnected,
     Idle,
-    WaitForLength,
-    WaitForPacket(u32),
+    WaitForLength([u8;4], u8),
+    WaitForPacket(Vec<u8>, u32, u32),
     GotPacket(Vec<u8>),
 }
 
@@ -80,35 +80,27 @@ pub enum MessageToApp {
     CameraDataJpeg(u8, Vec<u8>),
 }
 
-#[cfg(not(target_os = "android"))]
-pub async fn udp_listener() -> Result<(), String> {
-    let socket = tokio::net::UdpSocket::bind("0.0.0.0:13456").await.unwrap();
-    println!("Starting radio listener");
-    let mut response = vec![0; 1500];
-    loop {
-        while let Ok((n, addr)) = socket.recv_from(&mut response).await {
-            let addr = addr.clone();
-            println!("Got request from {:?} {} {:x?}", addr, n, &response[0..n]);
-            let packet =
-                bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
-            if let Ok((packet, _len)) = packet {
-                match packet {
-                    MessageFromApp::Ping(val) => {
-                        println!("got ping packet {}", val);
-                        let response = bincode::serde::encode_to_vec(
-                            MessageToApp::PingReply(13457),
-                            bincode::config::standard(),
-                        )
-                        .unwrap();
-                        let _ = socket.send_to(&response, addr).await;
-                    }
-                    _ => {}
-                }
-            } else {
-                println!("invalid packet received {:x?}", response);
-            }
+impl MessageToApp {
+    #[cfg(not(target_os = "android"))]
+    pub async fn send_to_stream(&self, stream: &mut tokio::net::TcpStream) -> Result<(),()> {
+        use tokio::io::AsyncWriteExt;
+        let packet =
+            bincode::serde::encode_to_vec(self, bincode::config::standard())
+                .unwrap();
+        let length = packet.len();
+        if length > 16 {
+            println!("DATA {:x?}...", &packet[0..16]);
         }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        else {
+            println!("DATA {:x?}", &packet[0..length as usize]);
+        }
+        println!("Sending packet length {} to app user", packet.len());
+        stream
+            .write_all(&((packet.len() as u32).to_be_bytes()[0..4]))
+            .await.map_err(|_|())?;
+        println!("Sending packet data length {} to app user", packet.len());
+        stream.write_all(&packet).await.map_err(|_|())?;
+        Ok(())
     }
 }
 
@@ -119,45 +111,70 @@ impl UobRadio {
         &mut self,
         send: &mut std::sync::mpsc::Sender<MessageToApp>,
     ) -> Result<(), ()> {
-        self.connect();
+        //self.connect();
         if let Some(stream) = &mut self.comms {
             use std::io::Read;
             if let RadioReceiveStatus::Idle = self.status {
                 log::error!("Waiting for length of packet");
-                self.status = RadioReceiveStatus::WaitForLength;
+                self.status = RadioReceiveStatus::WaitForLength([0;4], 0);
             }
-            if let RadioReceiveStatus::WaitForLength = self.status {
-                let mut length: [u8; 4] = [0; 4];
-                match stream.read_exact(&mut length) {
+            let mut got_length = None;
+            if let RadioReceiveStatus::WaitForLength(mut l, mut i) = &mut self.status {
+                match stream.read(&mut l[i as usize..]) {
                     Ok(a) => {
-                        let length = u32::from_be_bytes(length);
-                        log::error!("Got length of {}, waiting for packet", length);
-                        self.status = RadioReceiveStatus::WaitForPacket(length);
+                        if (a + i as usize) == 4 {
+                            let length = u32::from_be_bytes(l);
+                            log::error!("Got length of 0x{:04x}, waiting for packet", length);
+                            got_length = Some(length);
+                        }
+                        i += a as u8;
                     }
                     Err(e) => {
                         if let std::io::ErrorKind::WouldBlock = e.kind() {
+                            log::error!("Would block receiving length {:?} {:?}", e, l);
                         } else {
                             return Err(());
                         }
                     }
                 }
             }
-            if let RadioReceiveStatus::WaitForPacket(length) = self.status {
-                let mut packet = vec![0; length as usize];
-                match stream.read_exact(&mut packet) {
+            if let Some(length) = got_length {
+                self.status = RadioReceiveStatus::WaitForPacket(vec![0; length as usize], length, 0);
+            }
+            let mut go_idle = false;
+            if let RadioReceiveStatus::WaitForPacket(packet, length, l) = &mut self.status {
+                match stream.read(&mut packet[*l as usize..]) {
                     Ok(a) => {
-                        log::error!("got packet length {}", length);
-                        let packet: Result<(MessageToApp, usize), bincode::error::DecodeError> =
-                            bincode::serde::decode_from_slice(&packet, bincode::config::standard());
-                        log::error!("Packet is {:?}", packet);
-                        if let Ok((packet, _length)) = packet {
-                            match &packet {
-                                MessageToApp::CameraDataJpeg(_, _) => self.finish_camera_request(),
-                                _ => {}
+                        if (a + *l as usize) == *length as usize {
+                            log::error!("got packet length {}", length);
+                            if *length > 16 {
+                                log::error!("DATA {:x?}...", &packet[0..16]);
                             }
-                            send.send(packet).map_err(|_| ())?;
+                            else {
+                                log::error!("DATA {:x?}", &packet[0..*length as usize]);
+                            }
+                            let packet: Result<(MessageToApp, usize), bincode::error::DecodeError> =
+                                bincode::serde::decode_from_slice(&packet, bincode::config::standard());
+                            if let Ok((packet, length2)) = packet {
+                                if length2 != *length as usize {
+                                    log::error!("Wrong packet length received {}/{}", length, length2);
+                                    return Err(());
+                                }
+                                match &packet {
+                                    MessageToApp::PingReply(_) => {
+                                        return Err(());
+                                    }
+                                    MessageToApp::CameraDataJpeg(_, _) => {
+                                        log::error!("Finishing camera request");
+                                        self.waiting_until = None;
+                                    }
+                                    _ => {}
+                                }
+                                send.send(packet).map_err(|_| ())?;
+                            }
+                            go_idle = true;
                         }
-                        self.status = RadioReceiveStatus::Idle;
+                        *l += a as u32;
                     }
                     Err(e) => {
                         if let std::io::ErrorKind::WouldBlock = e.kind() {
@@ -166,6 +183,9 @@ impl UobRadio {
                         }
                     }
                 }
+            }
+            if go_idle {
+                self.status = RadioReceiveStatus::Idle;
             }
         }
         Ok(())
@@ -178,7 +198,7 @@ impl UobRadio {
             if let Ok(tcp) = tcp {
                 tcp.set_nonblocking(true);
                 self.comms.replace(tcp);
-                self.status = RadioReceiveStatus::WaitForLength;
+                self.status = RadioReceiveStatus::Idle;
                 self.waiting_until = None;
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
@@ -194,7 +214,7 @@ impl UobRadio {
 
     #[cfg(target_os = "android")]
     pub fn send_gpio(&mut self, gpio: Gpio) {
-        self.connect();
+        //self.connect();
         if let Some(comms) = &mut self.comms {
             log::error!("Sending gpio request {:?}", gpio);
             let packet = bincode::serde::encode_to_vec(
@@ -213,7 +233,7 @@ impl UobRadio {
 
     #[cfg(target_os = "android")]
     pub fn send_camera_request(&mut self, enabled: bool, index: u8) {
-        self.connect();
+        //self.connect();
         if let Some(inst) = &self.waiting_until {
             if *inst < std::time::Instant::now() {
                 self.waiting_until = None;

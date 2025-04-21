@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::{NativeOptions, Renderer};
 
-mod bluetooth;
+//mod bluetooth;
 mod comms;
 
 /// Represents a color pixel with rgb and alpha components
@@ -179,10 +179,9 @@ impl BluetoothConfig {
 pub struct DemoApp {
     local_storage: Option<std::path::PathBuf>,
     settings: Result<AppConfig, AppConfigError>,
-    bluetooth: bluetooth::Bluetooth,
     _java: Arc<Mutex<Java>>,
-    known_uuids: BTreeMap<String, Vec<bluetooth::Uuid>>,
-    bluetooth_devs: BTreeMap<String, BluetoothConfig>,
+    //known_uuids: BTreeMap<String, Vec<bluetooth::Uuid>>,
+    //bluetooth_devs: BTreeMap<String, BluetoothConfig>,
     radios: comms::UobRadios,
     uob_radio_pipe: (
         std::sync::mpsc::Sender<comms::MessageToApp>,
@@ -223,12 +222,12 @@ impl DemoApp {
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.bluetooth.enable();
+        //self.bluetooth.enable();
         for (address, radio) in self.radios.iter_mut() {
             if radio.process_received(&mut self.uob_radio_pipe.0).is_err() {
                 log::error!("Reconnecting to radio due to error");
                 radio.disconnect();
-                radio.connect();
+                //radio.connect();
             }
         }
         while let Ok(m) = self.uob_radio_pipe.1.try_recv() {
@@ -280,9 +279,12 @@ impl eframe::App for DemoApp {
                     }
                 }
                 for (address, radio) in self.radios.iter_mut() {
-                    radio.connect();
+                    //radio.connect();
                     radio.send_camera_request(true, 0);
                     ui.label(format!("Radio at {:?}: {:?}", address, radio));
+                    if ui.button("connect").clicked() {
+                        radio.connect();
+                    }
                     ui.horizontal(|ui| {
                         let winch_response = ui.add(egui::Button::new("Winch forwards").sense(egui::Sense::drag()));
                         if winch_response.drag_started() {
@@ -311,6 +313,7 @@ impl eframe::App for DemoApp {
                         },
                     }));
                 }
+                /*
                 for mut d in self.bluetooth.get_bonded_devices().unwrap() {
                     d.get_uuids_with_sdp();
                     let uuids = d.get_uuids();
@@ -361,7 +364,7 @@ impl eframe::App for DemoApp {
                             }
                         }
                     }
-                }
+                }*/
             });
         });
     }
@@ -413,10 +416,9 @@ impl DemoApp {
         let mut s = Self {
             local_storage: options.android_app.unwrap().internal_data_path(),
             settings: Err(AppConfigError::NotLoaded),
-            bluetooth: bluetooth::Bluetooth::new(java.clone()),
             _java: java,
-            known_uuids: BTreeMap::new(),
-            bluetooth_devs: BTreeMap::new(),
+            //known_uuids: BTreeMap::new(),
+            //bluetooth_devs: BTreeMap::new(),
             radios: comms::UobRadios::new(),
             uob_radio_pipe: std::sync::mpsc::channel(),
             texture: None,

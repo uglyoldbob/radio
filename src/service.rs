@@ -4,10 +4,15 @@
 
 //! This program is for handling the video and audio components for the radio
 
+use std::sync::{Arc, Mutex};
+
 use tokio::io::AsyncReadExt;
+use video_service::VideoSource;
 
 #[path = "../android2/src/comms.rs"]
 mod comms;
+
+mod video_service;
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 struct MainConfiguration {
@@ -15,11 +20,17 @@ struct MainConfiguration {
     debug_level: Option<service::LogLevel>,
 }
 
+#[derive(Clone)]
+struct AppUserCommon {
+    video: Arc<Mutex<Vec<VideoSource>>>,
+}
+
 #[cfg(not(target_os = "android"))]
 /// Processes a tcp connection from an app
 pub async fn process_app(
     mut stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
+    common: AppUserCommon,
 ) -> Result<(), ()> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     println!("Processing an app at {:?}", addr);
@@ -34,18 +45,24 @@ pub async fn process_app(
                 comms::MessageFromApp::Ping(id) => {
                     println!("Received ping packet from user: {}", id);
                 }
-                comms::MessageFromApp::RequestCamera(_index) => {
+                comms::MessageFromApp::RequestCamera(index) => {
                     println!("Processing request for camera image");
-                    let rval: Option<comms::MessageToApp> = None;
-                    if let Some(response) = rval {
-                        println!("Got message to app");
-                        let packet =
-                            bincode::serde::encode_to_vec(response, bincode::config::standard())
-                                .unwrap();
-                        let _ = stream
-                            .write_all(&((packet.len() as u32).to_be_bytes()[0..4]))
-                            .await;
-                        let _ = stream.write_all(&packet).await;
+
+                    let packet = if let Ok(video) = common.video.lock() {
+                        if let Some(v) = video.get(index as usize) {
+                            let frame = v.image.lock().unwrap();
+                            let jpeg = frame.get_jpeg();
+                            let response = comms::MessageToApp::CameraDataJpeg(index, jpeg);
+                            Some(response)
+                        }
+                        else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(packet) = packet {
+                        packet.send_to_stream(&mut stream).await?;
                         println!("Done sending message to app");
                     }
                 }
@@ -60,17 +77,53 @@ pub async fn process_app(
                 }
             }
         }
+        else {
+            println!("Failed to process packet");
+            return Err(());
+        }
     }
 }
 
-#[cfg(not(target_os = "android"))]
-async fn tcp_listener() -> Result<(), String> {
+async fn udp_listener(common: AppUserCommon,) -> Result<(), String> {
+    let socket = tokio::net::UdpSocket::bind("0.0.0.0:13456").await.unwrap();
+    println!("Starting radio listener");
+    let mut response = vec![0; 1500];
+    loop {
+        while let Ok((n, addr)) = socket.recv_from(&mut response).await {
+            let addr = addr.clone();
+            println!("Got request from {:?} {} {:x?}", addr, n, &response[0..n]);
+            let packet =
+                bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
+            if let Ok((packet, _len)) = packet {
+                match packet {
+                    comms::MessageFromApp::Ping(val) => {
+                        println!("got ping packet {}", val);
+                        let response = bincode::serde::encode_to_vec(
+                            comms::MessageToApp::PingReply(13457),
+                            bincode::config::standard(),
+                        )
+                        .unwrap();
+                        let _ = socket.send_to(&response, addr).await;
+                    }
+                    _ => {}
+                }
+            } else {
+                println!("invalid packet received {:x?}", response);
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    Ok(())
+}
+
+async fn tcp_listener(common: AppUserCommon,) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
     if let Ok(tcp) = tcp {
         loop {
             if let Ok((stream, addr)) = tcp.accept().await {
+                let common2 = common.clone();
                 let _ = tokio::task::spawn(async move {
-                    let r = process_app(stream, addr).await;
+                    let r = process_app(stream, addr, common2).await;
                     println!("Completed handling user {:?}", r);
                     r
                 })
@@ -112,9 +165,19 @@ async fn smain() {
 
     let (shutdown_send, mut shutdown_recv) = tokio::sync::mpsc::unbounded_channel::<()>();
 
+    let mut vs = Vec::new();
+    if let Ok(d) = v4l::Device::new(0) {
+        vs.push(video_service::Video::video_start(d));
+    }
+    let common = AppUserCommon {
+        video: Arc::new(Mutex::new(vs)),
+    };
+
     let mut tasks: tokio::task::JoinSet<Result<(), String>> = tokio::task::JoinSet::new();
-    tasks.spawn(async { comms::udp_listener().await });
-    tasks.spawn(async { tcp_listener().await });
+    let common2 = common.clone();
+    tasks.spawn(async move { udp_listener(common2).await });
+    let common2 = common.clone();
+    tasks.spawn(async move { tcp_listener(common2).await });
     tokio::select! {
         r = tasks.join_next() => {
             service::log::error!("A task exited {:?}, closing server in 5 seconds", r);
