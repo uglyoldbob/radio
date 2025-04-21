@@ -1,11 +1,6 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use super::CommonWindowProperties;
-use super::Subwindow;
-use super::SubwindowTrait;
-use eframe::egui;
-
 use ffimage::iter::BytesExt;
 use ffimage::iter::ColorConvertExt;
 use ffimage::iter::PixelsExt;
@@ -469,18 +464,14 @@ impl VideoFrame {
     }
 
     pub fn get_jpeg(&self) -> Vec<u8> {
-        if let Some(pixels) = &self.pixel_data {
+        if let Some(pixels) = & self.pixel_data {
             let rgb = pixels.get_rgb();
             let mut thing = Vec::new();
             let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut thing, 75);
-            let a = encoder.encode(
-                &rgb,
-                self.width as u32,
-                self.height as u32,
-                image::ExtendedColorType::Rgb8,
-            );
+            let a = encoder.encode(&rgb, self.width as u32, self.height as u32, image::ExtendedColorType::Rgb8);
             thing
-        } else {
+        }
+        else {
             Vec::new()
         }
     }

@@ -1,8 +1,12 @@
 //! UUID stuff for android bluetooth
 
+#[cfg(target_os = "android")]
 use super::super::Java;
+#[cfg(target_os = "android")]
 use super::jerr;
+#[cfg(target_os = "android")]
 use jni_min_helper::*;
+#[cfg(target_os = "android")]
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, PartialEq)]
@@ -72,17 +76,20 @@ impl Uuid {
     }
 }
 
+#[cfg(target_os = "android")]
 impl From<ParcelUuid> for Uuid {
     fn from(value: ParcelUuid) -> Self {
         Uuid::from_str(&value.to_string().unwrap())
     }
 }
 
+#[cfg(target_os = "android")]
 pub struct ParcelUuid {
     internal: jni::objects::GlobalRef,
     java: Arc<Mutex<Java>>,
 }
 
+#[cfg(target_os = "android")]
 impl std::fmt::Display for ParcelUuid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.to_string() {
@@ -92,6 +99,7 @@ impl std::fmt::Display for ParcelUuid {
     }
 }
 
+#[cfg(target_os = "android")]
 impl ParcelUuid {
     pub fn new(uuid: jni::objects::GlobalRef, java: Arc<Mutex<Java>>) -> Self {
         Self {

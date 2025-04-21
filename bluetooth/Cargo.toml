@@ -1,0 +1,12 @@
+[package]
+name = "bluetooth-rust"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures = "0.3.30"
+serde = {version = "1.0.219", features = ["derive"]}
+tokio = { version = "1.40.0", features = ["full"] }
+
+[target.'cfg(unix)'.dependencies]
+bluer = {version = "0.17.3", features = ["bluetoothd", "rfcomm"] }

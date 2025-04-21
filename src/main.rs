@@ -5,7 +5,10 @@ mod video;
 #[path = "../android2/src/comms.rs"]
 mod comms;
 
-use std::{collections::BTreeMap, sync::{Arc, Mutex}};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
 
 use eframe::egui::{self, Vec2};
 
@@ -17,20 +20,6 @@ trait SubwindowTrait {
         frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow>;
-}
-
-enum MessageFromAsync {
-    NewBluetoothDevice(bluer::Address),
-    OldBluetoothDevice(bluer::Address),
-    BluetoothDeviceProperty(bluer::Address, bluer::DeviceProperty),
-    BluetoothPresent(bool),
-    MessageFromAppReceiver(tokio::sync::mpsc::Receiver<comms::MessageFromAppWithAddr>),
-    MessageAboutAppUser(tokio::sync::mpsc::Receiver<comms::MessageAboutAppUser>),
-}
-
-enum MessageToAsync {
-    BluetoothScan(bool),
-    Quit,
 }
 
 struct MainPage {}
@@ -69,50 +58,35 @@ impl Default for Subwindow {
 
 fn main() {
     simple_logger::init_with_level(log::Level::Info).unwrap();
-    let (tx, rx) = tokio::sync::mpsc::channel(20);
-    let (tx2, rx2) = tokio::sync::mpsc::channel(20);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_fullscreen(true)
             .with_always_on_top(),
         ..Default::default()
     };
-    let threaded_rt = tokio::runtime::Runtime::new().unwrap();
-    threaded_rt.spawn(async {
-        async_main(tx, rx2).await;
-    });
     eframe::run_native(
         "Uob Radio Gui",
         options,
-        Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc, rx, tx2)))),
+        Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc)))),
     )
     .unwrap();
 }
 
 struct CommonWindowProperties {
-    bluetooth: bluetooth::BluetoothData,
     video_sources: Vec<video::VideoSource>,
-    rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
-    tx: tokio::sync::mpsc::Sender<MessageToAsync>,
-    app_rx: Option<tokio::sync::mpsc::Receiver<comms::MessageFromAppWithAddr>>,
-    app_tx: BTreeMap<std::net::SocketAddr, tokio::sync::mpsc::Sender<comms::MessageToApp>>,
-    user_rx: Option<tokio::sync::mpsc::Receiver<comms::MessageAboutAppUser>>,
+    app_rx: Option<std::sync::mpsc::Receiver<comms::MessageFromAppWithAddr>>,
+    app_tx: BTreeMap<std::net::SocketAddr, std::sync::mpsc::Sender<comms::MessageToApp>>,
+    user_rx: Option<std::sync::mpsc::Receiver<comms::MessageAboutAppUser>>,
 }
 
 impl CommonWindowProperties {
-    pub fn new(
-        rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
-        tx: tokio::sync::mpsc::Sender<MessageToAsync>,
-    ) -> Self {
+    pub fn new() -> Self {
         let mut vs = Vec::new();
         if let Ok(d) = v4l::Device::new(0) {
             vs.push(video::Video::video_start(d));
         }
         Self {
-            bluetooth: bluetooth::BluetoothData::new(),
             video_sources: vs,
-            rx,
-            tx,
             app_rx: None,
             app_tx: BTreeMap::new(),
             user_rx: None,
@@ -126,25 +100,8 @@ struct MyEguiApp {
     common: CommonWindowProperties,
 }
 
-async fn async_main(
-    tx: tokio::sync::mpsc::Sender<MessageFromAsync>,
-    mut rx: tokio::sync::mpsc::Receiver<MessageToAsync>,
-) {
-    let chan = tokio::sync::mpsc::channel(32);
-    let chan2 = tokio::sync::mpsc::channel(32);
-    tx.send(MessageFromAsync::MessageFromAppReceiver(chan.1)).await.unwrap();
-    tx.send(MessageFromAsync::MessageAboutAppUser(chan2.1)).await.unwrap();
-    tokio::task::spawn(async { comms::udp_listener().await });
-    tokio::task::spawn(async { comms::tcp_listener(chan.0, chan2.0).await });
-    bluetooth::bluetooth(tx, &mut rx).await;
-}
-
 impl MyEguiApp {
-    fn new(
-        cc: &eframe::CreationContext<'_>,
-        rx: tokio::sync::mpsc::Receiver<MessageFromAsync>,
-        tx: tokio::sync::mpsc::Sender<MessageToAsync>,
-    ) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -152,48 +109,18 @@ impl MyEguiApp {
         Self {
             subwindow: Subwindow::MainPage(MainPage {}),
             check: false,
-            common: CommonWindowProperties::new(rx, tx),
+            common: CommonWindowProperties::new(),
         }
     }
 }
 
 impl eframe::App for MyEguiApp {
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        let _ = self.common.tx.blocking_send(MessageToAsync::Quit);
-    }
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {}
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         ctx.request_repaint();
 
         egui_extras::install_image_loaders(ctx);
-        while let Ok(m) = self.common.rx.try_recv() {
-            match m {
-                MessageFromAsync::MessageAboutAppUser(m) => {
-                    self.common.user_rx.replace(m);
-                }
-                MessageFromAsync::MessageFromAppReceiver(recv) => {
-                    self.common.app_rx.replace(recv);
-                }
-                MessageFromAsync::NewBluetoothDevice(addr) => {
-                    self.common
-                        .bluetooth
-                        .devices
-                        .insert(addr, bluetooth::BluetoothDeviceInfo::new());
-                }
-                MessageFromAsync::OldBluetoothDevice(addr) => {
-                    self.common.bluetooth.devices.remove_entry(&addr);
-                }
-                MessageFromAsync::BluetoothDeviceProperty(addr, prop) => {
-                    println!("Received bluetooth device property: {:?}: {:?}", addr, prop);
-                    if let Some(d) = self.common.bluetooth.devices.get_mut(&addr) {
-                        d.update(prop);
-                    }
-                }
-                MessageFromAsync::BluetoothPresent(p) => {
-                    println!("Bluetooth presence: {}", p);
-                }
-            }
-        }
         if let Some(rx) = &mut self.common.user_rx {
             if let Ok(m) = rx.try_recv() {
                 println!("Received message about app user {}", m.addr);
@@ -203,34 +130,32 @@ impl eframe::App for MyEguiApp {
         if let Some(rx) = &mut self.common.app_rx {
             while let Ok(m) = rx.try_recv() {
                 match m.message {
-                    comms::MessageFromApp::GpioControl(g) => {
-                        match g {
-                            comms::Gpio::WinchControl(forwards, backwards) => {
-                                println!("Winch control {} {}", forwards, backwards);
-                            }
-                            comms::Gpio::CameraLedControl(cam, s) => {
-                                println!("Camera {} set led to {}", cam, s);
-                            }
-                            comms::Gpio::LockDoors => {
-                                println!("Request to lock all the doors");
-                            }
-                            comms::Gpio::UnlockDoors => {
-                                println!("Request to unlock all the doors");
-                            }
-                            comms::Gpio::WindowControl { id, up, down } => {
-                                println!("Request to control window {} with {} {}", id, up, down);
-                            }
+                    comms::MessageFromApp::GpioControl(g) => match g {
+                        comms::Gpio::WinchControl(forwards, backwards) => {
+                            println!("Winch control {} {}", forwards, backwards);
                         }
-                    }
-                    comms::MessageFromApp::Ping => {
-                        println!("Got ping from app");
+                        comms::Gpio::CameraLedControl(cam, s) => {
+                            println!("Camera {} set led to {}", cam, s);
+                        }
+                        comms::Gpio::LockDoors => {
+                            println!("Request to lock all the doors");
+                        }
+                        comms::Gpio::UnlockDoors => {
+                            println!("Request to unlock all the doors");
+                        }
+                        comms::Gpio::WindowControl { id, up, down } => {
+                            println!("Request to control window {} with {} {}", id, up, down);
+                        }
                     },
+                    comms::MessageFromApp::Ping(val) => {
+                        println!("Got ping from app {}", val);
+                    }
                     comms::MessageFromApp::RequestCamera(index) => {
                         if let Some(send) = self.common.app_tx.get(&m.addr) {
                             if let Some(v) = self.common.video_sources.get(index as usize) {
                                 let frame = v.image.lock().unwrap();
                                 let jpeg = frame.get_jpeg();
-                                let _ = send.blocking_send(comms::MessageToApp::CameraDataJpeg(index, jpeg));
+                                let _ = send.send(comms::MessageToApp::CameraDataJpeg(index, jpeg));
                             }
                         }
                     }

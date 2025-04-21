@@ -233,8 +233,8 @@ impl eframe::App for DemoApp {
         }
         while let Ok(m) = self.uob_radio_pipe.1.try_recv() {
             match m {
-                comms::MessageToApp::PingReply(_port) => {
-                    log::error!("got ping packet in update method");
+                comms::MessageToApp::PingReply(port) => {
+                    log::error!("got ping packet in update method port {}", port);
                 }
                 comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
                     log::error!("Recieved data for camera {} length {}", index, jpeg.len());

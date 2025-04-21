@@ -12,3 +12,4 @@ radiohw/radiosim/*.sort
 radiohw/radiosim/*.tops
 radiohw/radiosim/*.lst
 android2/target/*
+bluetooth/target
