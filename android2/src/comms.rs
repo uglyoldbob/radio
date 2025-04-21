@@ -88,17 +88,9 @@ impl MessageToApp {
             bincode::serde::encode_to_vec(self, bincode::config::standard())
                 .unwrap();
         let length = packet.len();
-        if length > 16 {
-            println!("DATA {:x?}...", &packet[0..16]);
-        }
-        else {
-            println!("DATA {:x?}", &packet[0..length as usize]);
-        }
-        println!("Sending packet length {} to app user", packet.len());
         stream
             .write_all(&((packet.len() as u32).to_be_bytes()[0..4]))
             .await.map_err(|_|())?;
-        println!("Sending packet data length {} to app user", packet.len());
         stream.write_all(&packet).await.map_err(|_|())?;
         Ok(())
     }
@@ -111,7 +103,7 @@ impl UobRadio {
         &mut self,
         send: &mut std::sync::mpsc::Sender<MessageToApp>,
     ) -> Result<(), ()> {
-        //self.connect();
+        self.connect();
         if let Some(stream) = &mut self.comms {
             use std::io::Read;
             if let RadioReceiveStatus::Idle = self.status {
@@ -131,7 +123,6 @@ impl UobRadio {
                     }
                     Err(e) => {
                         if let std::io::ErrorKind::WouldBlock = e.kind() {
-                            log::error!("Would block receiving length {:?} {:?}", e, l);
                         } else {
                             return Err(());
                         }
@@ -214,7 +205,7 @@ impl UobRadio {
 
     #[cfg(target_os = "android")]
     pub fn send_gpio(&mut self, gpio: Gpio) {
-        //self.connect();
+        self.connect();
         if let Some(comms) = &mut self.comms {
             log::error!("Sending gpio request {:?}", gpio);
             let packet = bincode::serde::encode_to_vec(
@@ -233,7 +224,7 @@ impl UobRadio {
 
     #[cfg(target_os = "android")]
     pub fn send_camera_request(&mut self, enabled: bool, index: u8) {
-        //self.connect();
+        self.connect();
         if let Some(inst) = &self.waiting_until {
             if *inst < std::time::Instant::now() {
                 self.waiting_until = None;

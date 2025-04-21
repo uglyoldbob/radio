@@ -46,8 +46,6 @@ pub async fn process_app(
                     println!("Received ping packet from user: {}", id);
                 }
                 comms::MessageFromApp::RequestCamera(index) => {
-                    println!("Processing request for camera image");
-
                     let packet = if let Ok(video) = common.video.lock() {
                         if let Some(v) = video.get(index as usize) {
                             let frame = v.image.lock().unwrap();
@@ -63,7 +61,6 @@ pub async fn process_app(
                     };
                     if let Some(packet) = packet {
                         packet.send_to_stream(&mut stream).await?;
-                        println!("Done sending message to app");
                     }
                 }
                 comms::MessageFromApp::GpioControl(gpio) => {

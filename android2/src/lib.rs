@@ -227,7 +227,7 @@ impl eframe::App for DemoApp {
             if radio.process_received(&mut self.uob_radio_pipe.0).is_err() {
                 log::error!("Reconnecting to radio due to error");
                 radio.disconnect();
-                //radio.connect();
+                radio.connect();
             }
         }
         while let Ok(m) = self.uob_radio_pipe.1.try_recv() {
@@ -279,12 +279,9 @@ impl eframe::App for DemoApp {
                     }
                 }
                 for (address, radio) in self.radios.iter_mut() {
-                    //radio.connect();
+                    radio.connect();
                     radio.send_camera_request(true, 0);
-                    ui.label(format!("Radio at {:?}: {:?}", address, radio));
-                    if ui.button("connect").clicked() {
-                        radio.connect();
-                    }
+                    ui.label(format!("Radio at {:?}", address.ip()));
                     ui.horizontal(|ui| {
                         let winch_response = ui.add(egui::Button::new("Winch forwards").sense(egui::Sense::drag()));
                         if winch_response.drag_started() {
