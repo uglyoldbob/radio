@@ -2,7 +2,8 @@
 
 use super::super::Java;
 use super::BluetoothSocket;
-use super::{jerr, ParcelUuid, Uuid};
+use super::{jerr, ParcelUuid};
+use crate::Uuid;
 use jni_min_helper::*;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};

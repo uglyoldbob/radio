@@ -1,36 +1,55 @@
 //! UUID stuff for android bluetooth
 
 #[cfg(target_os = "android")]
-use super::super::Java;
+use super::android::Java;
 #[cfg(target_os = "android")]
-use super::jerr;
+use super::android::jerr;
 #[cfg(target_os = "android")]
 use jni_min_helper::*;
 #[cfg(target_os = "android")]
 use std::sync::{Arc, Mutex};
 
+/// Represents the uuid for a bluetooth service
 #[derive(Debug, PartialEq)]
 pub enum Uuid {
+    /// Serial port protocol
     SPP,
+    /// a2dp source
     A2dpSource,
+    /// a2dp sink
     A2dpSink,
+    /// base bluetooth profile
     Base,
+    /// headset protocol, hs
     HspHs,
+    /// headset protocol ag
     HspAg,
+    /// handsfree protocol, ag
     HfpAg,
+    /// Handsfree protocol, hs
     HfpHs,
+    /// Obex opp protocol
     ObexOpp,
+    /// Obex ftp protocol
     ObexFtp,
+    /// Obex mas protocol
     ObexMas,
+    /// Obex mns protocol
     ObexMns,
+    /// Obex pse protocol
     ObexPse,
+    /// Obex sync protocol
     ObexSync,
+    /// Avrcp remote protocol
     AvrcpRemote,
+    /// Network nap protocol for bluetooth networking
     NetworkingNap,
+    /// An unknown bluetooth uuid
     Unknown(String),
 }
 
 impl Uuid {
+    /// Get the uuid as a str reference
     pub fn as_str(&self) -> &str {
         match self {
             Uuid::SPP => "00001101-0000-1000-8000-00805F9B34FB",
@@ -53,6 +72,7 @@ impl Uuid {
         }
     }
 
+    /// Convert the given str into a Self
     pub fn from_str(s: &str) -> Self {
         match s {
             "00001101-0000-1000-8000-00805F9B34FB" => Uuid::SPP,

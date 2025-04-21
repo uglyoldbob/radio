@@ -5,8 +5,15 @@ edition = "2024"
 
 [dependencies]
 futures = "0.3.30"
+log = "0.4"
+ouroboros = "0.18.5"
 serde = {version = "1.0.219", features = ["derive"]}
 tokio = { version = "1.40.0", features = ["full"] }
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
 bluer = {version = "0.17.3", features = ["bluetoothd", "rfcomm"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = {version = "0.21.1", features = ["invocation", "default"] }
+jni-min-helper = "0.3.0"
+winit = { version = "0.30.7", features = [ "android-native-activity" ] }

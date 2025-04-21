@@ -3,25 +3,27 @@
 #![warn(unused_extern_crates)]
 
 //! This library is intended to eventually be a cross-platform bluetooth handling platform
+//! Android portions adapted from https://github.com/wuwbobo2021/android-bluetooth-serial-rs
+
+
+#[cfg(target_os = "android")]
+use std::sync::Arc;
+#[cfg(target_os = "android")]
+use std::sync::Mutex;
+#[cfg(target_os = "android")]
+mod android;
+#[cfg(target_os = "android")]
+pub use android::Java;
+#[cfg(target_os = "android")]
+use winit::platform::android::activity::AndroidApp;
+
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use linux::BluetoothData;
 
 mod uuid;
-
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::str::FromStr;
-use std::time::Duration;
-
-use bluer::{AdapterEvent, DeviceProperty};
-use futures::FutureExt;
-use futures::StreamExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-/// The general bluetooth handler for the library. There should be only one per application on linux.
-pub struct BluetoothHandler {
-    session: bluer::Session,
-    adapters: Vec<bluer::Adapter>,
-    blue_agent_handle: bluer::agent::AgentHandle,
-}
+pub use uuid::Uuid;
 
 /// Commands issued to the library
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -38,314 +40,94 @@ pub enum BluetoothResponse {
     Adapters(usize),
 }
 
-impl BluetoothHandler {
-    /// Construct a new self
-    pub async fn new() -> Option<Self> {
-        let session = bluer::Session::new().await.ok()?;
-        let blue_agent = Self::build_agent();
-        let blue_agent_handle = session.register_agent(blue_agent).await;
-        println!("Registered a bluetooth agent {}", blue_agent_handle.is_ok());
-        Some(Self {
-            session,
-            adapters: Vec::new(),
-            blue_agent_handle: blue_agent_handle.ok()?,
-        })
-    }
-
-    fn build_agent() -> bluer::agent::Agent {
-        let mut blue_agent = bluer::agent::Agent::default();
-        blue_agent.request_default = true;
-        blue_agent.request_pin_code = None;
-        blue_agent.request_passkey = None;
-        blue_agent.display_passkey = Some(Box::new(|a| {
-            async move {
-                println!("Need to display passkey {:?}", a);
-                a.cancel.await.unwrap();
-                Ok(())
-            }
-            .boxed()
-        }));
-        blue_agent.display_pin_code = Some(Box::new(|a| {
-            async move {
-                println!("Need to display pin code {:?}", a);
-                a.cancel.await.unwrap();
-                Ok(())
-            }
-            .boxed()
-        }));
-        blue_agent.request_confirmation = Some(Box::new(|a| {
-            async move {
-                println!("Need to confirm {:?}", a);
-                Ok(())
-            }
-            .boxed()
-        }));
-        blue_agent.request_authorization = None;
-        blue_agent.authorize_service = None;
-        blue_agent
-    }
-
-    /// Issues the specified bluetooth command, with an optional response for the command
-    pub async fn issue_command(&mut self, cmd: BluetoothCommand) -> Option<BluetoothResponse> {
-        match cmd {
-            BluetoothCommand::QueryNumAdapters => {
-                Some(BluetoothResponse::Adapters(0))
-            }
-            _ => None,
-        }
-    }
+/// Represents a bluetooth adapter that communicates to bluetooth devices
+pub struct BluetoothAdapter {
+    #[cfg(target_os = "android")]
+    adapter: android::Bluetooth,
+    #[cfg(target_os = "linux")]
+    adapter: linux::BluetoothHandler,
 }
 
-async fn query_adapter(adapter: &bluer::Adapter) -> bluer::Result<()> {
-    println!(
-        "    Address:                    {}",
-        adapter.address().await?
-    );
-    println!(
-        "    Address type:               {}",
-        adapter.address_type().await?
-    );
-    println!("    Friendly name:              {}", adapter.alias().await?);
-    println!(
-        "    Modalias:                   {:?}",
-        adapter.modalias().await?
-    );
-    println!(
-        "    Powered:                    {:?}",
-        adapter.is_powered().await?
-    );
-    println!(
-        "    Discoverabe:                {:?}",
-        adapter.is_discoverable().await?
-    );
-    println!(
-        "    Pairable:                   {:?}",
-        adapter.is_pairable().await?
-    );
-    println!(
-        "    UUIDs:                      {:?}",
-        adapter.uuids().await?
-    );
-    println!();
-    println!(
-        "    Active adv. instances:      {}",
-        adapter.active_advertising_instances().await?
-    );
-    println!(
-        "    Supp.  adv. instances:      {}",
-        adapter.supported_advertising_instances().await?
-    );
-    println!(
-        "    Supp.  adv. includes:       {:?}",
-        adapter.supported_advertising_system_includes().await?
-    );
-    println!(
-        "    Adv. capabilites:           {:?}",
-        adapter.supported_advertising_capabilities().await?
-    );
-    println!(
-        "    Adv. features:              {:?}",
-        adapter.supported_advertising_features().await?
-    );
+/// A bluetooth device
+#[cfg(target_os = "android")]
+pub struct BluetoothDevice(android::BluetoothDevice);
 
-    Ok(())
-}
+/// A bluetooth device
+#[cfg(target_os = "android")]
+pub struct BluetoothSocket<'a>(&'a mut android::BluetoothSocket);
 
-/// Dummy function
-pub async fn bluetooth(
-) {
-    println!("Starting bluetooth code");
-    let bluetooth = bluer::Session::new().await.unwrap();
-    println!("Got a bluetooth session");
-
-    let profile = bluer::rfcomm::Profile {
-        uuid: bluer::Uuid::from_str(uuid::Uuid::HfpHs.as_str()).unwrap(),
-        name: Some("Car audio".to_string()),
-        service: None,
-        role: None,
-        channel: None,
-        psm: None,
-        require_authentication: Some(true),
-        require_authorization: Some(true),
-        auto_connect: Some(true),
-        service_record: None,
-        version: None,
-        features: Some(1),
-        ..Default::default()
-    };
-
-    let mut bluetooth_devices: HashMap<bluer::Address, (&bluer::Adapter, Option<bluer::Device>)> =
-        HashMap::new();
-    let adapter_names = bluetooth.adapter_names().await.unwrap();
-    let adapters: Vec<bluer::Adapter> = adapter_names
-        .iter()
-        .filter_map(|n| bluetooth.adapter(n).ok())
-        .collect();
-
-    println!("Enabling bluetooth stuff now");
-    for adapter in &adapters {
-        adapter.set_powered(true).await.unwrap();
-        adapter.set_discoverable(true).await.unwrap();
-        adapter.set_pairable(true).await.unwrap();
-    }
-    println!("Done enabling bluetooth stuff");
-
-    for adapter in &adapters {
-        println!("there is an adapter");
-        query_adapter(adapter).await;
-    }
-    println!("Registering a profile");
-
-    let mut h = bluetooth.register_profile(profile).await;
-    let profile = tokio::task::spawn(async move {
-        if let Ok(h) = &mut h {
-            if let Some(a) = h.next().await {
-                println!("Got a connection to car audio");
-                let con = a.accept().unwrap();
-                let (mut r, mut w) = con.into_split();
-                w.write(&vec![0_u8, 0, 0, 0]).await.unwrap();
-                match r.read_u8().await {
-                    Ok(a) => println!("Recieved bluetooth byte {:x}", a),
-                    Err(e) => println!("Error receiving bluetooth data {:?}", e),
-                }
-            }
-        }
-    });
-
-    for adapter in &adapters {
-        query_adapter(adapter).await;
-    }
-
-    let mut adapter_scanner = Vec::new();
-    for a in &adapters {
-        let da = a.discover_devices_with_changes().await.unwrap();
-        adapter_scanner.push((a, da));
-    }
-
-    let mut quit = false;
-    let mut scan = false;
-    while !quit {
-        if scan {
-            for (adapt, da) in &mut adapter_scanner {
-                if let Some(e) = da.next().await {
-                    match e {
-                        AdapterEvent::DeviceAdded(addr) => {
-                            println!("Device added {:?}", addr);
-                            bluetooth_devices.insert(addr, (adapt, None));
-                        }
-                        AdapterEvent::DeviceRemoved(addr) => {
-                            println!("Device removed {:?}", addr);
-                            bluetooth_devices.remove_entry(&addr);
-                        }
-                        AdapterEvent::PropertyChanged(prop) => {
-                            println!("Property changed {:?}", prop);
-                        }
-                    }
-                }
-            }
-        }
-        for (addr, (adapter, dev)) in &mut bluetooth_devices {
-            if dev.is_none() {
-                if let Ok(d) = adapter.device(*addr) {
-                    if let Ok(ps) = d.all_properties().await {
-                        for p in ps {
-                        }
-                    }
-                    *dev = Some(d);
-                }
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(1)).await;
-    }
-    profile.await.unwrap();
-}
-
-/// Dummy struct
-pub struct BluetoothData {
-    scanning: bool,
-    devices: HashMap<bluer::Address, BluetoothDeviceInfo>,
-}
-
-impl BluetoothData {
-    /// construct a new self
-    pub fn new() -> Self {
+#[cfg(target_os = "android")]
+impl BluetoothAdapter {
+    /// Construct a new bluetooth adapter object
+    pub fn new(app: AndroidApp) -> Self {
+        let java = android::Java::make(app);
         Self {
-            scanning: false,
-            devices: HashMap::new(),
-        }
-    }
-}
-
-/// Holds the known informatio for a bluetooth device
-pub struct BluetoothDeviceInfo {
-    name: Option<String>,
-    ty: Option<bluer::AddressType>,
-    icon: Option<String>,
-    class: Option<u32>,
-    appearance: Option<u16>,
-    uuids: HashSet<bluer::Uuid>,
-    paired: bool,
-    connected: bool,
-    trusted: bool,
-    blocked: bool,
-    wake: bool,
-    alias: Option<String>,
-    legacy_pair: bool,
-    rssi: Option<i16>,
-    txpwr: Option<i16>,
-    battery: Option<u8>,
-}
-
-impl BluetoothDeviceInfo {
-    /// Construct a new self
-    pub fn new() -> Self {
-        Self {
-            name: None,
-            ty: None,
-            icon: None,
-            class: None,
-            appearance: None,
-            uuids: HashSet::new(),
-            paired: false,
-            connected: false,
-            trusted: false,
-            blocked: false,
-            wake: false,
-            alias: None,
-            legacy_pair: false,
-            rssi: None,
-            txpwr: None,
-            battery: None,
+            adapter: android::Bluetooth::new(Arc::new(Mutex::new(java))),
         }
     }
 
-    /// Update the device with the given property
-    fn update(&mut self, prop: DeviceProperty) {
-        match prop {
-            bluer::DeviceProperty::Name(n) => self.name = Some(n),
-            bluer::DeviceProperty::RemoteAddress(_) => {}
-            bluer::DeviceProperty::AddressType(at) => self.ty = Some(at),
-            bluer::DeviceProperty::Icon(icon) => self.icon = Some(icon),
-            bluer::DeviceProperty::Class(class) => self.class = Some(class),
-            bluer::DeviceProperty::Appearance(a) => self.appearance = Some(a),
-            bluer::DeviceProperty::Uuids(u) => self.uuids = u,
-            bluer::DeviceProperty::Paired(p) => self.paired = p,
-            bluer::DeviceProperty::Connected(c) => self.connected = c,
-            bluer::DeviceProperty::Trusted(t) => self.trusted = t,
-            bluer::DeviceProperty::Blocked(b) => self.blocked = b,
-            bluer::DeviceProperty::WakeAllowed(w) => self.wake = w,
-            bluer::DeviceProperty::Alias(a) => self.alias = Some(a),
-            bluer::DeviceProperty::LegacyPairing(lp) => self.legacy_pair = lp,
-            bluer::DeviceProperty::Modalias(_) => {}
-            bluer::DeviceProperty::Rssi(r) => self.rssi = Some(r),
-            bluer::DeviceProperty::TxPower(t) => self.txpwr = Some(t),
-            bluer::DeviceProperty::ManufacturerData(_) => {}
-            bluer::DeviceProperty::ServiceData(_) => {}
-            bluer::DeviceProperty::ServicesResolved(_) => {}
-            bluer::DeviceProperty::AdvertisingFlags(_) => {}
-            bluer::DeviceProperty::AdvertisingData(_) => {}
-            bluer::DeviceProperty::BatteryPercentage(b) => self.battery = Some(b),
-            _ => {}
+    /// Retrieve a list of paired bluetooth devices, if possible
+    pub fn get_paired_devices(&mut self) -> Option<Vec<BluetoothDevice>> {
+        let devs = self.adapter.get_bonded_devices();
+        if let Some(devs) = devs {
+            Some(devs.into_iter().map(|a| BluetoothDevice(a)).collect())
         }
+        else {
+            None
+        }
+    }
+
+    /// Cancel bluetooth discovery on the bluetooth adapter
+    pub fn cancel_discovery(&mut self) {
+        self.adapter.cancel_discovery()
+    }
+}
+
+#[cfg(target_os = "android")]
+impl BluetoothDevice {
+    /// Run the service discovery protocol to discover available uuids for this device
+    pub fn run_sdp(&mut self) {
+        self.0.get_uuids_with_sdp();
+    }
+
+    /// Get all known uuids for this device
+    pub fn get_uuids(&mut self) -> Result<Vec<Uuid>, std::io::Error> {
+        self.0.get_uuids()
+    }
+
+    /// Retrieve the device name
+    pub fn get_name(&self) -> Result<String, std::io::Error> {
+        self.0.get_name()
+    }
+
+    /// Retrieve the device address
+    pub fn get_address(&mut self) -> Result<String, std::io::Error> {
+        self.0.get_address()
+    }
+
+    /// Retrieve the device pairing (bonding) status
+    pub fn get_bond_state(&self) -> Result<i32, std::io::Error> {
+        self.0.get_bond_state()
+    }
+
+    /// Attempt to get an rfcomm socket for the given uuid and seciruty setting
+    pub fn get_rfcomm_socket(
+        &mut self,
+        uuid: Uuid,
+        is_secure: bool,
+    ) -> Option<BluetoothSocket> {
+        self.0.get_rfcomm_socket(uuid, is_secure).map(|a| BluetoothSocket(a))
+    }
+}
+
+#[cfg(target_os = "android")]
+impl<'a> BluetoothSocket<'a> {
+    /// Attempts to connect to a remote device. When connected, it creates a
+    /// backgrond thread for reading data, which terminates itself on disconnection.
+    /// Do not reuse the socket after disconnection, because the underlying OS
+    /// implementation is probably incapable of reconnecting the device, just like
+    /// `java.net.Socket`.
+    pub fn connect(&mut self) -> Result<(), std::io::Error> {
+        self.0.connect()
     }
 }

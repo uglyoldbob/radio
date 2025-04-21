@@ -9,8 +9,9 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::{NativeOptions, Renderer};
 
-//mod bluetooth;
 mod comms;
+
+use bluetooth_rust::Java;
 
 /// Represents a color pixel with rgb and alpha components
 #[repr(C)]
@@ -121,49 +122,6 @@ enum AppConfigError {
     UnableToCreate,
 }
 
-#[ouroboros::self_referencing]
-pub struct Java {
-    app: AndroidApp,
-    java: jni::JavaVM,
-    #[borrows(java)]
-    #[not_covariant]
-    env: jni::AttachGuard<'this>,
-}
-
-impl Java {
-    /// Use the java environment with a closure that returns a type. Generally used to make calls to java code.
-    pub fn use_env<T, F: FnOnce(&mut jni::JNIEnv, jni::objects::JObject) -> T>(
-        &mut self,
-        f: F,
-    ) -> T {
-        let context = unsafe {
-            jni::objects::JObject::from_raw(
-                self.borrow_app().activity_as_ptr() as *mut jni::sys::_jobject
-            )
-        };
-        self.with_env_mut(|a| f(a, context))
-    }
-
-    /// Retrieve a clone of the androidapp object
-    pub fn get_app(&self) -> AndroidApp {
-        self.borrow_app().clone()
-    }
-
-    /// Make a new java object using the androidapp object
-    pub fn make(app: AndroidApp) -> Self {
-        let vm = unsafe {
-            jni::JavaVM::from_raw(app.vm_as_ptr() as *mut *const jni::sys::JNIInvokeInterface_)
-        }
-        .unwrap();
-        JavaBuilder {
-            app,
-            java: vm,
-            env_builder: |java: &jni::JavaVM| java.attach_current_thread().unwrap(),
-        }
-        .build()
-    }
-}
-
 #[derive(Debug)]
 struct BluetoothConfig {
     connect_nap: bool,
@@ -180,8 +138,9 @@ pub struct DemoApp {
     local_storage: Option<std::path::PathBuf>,
     settings: Result<AppConfig, AppConfigError>,
     _java: Arc<Mutex<Java>>,
-    //known_uuids: BTreeMap<String, Vec<bluetooth::Uuid>>,
-    //bluetooth_devs: BTreeMap<String, BluetoothConfig>,
+    bluetooth: bluetooth_rust::BluetoothAdapter,
+    known_uuids: BTreeMap<String, Vec<bluetooth_rust::Uuid>>,
+    bluetooth_devs: BTreeMap<String, BluetoothConfig>,
     radios: comms::UobRadios,
     uob_radio_pipe: (
         std::sync::mpsc::Sender<comms::MessageToApp>,
@@ -310,12 +269,11 @@ impl eframe::App for DemoApp {
                         },
                     }));
                 }
-                /*
-                for mut d in self.bluetooth.get_bonded_devices().unwrap() {
-                    d.get_uuids_with_sdp();
+                for mut d in self.bluetooth.get_paired_devices().unwrap() {
+                    d.run_sdp();
                     let uuids = d.get_uuids();
                     if let Ok(uuids) = uuids {
-                        if uuids.contains(&bluetooth::Uuid::NetworkingNap) {
+                        if true {
                             let address = d.get_address().unwrap();
                             if !self.bluetooth_devs.contains_key(&address) {
                                 self.bluetooth_devs
@@ -330,8 +288,8 @@ impl eframe::App for DemoApp {
                                     self.bluetooth.cancel_discovery();
                                     log::warn!("About to connect");
                                     let socket =
-                                        d.get_rfcomm_socket(bluetooth::Uuid::NetworkingNap, true);
-                                    if let Some(socket) = socket {
+                                        d.get_rfcomm_socket(bluetooth_rust::Uuid::NetworkingNap, true);
+                                    if let Some(mut socket) = socket {
                                         if socket.connect().is_ok() {
                                             ui.label("Connection is ok");
                                             config.connect_nap = false;
@@ -361,7 +319,7 @@ impl eframe::App for DemoApp {
                             }
                         }
                     }
-                }*/
+                }
             });
         });
     }
@@ -408,14 +366,14 @@ impl DemoApp {
     }
 
     fn new(_cc: &eframe::CreationContext<'_>, options: NativeOptions, app: AndroidApp) -> Self {
-        let java = Java::make(app);
-        let java = Arc::new(Mutex::new(java));
+        let java = Java::make(app.clone());
         let mut s = Self {
             local_storage: options.android_app.unwrap().internal_data_path(),
             settings: Err(AppConfigError::NotLoaded),
-            _java: java,
-            //known_uuids: BTreeMap::new(),
-            //bluetooth_devs: BTreeMap::new(),
+            _java: Arc::new(Mutex::new(java)),
+            bluetooth: bluetooth_rust::BluetoothAdapter::new(app),
+            known_uuids: BTreeMap::new(),
+            bluetooth_devs: BTreeMap::new(),
             radios: comms::UobRadios::new(),
             uob_radio_pipe: std::sync::mpsc::channel(),
             texture: None,
@@ -437,12 +395,12 @@ fn _main(mut options: NativeOptions, app: AndroidApp) {
 }
 
 #[cfg(target_os = "android")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Debug) // limit log level
-            .with_tag("uob_radio"), // logs will show under mytag tag
+            .with_max_level(log::LevelFilter::Debug)
+            .with_tag("uob_radio"),
     );
     log::info!("UobRadio startup");
     let mut options = NativeOptions::default();

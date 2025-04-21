@@ -111,15 +111,15 @@ impl UobRadio {
                 self.status = RadioReceiveStatus::WaitForLength([0;4], 0);
             }
             let mut got_length = None;
-            if let RadioReceiveStatus::WaitForLength(mut l, mut i) = &mut self.status {
-                match stream.read(&mut l[i as usize..]) {
+            if let RadioReceiveStatus::WaitForLength(l, i) = &mut self.status {
+                match stream.read(&mut l[*i as usize..]) {
                     Ok(a) => {
-                        if (a + i as usize) == 4 {
-                            let length = u32::from_be_bytes(l);
+                        if (a + *i as usize) == 4 {
+                            let length = u32::from_be_bytes(*l);
                             log::error!("Got length of 0x{:04x}, waiting for packet", length);
                             got_length = Some(length);
                         }
-                        i += a as u8;
+                        *i += a as u8;
                     }
                     Err(e) => {
                         if let std::io::ErrorKind::WouldBlock = e.kind() {

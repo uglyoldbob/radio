@@ -1,17 +1,89 @@
+//! Android specific bluetooth code
+
+use winit::platform::android::activity::AndroidApp;
+use jni_min_helper::*;
+
+/// Maps unexpected JNI errors to `std::io::Error`.
+/// (`From<jni::errors::Error>` cannot be implemented for `std::io::Error`
+/// here because of the orphan rule). Side effect: `jni_last_cleared_ex()`.
+#[inline(always)]
+pub(crate) fn jerr(env: &mut jni::JNIEnv, err: jni::errors::Error) -> std::io::Error {
+    use jni::errors::Error::*;
+    if let JavaException = err {
+        let err = jni_min_helper::jni_clear_ex(err);
+        jni_min_helper::jni_last_cleared_ex()
+            .ok_or(JavaException)
+            .and_then(|ex| Ok((ex.get_class_name(env)?, ex.get_throwable_msg(env)?)))
+            .map(|(cls, msg)| {
+                if cls.contains("SecurityException") {
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, msg)
+                } else if cls.contains("IllegalArgumentException") {
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, msg)
+                } else {
+                    std::io::Error::other(format!("{cls}: {msg}"))
+                }
+            })
+            .unwrap_or(std::io::Error::other(err))
+    } else {
+        std::io::Error::other(err)
+    }
+}
+
+#[ouroboros::self_referencing]
+pub struct Java {
+    app: AndroidApp,
+    java: jni::JavaVM,
+    #[borrows(java)]
+    #[not_covariant]
+    env: jni::AttachGuard<'this>,
+}
+
+impl Java {
+    /// Use the java environment with a closure that returns a type. Generally used to make calls to java code.
+    pub fn use_env<T, F: FnOnce(&mut jni::JNIEnv, jni::objects::JObject) -> T>(
+        &mut self,
+        f: F,
+    ) -> T {
+        let context = unsafe {
+            jni::objects::JObject::from_raw(
+                self.borrow_app().activity_as_ptr() as *mut jni::sys::_jobject
+            )
+        };
+        self.with_env_mut(|a| f(a, context))
+    }
+
+    /// Retrieve a clone of the androidapp object
+    pub fn get_app(&self) -> AndroidApp {
+        self.borrow_app().clone()
+    }
+
+    /// Make a new java object using the androidapp object
+    pub fn make(app: AndroidApp) -> Self {
+        let vm = unsafe {
+            jni::JavaVM::from_raw(app.vm_as_ptr() as *mut *const jni::sys::JNIInvokeInterface_)
+        }
+        .unwrap();
+        JavaBuilder {
+            app,
+            java: vm,
+            env_builder: |java: &jni::JavaVM| java.attach_current_thread().unwrap(),
+        }
+        .build()
+    }
+}
+
 use std::convert::TryInto;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
 mod socket;
-use socket::BluetoothSocket;
+pub use socket::BluetoothSocket;
 
-mod uuid;
-use uuid::ParcelUuid;
-pub use uuid::Uuid;
+use crate::uuid::ParcelUuid;
 
 mod device;
-use device::BluetoothDevice;
+pub use device::BluetoothDevice;
 
 pub struct Bluetooth {
     adapter: OnceLock<jni::objects::GlobalRef>,
