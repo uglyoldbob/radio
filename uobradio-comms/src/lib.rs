@@ -26,19 +26,30 @@ pub struct UobRadio {
     status: RadioReceiveStatus,
     waiting_until: Option<std::time::Instant>,
     timeout: std::time::Duration,
+    ping_time: std::time::Instant,
     cameras: Option<Vec<video::SendableVideoSource>>,
 }
 
 impl UobRadio {
     fn new(address: std::net::SocketAddr, timeout_secs: u64) -> Self {
+        let timeout = std::time::Duration::from_secs(timeout_secs);
         Self {
             address,
             comms: None,
             status: RadioReceiveStatus::Disconnected,
             waiting_until: None,
-            timeout: std::time::Duration::from_secs(timeout_secs),
+            timeout: timeout,
+            ping_time: std::time::Instant::now() + timeout / 3,
             cameras: None,
         }
+    }
+
+    fn update_ping_time(&mut self) {
+        self.ping_time = std::time::Instant::now() + self.timeout / 3;
+    }
+
+    fn check_ping_time(&self) -> bool {
+        std::time::Instant::now() > self.ping_time
     }
 
     pub fn cameras(&self) -> Option<&Vec<video::SendableVideoSource>> {
@@ -103,16 +114,29 @@ pub enum MessageToApp {
     CameraControls(u8, Vec<Vec<u8>>),
 }
 
+impl MessageFromApp {
+    pub fn send_to_stream(&self, stream: &mut std::net::TcpStream) -> Result<(), String> {
+        log::info!("Sending packet to radio: {:?}", self);
+        let packet = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
+        stream
+            .write_all(&((packet.len() as u32).to_be_bytes()[0..4]))
+            .map_err(|e| e.to_string())?;
+        stream.write_all(&packet).map_err(|e| e.to_string())?;
+        log::info!("Done sending the packet");
+        Ok(())
+    }
+}
+
 impl MessageToApp {
     #[cfg(not(target_os = "android"))]
-    pub async fn send_to_stream(&self, stream: &mut tokio::net::TcpStream) -> Result<(), ()> {
+    pub async fn send_to_stream(&self, stream: &mut tokio::net::TcpStream) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
         let packet = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
         stream
             .write_all(&((packet.len() as u32).to_be_bytes()[0..4]))
             .await
-            .map_err(|_| ())?;
-        stream.write_all(&packet).await.map_err(|_| ())?;
+            .map_err(|e| e.to_string())?;
+        stream.write_all(&packet).await.map_err(|e| e.to_string())?;
         Ok(())
     }
 }
@@ -121,7 +145,7 @@ impl UobRadio {
     pub fn process_received<F: FnMut(&MessageToApp)>(
         &mut self,
         mut closure: F,
-    ) -> Result<(), ()> {
+    ) -> Result<(), String> {
         self.connect();
         if let Some(stream) = &mut self.comms {
             loop {
@@ -129,7 +153,7 @@ impl UobRadio {
                 let mut got_length = None;
                 if let RadioReceiveStatus::WaitForLength(time, l, i) = &mut self.status {
                     if std::time::Instant::now() > *time {
-                        return Err(());
+                        return Err("Timeout".to_string());
                     }
                     match stream.read(&mut l[*i as usize..]) {
                         Ok(a) => {
@@ -143,7 +167,7 @@ impl UobRadio {
                             if let std::io::ErrorKind::WouldBlock = e.kind() {
                                 return Ok(());
                             } else {
-                                return Err(());
+                                return Err(e.to_string());
                             }
                         }
                     }
@@ -159,7 +183,7 @@ impl UobRadio {
                 let mut go_idle = false;
                 if let RadioReceiveStatus::WaitForPacket(time, packet, length, l) = &mut self.status {
                     if std::time::Instant::now() > *time {
-                        return Err(());
+                        return Err("Timeout".to_string());
                     }
                     match stream.read(&mut packet[*l as usize..]) {
                         Ok(a) => {
@@ -176,12 +200,9 @@ impl UobRadio {
                                             length,
                                             length2
                                         );
-                                        return Err(());
+                                        return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
-                                        MessageToApp::PingReply(_) => {
-                                            return Err(());
-                                        }
                                         MessageToApp::CameraDataJpeg(_, _) => {
                                             self.waiting_until = None;
                                         }
@@ -197,7 +218,7 @@ impl UobRadio {
                             if let std::io::ErrorKind::WouldBlock = e.kind() {
                                 return Ok(());
                             } else {
-                                return Err(());
+                                return Err(e.to_string());
                             }
                         }
                     }
@@ -214,12 +235,27 @@ impl UobRadio {
         Ok(())
     }
 
+    pub fn ping(&mut self) -> Result<(), String> {
+        self.connect();
+        let time = self.check_ping_time();
+        if let Some(comms) = &mut self.comms {
+            if time {
+                let packet = MessageFromApp::Ping(1);
+                packet.send_to_stream(comms)?;
+                self.update_ping_time();
+            }
+            Ok(())
+        }
+        else {
+            Err("Not connected".to_string())
+        }
+    }
+
     pub fn connect(&mut self) {
         if self.comms.is_none() {
             let tcp = std::net::TcpStream::connect(self.address);
             if let Ok(tcp) = tcp {
-                let a = tcp.set_nonblocking(true);
-                log::error!("Set nonblocking is {:?}", a);
+                let _ = tcp.set_nonblocking(true);
                 self.comms.replace(tcp);
                 self.status = RadioReceiveStatus::WaitForLength(
                     std::time::Instant::now() + self.timeout,
@@ -238,25 +274,21 @@ impl UobRadio {
         self.waiting_until = None;
     }
 
-    pub fn send_gpio(&mut self, gpio: Gpio) {
+    pub fn send_gpio(&mut self, gpio: Gpio) -> Result<(), String> {
         self.connect();
         if let Some(comms) = &mut self.comms {
             log::error!("Sending gpio request {:?}", gpio);
-            let packet = bincode::serde::encode_to_vec(
-                MessageFromApp::GpioControl(gpio),
-                bincode::config::standard(),
-            )
-            .unwrap();
-            let len = packet.len() as u32;
-            log::error!("Packet length is {}", len);
-            let len = len.to_be_bytes();
-            log::error!("Packet is {:x?}", len);
-            let _ = comms.write_all(&(len[0..4]));
-            let _ = comms.write_all(&packet);
+            let packet = MessageFromApp::GpioControl(gpio);
+            packet.send_to_stream(comms)?;
+            self.update_ping_time();
+            Ok(())
+        }
+        else {
+            Err("Not connected".to_string())
         }
     }
 
-    pub fn send_camera_request(&mut self, index: u8) {
+    pub fn send_camera_request(&mut self, index: u8) -> Result<(),String> {
         self.connect();
         if let Some(inst) = &self.waiting_until {
             if *inst < std::time::Instant::now() {
@@ -264,19 +296,14 @@ impl UobRadio {
             }
         } else {
             if let Some(comms) = &mut self.comms {
-                let packet = bincode::serde::encode_to_vec(
-                    MessageFromApp::RequestCamera(index),
-                    bincode::config::standard(),
-                )
-                .unwrap();
-                let len = packet.len() as u32;
-                let len = len.to_be_bytes();
-                let _ = comms.write_all(&(len[0..4]));
-                let _ = comms.write_all(&packet);
+                let packet = MessageFromApp::RequestCamera(index);
+                packet.send_to_stream(comms)?;
                 self.waiting_until =
                     Some(std::time::Instant::now() + std::time::Duration::from_secs(1));
+                self.update_ping_time();
             }
         }
+        Ok(())
     }
 
     pub fn finish_camera_request(&mut self) {
@@ -287,7 +314,7 @@ impl UobRadio {
     pub fn localhost() -> Self {
         let ip: std::net::Ipv4Addr = std::net::Ipv4Addr::new(127, 0, 0, 1);
         let addr = std::net::SocketAddr::new(std::net::IpAddr::V4(ip), 13457);
-        UobRadio::new(addr, 1)
+        UobRadio::new(addr, 5)
     }
 
     pub fn detect_radios(

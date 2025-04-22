@@ -98,7 +98,10 @@ impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         ctx.request_repaint();
         self.common.radio.connect();
-        if self
+        if self.common.radio.ping().is_err() {
+            self.common.radio.disconnect();
+        }
+        if let Err(e) = self
             .common
             .radio
             .process_received(|packet| {
@@ -117,11 +120,9 @@ impl eframe::App for MyEguiApp {
                     }
                 }
             })
-            .is_err()
         {
-            log::error!("Reconnecting to radio due to error");
+            log::error!("Reconnecting to radio due to error: {:?}", e);
             self.common.radio.disconnect();
-            self.common.radio.connect();
         }
         egui_extras::install_image_loaders(ctx);
         egui::TopBottomPanel::bottom("Bottom Icons")

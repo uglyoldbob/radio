@@ -18,7 +18,8 @@ struct MainConfiguration {
 }
 
 #[derive(Clone)]
-struct AppUserCommon {
+/// The common data for an app user
+pub struct AppUserCommon {
     video: Arc<Mutex<Vec<VideoSource>>>,
 }
 
@@ -28,13 +29,13 @@ pub async fn process_app(
     mut stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
     common: AppUserCommon,
-) -> Result<(), ()> {
+) -> Result<(), String> {
     use tokio::io::AsyncReadExt;
     println!("Processing an app at {:?}", addr);
     loop {
-        let length = stream.read_u32().await.map_err(|_| ())?;
+        let length = stream.read_u32().await.map_err(|e| e.to_string())?;
         let mut packet = vec![0; length as usize];
-        stream.read_exact(&mut packet).await.map_err(|_| ())?;
+        stream.read_exact(&mut packet).await.map_err(|e| e.to_string())?;
         let packet: Result<(uobradio_comms::MessageFromApp, usize), bincode::error::DecodeError> =
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
@@ -104,7 +105,7 @@ pub async fn process_app(
             }
         } else {
             println!("Failed to process packet");
-            return Err(());
+            return Err("Received bad packet".to_string());
         }
     }
 }
