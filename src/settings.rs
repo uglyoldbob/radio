@@ -4,7 +4,7 @@ use super::SubwindowTrait;
 use eframe::egui;
 
 pub struct Settings {
-    selected_video: usize,
+    selected_video: u8,
     texture: Option<egui::TextureHandle>,
 }
 
@@ -41,39 +41,45 @@ impl SubwindowTrait for Settings {
                                             .selectable_label(false, format!("Camera {}", i))
                                             .clicked()
                                         {
-                                            self.selected_video = i;
+                                            self.selected_video = i as u8;
                                         }
                                     }
                                 });
-                            let vsrc = &mut cameras[self.selected_video];
-                            for c in &mut vsrc.controls {
-                                if c.egui_show(ui) {
-                                    todo!();
-                                    //c.send_update(&mut vsrc.vsend);
+                            if let Some(vsrc) = cameras.get_mut(&self.selected_video) {
+                                for c in &mut vsrc.controls {
+                                    if c.egui_show(ui) {
+                                        todo!();
+                                        //c.send_update(&mut vsrc.vsend);
+                                    }
+                                }
+                                if let Some(image) = &mut vsrc.image {
+                                    ui.checkbox(&mut image.hmirror, "H Mirror");
+                                    ui.checkbox(&mut image.vmirror, "V Mirror");
                                 }
                             }
-                            ui.checkbox(&mut vsrc.image.hmirror, "H Mirror");
-                            ui.checkbox(&mut vsrc.image.vmirror, "V Mirror");
                         });
-                        let vsrc = &mut cameras[self.selected_video];
-                        if let Some(pd) = &vsrc.image.pixel_data {
-                            let zoom = (size.x / (vsrc.image.width as f32)).min(size.y / (vsrc.image.height as f32));
-                            size = egui::Vec2 {
-                                x: vsrc.image.width as f32 * zoom,
-                                y: vsrc.image.height as f32 * zoom,
-                            };
-                            let image = egui::ColorImage {
-                                size: [vsrc.image.width as usize, vsrc.image.height as usize],
-                                pixels: pd.get_egui(),
-                            };
-                            if let None = self.texture {
-                                self.texture = Some(ctx.load_texture(
-                                    "camera0",
-                                    image,
-                                    egui::TextureOptions::LINEAR,
-                                ));
-                            } else if let Some(t) = &mut self.texture {
-                                t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                        if let Some(vsrc) = cameras.get_mut(&self.selected_video) {
+                            if let Some(image) = &vsrc.image {
+                                if let Some(pd) = &image.pixel_data {
+                                    let zoom = (size.x / (image.width as f32)).min(size.y / (image.height as f32));
+                                    size = egui::Vec2 {
+                                        x: image.width as f32 * zoom,
+                                        y: image.height as f32 * zoom,
+                                    };
+                                    let image = egui::ColorImage {
+                                        size: [image.width as usize, image.height as usize],
+                                        pixels: pd.get_egui(),
+                                    };
+                                    if let None = self.texture {
+                                        self.texture = Some(ctx.load_texture(
+                                            "camera0",
+                                            image,
+                                            egui::TextureOptions::LINEAR,
+                                        ));
+                                    } else if let Some(t) = &mut self.texture {
+                                        t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                                    }
+                                }
                             }
                         }
                         ui.with_layout(egui::Layout::top_down(egui::Align::TOP), |ui| {

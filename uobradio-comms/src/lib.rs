@@ -6,6 +6,7 @@ pub mod video;
 
 #[cfg(target_os = "linux")]
 pub use v4l;
+use video::SendableVideoSource;
 
 pub type UobRadios = BTreeMap<std::net::SocketAddr, UobRadio>;
 
@@ -27,7 +28,8 @@ pub struct UobRadio {
     waiting_until: Option<std::time::Instant>,
     timeout: std::time::Duration,
     ping_time: std::time::Instant,
-    cameras: Option<Vec<video::SendableVideoSource>>,
+    cameras: Option<BTreeMap<u8, video::SendableVideoSource>>,
+    waiting_for_camera_options: bool,
 }
 
 impl UobRadio {
@@ -41,6 +43,7 @@ impl UobRadio {
             timeout: timeout,
             ping_time: std::time::Instant::now() + timeout / 3,
             cameras: None,
+            waiting_for_camera_options: false,
         }
     }
 
@@ -52,11 +55,11 @@ impl UobRadio {
         std::time::Instant::now() > self.ping_time
     }
 
-    pub fn cameras(&self) -> Option<&Vec<video::SendableVideoSource>> {
+    pub fn cameras(&self) -> Option<&BTreeMap<u8, video::SendableVideoSource>> {
         self.cameras.as_ref()
     }
 
-    pub fn cameras_mut(&mut self) -> Option<&mut Vec<video::SendableVideoSource>> {
+    pub fn cameras_mut(&mut self) -> Option<&mut BTreeMap<u8, video::SendableVideoSource>> {
         self.cameras.as_mut()
     }
 }
@@ -203,8 +206,27 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
-                                        MessageToApp::CameraDataJpeg(_, _) => {
+                                        MessageToApp::CameraDataJpeg(id, data) => {
                                             self.waiting_until = None;
+                                            log::info!("Got a camera jpeg for camera {}", id);
+                                            if let Some(cameras) = &mut self.cameras {
+                                                let vsrc = cameras.get_mut(id);
+                                                if let Some(camera) = vsrc {
+                                                    if let Some(img) = crate::video::PixelImage::<crate::video::RgbPixel>::from_jpeg_image(&data) {
+                                                        camera.image.replace(img.into());
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        MessageToApp::CameraOptions(v) => {
+                                            let mut vids = BTreeMap::new();
+                                            for v in v {
+                                                let svs = SendableVideoSource::new();
+                                                vids.insert(*v, svs);
+                                            }
+                                            log::info!("Got {} camera sources", vids.len());
+                                            self.waiting_for_camera_options = false;
+                                            self.cameras.replace(vids);
                                         }
                                         _ => {}
                                     }
@@ -233,6 +255,20 @@ impl UobRadio {
             }
         }
         Ok(())
+    }
+
+    pub fn get_cameras(&mut self) -> bool {
+        if self.cameras.is_none() {
+            if !self.waiting_for_camera_options {
+                let packet = MessageFromApp::RequestCameraOptions;
+                if let Some(comms) = &mut self.comms {
+                    let _ = packet.send_to_stream(comms);
+                    self.waiting_for_camera_options = true;
+                    self.update_ping_time();
+                }
+            }
+        }
+        !self.cameras.is_none()
     }
 
     pub fn ping(&mut self) -> Result<(), String> {

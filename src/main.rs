@@ -101,6 +101,7 @@ impl eframe::App for MyEguiApp {
         if self.common.radio.ping().is_err() {
             self.common.radio.disconnect();
         }
+        self.common.radio.get_cameras();
         if let Err(e) = self
             .common
             .radio

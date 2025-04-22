@@ -4,6 +4,97 @@ use ffimage::iter::BytesExt;
 use ffimage::iter::ColorConvertExt;
 use ffimage::iter::PixelsExt;
 
+
+/// Represents a color pixel with rgb and alpha components
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct RgbPixel {
+    colors: [u8; 4],
+}
+
+impl RgbPixel {
+    /// Build from r g and b, making it fully non-transparent
+    pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
+        Self {
+            colors: [r, g, b, 255],
+        }
+    }
+    /// Build from a solid gray channel
+    pub const fn from_gray(g: u8) -> Self {
+        Self {
+            colors: [g, g, g, 255],
+        }
+    }
+}
+
+/// A generic pixel based image
+#[derive(Debug, Clone)]
+pub struct PixelImage<T> {
+    /// The actual pixels of the image
+    pixels: Vec<T>,
+    /// The width of the image in pixels.
+    pub width: u16,
+    /// The height of the image in pixels.
+    pub height: u16,
+}
+
+impl PixelImage<RgbPixel> {
+    /// Construct from raw image data of the specified dimensions
+    pub fn from_raw(width: u16, height: u16, data: &[u8]) -> Self {
+        let pixels: Vec<RgbPixel> = data.iter().map(|p| RgbPixel::from_gray(*p)).collect();
+        Self {
+            pixels,
+            width,
+            height,
+        }
+    }
+
+    /// Build from jpeg using the image crate
+    pub fn from_jpeg_image(data: &[u8]) -> Option<Self> {
+        let data2 = std::io::Cursor::new(data);
+        let reader = image::ImageReader::with_format(data2, image::ImageFormat::Jpeg);
+        let image = reader.decode().ok()?;
+        let img = image.into_rgb8();
+        let w = img.width();
+        let h = img.height();
+        let b = img.as_raw().clone();
+        let pixels: Vec<RgbPixel> = b
+            .chunks_exact(3)
+            .map(|p| RgbPixel::from_rgb(p[0], p[1], p[2]))
+            .collect();
+        Some(Self {
+            pixels,
+            width: w as u16,
+            height: h as u16,
+        })
+    }
+
+    /// Build a new image of the specified dimensions
+    pub fn new(w: u16, h: u16) -> Self {
+        let cap = w as usize * h as usize;
+        let m = vec![RgbPixel { colors: [0; 4] }; cap];
+        Self {
+            pixels: m,
+            width: w,
+            height: h,
+        }
+    }
+}
+
+impl From<PixelImage<RgbPixel>> for egui::ColorImage {
+    fn from(value: PixelImage<RgbPixel>) -> Self {
+        let pixels = value
+            .pixels
+            .iter()
+            .map(|p| egui::Color32::from_rgb(p.colors[0], p.colors[1], p.colors[2]))
+            .collect();
+        Self {
+            size: [value.width as usize, value.height as usize],
+            pixels,
+        }
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ControlValue {
     None,
@@ -71,6 +162,20 @@ pub struct VideoFrame {
     pub pixel_data: Option<PixelData>,
     pub hmirror: bool,
     pub vmirror: bool,
+}
+
+impl From<PixelImage<RgbPixel>> for VideoFrame {
+    fn from(value: PixelImage<RgbPixel>) -> Self {
+        let p: Vec<u8> = value.pixels.iter().flat_map(|p| [p.colors[0], p.colors[1], p.colors[2]]).collect();
+        let pixels: PixelData = PixelData::Rgb(p);
+        Self {
+            width: value.width,
+            height: value.height,
+            pixel_data: Some(pixels),
+            hmirror: false,
+            vmirror: false,
+        }
+    }
 }
 
 impl VideoFrame {
@@ -230,8 +335,17 @@ pub struct VideoSource {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SendableVideoSource {
-    pub image: VideoFrame,
+    pub image: Option<VideoFrame>,
     pub controls: Vec<SendableControlElement>,
+}
+
+impl SendableVideoSource {
+    pub fn new() -> Self {
+        Self {
+            image: None,
+            controls: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -434,12 +548,6 @@ pub struct VideoSourceSendable {
     pub controls: Vec<SendableControlElement>,
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-struct RgbPixel {
-    a: [u8; 3],
-}
-
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum PixelData {
     Yuyv(Vec<u8>),
@@ -518,12 +626,10 @@ impl PixelData {
             PixelData::Rgb(vec) => {
                 let mut pixels: Vec<RgbPixel> = vec
                     .chunks_exact(3)
-                    .map(|a| RgbPixel {
-                        a: [a[0], a[1], a[2]],
-                    })
+                    .map(|a| RgbPixel::from_rgb(a[0], a[1], a[2]))
                     .collect();
                 Self::general_mirror(width, hflip, vflip, &mut pixels);
-                *vec = pixels.iter().flat_map(|a| a.a).collect();
+                *vec = pixels.iter().flat_map(|a| a.colors).collect();
             }
         }
     }
