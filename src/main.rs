@@ -102,26 +102,20 @@ impl eframe::App for MyEguiApp {
             self.common.radio.disconnect();
         }
         self.common.radio.get_cameras();
-        if let Err(e) = self
-            .common
-            .radio
-            .process_received(|packet| {
-                match packet {
-                    uobradio_comms::MessageToApp::CameraControls(id, data) => {
-                        log::error!("Received some camera controls: {} of them", data.len());
-                    }
-                    uobradio_comms::MessageToApp::CameraOptions(options) => {
-                        log::error!("Got camera options {:?}", options);
-                    }
-                    uobradio_comms::MessageToApp::PingReply(port) => {
-                        log::error!("got ping packet in update method port {}", port);
-                    }
-                    uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
-                        log::error!("Recieved data for camera {} length {}", index, jpeg.len());
-                    }
-                }
-            })
-        {
+        if let Err(e) = self.common.radio.process_received(|packet| match packet {
+            uobradio_comms::MessageToApp::CameraControls(id, data) => {
+                log::error!("Received some camera controls: {} of them", data.len());
+            }
+            uobradio_comms::MessageToApp::CameraOptions(options) => {
+                log::error!("Got camera options {:?}", options);
+            }
+            uobradio_comms::MessageToApp::PingReply(port) => {
+                log::error!("got ping packet in update method port {}", port);
+            }
+            uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
+                log::error!("Recieved data for camera {} length {}", index, jpeg.len());
+            }
+        }) {
             log::error!("Reconnecting to radio due to error: {:?}", e);
             self.common.radio.disconnect();
         }

@@ -83,8 +83,8 @@ impl eframe::App for UobRadioMainWindow {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         //self.bluetooth.enable();
         for (address, radio) in self.radios.iter_mut() {
-            if radio.process_received(|packet| {
-                match packet {
+            if radio
+                .process_received(|packet| match packet {
                     uobradio_comms::MessageToApp::CameraControls(id, data) => {
                         log::error!("Received some camera controls: {} of them", data.len());
                     }
@@ -96,15 +96,17 @@ impl eframe::App for UobRadioMainWindow {
                     }
                     uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
                         log::error!("Recieved data for camera {} length {}", index, jpeg.len());
-                        if let Some(img) = crate::PixelImage::<crate::RgbPixel>::from_jpeg_image(&jpeg)
+                        if let Some(img) =
+                            crate::PixelImage::<crate::RgbPixel>::from_jpeg_image(&jpeg)
                         {
                             Self::update_shown_image(&mut self.texture, img, ctx);
                         } else {
                             log::error!("Invalid jpeg received");
                         }
                     }
-                }
-            }).is_err() {
+                })
+                .is_err()
+            {
                 log::error!("Reconnecting to radio due to error");
                 radio.disconnect();
                 radio.connect();

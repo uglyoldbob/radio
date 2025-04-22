@@ -35,7 +35,10 @@ pub async fn process_app(
     loop {
         let length = stream.read_u32().await.map_err(|e| e.to_string())?;
         let mut packet = vec![0; length as usize];
-        stream.read_exact(&mut packet).await.map_err(|e| e.to_string())?;
+        stream
+            .read_exact(&mut packet)
+            .await
+            .map_err(|e| e.to_string())?;
         let packet: Result<(uobradio_comms::MessageFromApp, usize), bincode::error::DecodeError> =
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
@@ -46,12 +49,13 @@ pub async fn process_app(
                             let mut options = Vec::new();
                             for c in &vid.controls {
                                 let sc = c.sendable();
-                                let raw_sc = bincode::serde::encode_to_vec(sc, bincode::config::standard()).unwrap();
+                                let raw_sc =
+                                    bincode::serde::encode_to_vec(sc, bincode::config::standard())
+                                        .unwrap();
                                 options.push(raw_sc);
                             }
                             Some(uobradio_comms::MessageToApp::CameraControls(id, options))
-                        }
-                        else {
+                        } else {
                             None
                         }
                     } else {
@@ -64,9 +68,7 @@ pub async fn process_app(
                 uobradio_comms::MessageFromApp::CameraSettingControl(id, data) => {
                     let a: uobradio_comms::v4l::control::Value = data.into();
                     let mut vid = common.video.lock().unwrap();
-                    if let Some(vid) = vid.get_mut(id as usize) {
-
-                    }
+                    if let Some(vid) = vid.get_mut(id as usize) {}
                 }
                 uobradio_comms::MessageFromApp::RequestCameraOptions => {
                     let packet = uobradio_comms::MessageToApp::CameraOptions(vec![0]);
@@ -81,7 +83,8 @@ pub async fn process_app(
                         if let Some(v) = video.get(index as usize) {
                             let frame = v.image.lock().unwrap();
                             let jpeg = frame.get_jpeg();
-                            let response = uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg);
+                            let response =
+                                uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg);
                             Some(response)
                         } else {
                             None
@@ -94,10 +97,18 @@ pub async fn process_app(
                     }
                 }
                 uobradio_comms::MessageFromApp::GpioControl(gpio) => match gpio {
-                    uobradio_comms::Gpio::WinchControl(f, r) => println!("Winch control {} {}", f, r),
-                    uobradio_comms::Gpio::CameraLedControl(i, s) => println!("Camera led {} to {}", i, s),
-                    uobradio_comms::Gpio::LockDoors => println!("Received request to lock all doors"),
-                    uobradio_comms::Gpio::UnlockDoors => println!("Recieved request to unlock all doors"),
+                    uobradio_comms::Gpio::WinchControl(f, r) => {
+                        println!("Winch control {} {}", f, r)
+                    }
+                    uobradio_comms::Gpio::CameraLedControl(i, s) => {
+                        println!("Camera led {} to {}", i, s)
+                    }
+                    uobradio_comms::Gpio::LockDoors => {
+                        println!("Received request to lock all doors")
+                    }
+                    uobradio_comms::Gpio::UnlockDoors => {
+                        println!("Recieved request to unlock all doors")
+                    }
                     uobradio_comms::Gpio::WindowControl { id, up, down } => {
                         println!("Window {} {}/{}", id, up, down)
                     }

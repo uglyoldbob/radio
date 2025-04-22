@@ -35,7 +35,8 @@ impl SubwindowTrait for Video {
                     if let Some(vsrc) = cameras.get(&self.which_video) {
                         if let Some(image) = &vsrc.image {
                             if let Some(pd) = &image.pixel_data {
-                                let zoom = (size.x / (image.width as f32)).min(size.y / (image.height as f32));
+                                let zoom = (size.x / (image.width as f32))
+                                    .min(size.y / (image.height as f32));
                                 size = egui::Vec2 {
                                     x: image.width as f32 * zoom,
                                     y: image.height as f32 * zoom,
