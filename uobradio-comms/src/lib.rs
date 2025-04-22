@@ -92,12 +92,11 @@ pub enum Gpio {
 pub enum MessageFromApp {
     Ping(u16),
     RequestCamera(u8),
-    RequestCameraOptions,
+    /// Request the entire btreemap of all cameras
+    RequestCameras,
     GpioControl(Gpio),
     /// The camera index with the bincode encoded data for the setting to change
-    CameraSettingControl(u8, video::ControlValue),
-    /// Retrieve all applicable controls for the specified camera
-    GetCameraControls(u8),
+    CameraSettingControl(u8, u8, video::ControlValue),
 }
 
 pub struct MessageFromAppWithAddr {
@@ -111,10 +110,8 @@ pub enum MessageToApp {
     PingReply(u16),
     /// Contains a jpeg image from a single camera
     CameraDataJpeg(u8, Vec<u8>),
-    /// Contains the indexes of all valid cameras
-    CameraOptions(Vec<u8>),
-    /// Contains the camera controls for the specified camera
-    CameraControls(u8, Vec<Vec<u8>>),
+    /// Send the btreemap of all cameras
+    CamerasBtreeMap(BTreeMap<u8, video::SendableVideoSource>),
 }
 
 impl MessageFromApp {
@@ -218,15 +215,8 @@ impl UobRadio {
                                                 }
                                             }
                                         }
-                                        MessageToApp::CameraOptions(v) => {
-                                            let mut vids = BTreeMap::new();
-                                            for v in v {
-                                                let svs = SendableVideoSource::new();
-                                                vids.insert(*v, svs);
-                                            }
-                                            log::info!("Got {} camera sources", vids.len());
-                                            self.waiting_for_camera_options = false;
-                                            self.cameras.replace(vids);
+                                        MessageToApp::CamerasBtreeMap(map) => {
+                                            self.cameras.replace(map.to_owned());
                                         }
                                         _ => {}
                                     }
@@ -260,7 +250,7 @@ impl UobRadio {
     pub fn get_cameras(&mut self) -> bool {
         if self.cameras.is_none() {
             if !self.waiting_for_camera_options {
-                let packet = MessageFromApp::RequestCameraOptions;
+                let packet = MessageFromApp::RequestCameras;
                 if let Some(comms) = &mut self.comms {
                     let _ = packet.send_to_stream(comms);
                     self.waiting_for_camera_options = true;

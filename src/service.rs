@@ -30,6 +30,8 @@ pub async fn process_app(
     addr: std::net::SocketAddr,
     common: AppUserCommon,
 ) -> Result<(), String> {
+    use std::collections::BTreeMap;
+
     use tokio::io::AsyncReadExt;
     println!("Processing an app at {:?}", addr);
     loop {
@@ -43,36 +45,29 @@ pub async fn process_app(
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
             match packet {
-                uobradio_comms::MessageFromApp::GetCameraControls(id) => {
-                    let packet = if let Ok(mut vid) = common.video.lock() {
-                        if let Some(vid) = vid.get_mut(id as usize) {
-                            let mut options = Vec::new();
-                            for c in &vid.controls {
-                                let sc = c.sendable();
-                                let raw_sc =
-                                    bincode::serde::encode_to_vec(sc, bincode::config::standard())
-                                        .unwrap();
-                                options.push(raw_sc);
+                uobradio_comms::MessageFromApp::CameraSettingControl(id, control, data) => {
+                    let a: uobradio_comms::v4l::control::Value = data.into();
+                    let mut vid = common.video.lock().unwrap();
+                    if let Some(vid) = vid.get_mut(id as usize) {
+                        vid.controls[control as usize].value.replace(a);
+                    }
+                }
+                uobradio_comms::MessageFromApp::RequestCameras => {
+                    let packet = if let Ok(cams) = common.video.lock() {
+                        let mut map = BTreeMap::new();
+                        for (i, cam) in cams.iter().enumerate() {
+                            if let Some(c) = cam.sendable() {
+                                map.insert(i as u8, c);
                             }
-                            Some(uobradio_comms::MessageToApp::CameraControls(id, options))
-                        } else {
-                            None
                         }
-                    } else {
+                        Some(uobradio_comms::MessageToApp::CamerasBtreeMap(map))
+                    }
+                    else {
                         None
                     };
                     if let Some(packet) = packet {
                         packet.send_to_stream(&mut stream).await?;
                     }
-                }
-                uobradio_comms::MessageFromApp::CameraSettingControl(id, data) => {
-                    let a: uobradio_comms::v4l::control::Value = data.into();
-                    let mut vid = common.video.lock().unwrap();
-                    if let Some(vid) = vid.get_mut(id as usize) {}
-                }
-                uobradio_comms::MessageFromApp::RequestCameraOptions => {
-                    let packet = uobradio_comms::MessageToApp::CameraOptions(vec![0]);
-                    packet.send_to_stream(&mut stream).await?;
                 }
                 uobradio_comms::MessageFromApp::Ping(id) => {
                     let packet = uobradio_comms::MessageToApp::PingReply(id);

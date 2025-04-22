@@ -103,11 +103,8 @@ impl eframe::App for MyEguiApp {
         }
         self.common.radio.get_cameras();
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
-            uobradio_comms::MessageToApp::CameraControls(id, data) => {
-                log::error!("Received some camera controls: {} of them", data.len());
-            }
-            uobradio_comms::MessageToApp::CameraOptions(options) => {
-                log::error!("Got camera options {:?}", options);
+            uobradio_comms::MessageToApp::CamerasBtreeMap(map) => {
+                log::error!("Got camera btreemap: with {} items", map.len());
             }
             uobradio_comms::MessageToApp::PingReply(port) => {
                 log::error!("got ping packet in update method port {}", port);

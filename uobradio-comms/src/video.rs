@@ -5,24 +5,24 @@ use ffimage::iter::ColorConvertExt;
 use ffimage::iter::PixelsExt;
 
 
-/// Represents a color pixel with rgb and alpha components
+/// Represents a color pixel with rgb components
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct RgbPixel {
-    colors: [u8; 4],
+    colors: [u8; 3],
 }
 
 impl RgbPixel {
     /// Build from r g and b, making it fully non-transparent
     pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
         Self {
-            colors: [r, g, b, 255],
+            colors: [r, g, b],
         }
     }
     /// Build from a solid gray channel
     pub const fn from_gray(g: u8) -> Self {
         Self {
-            colors: [g, g, g, 255],
+            colors: [g, g, g],
         }
     }
 }
@@ -72,7 +72,7 @@ impl PixelImage<RgbPixel> {
     /// Build a new image of the specified dimensions
     pub fn new(w: u16, h: u16) -> Self {
         let cap = w as usize * h as usize;
-        let m = vec![RgbPixel { colors: [0; 4] }; cap];
+        let m = vec![RgbPixel { colors: [0; 3] }; cap];
         Self {
             pixels: m,
             width: w,
@@ -179,7 +179,7 @@ impl From<PixelImage<RgbPixel>> for VideoFrame {
 }
 
 impl VideoFrame {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             width: 0,
             height: 0,
@@ -206,7 +206,7 @@ impl VideoFrame {
         }
     }
 
-    fn mirroring(&mut self) {
+    pub fn mirroring(&mut self) {
         if let Some(pd) = &mut self.pixel_data {
             pd.mirroring(self.width, self.hmirror, self.vmirror);
         }
@@ -333,6 +333,13 @@ pub struct VideoSource {
     pub controls: Vec<ControlElement>,
 }
 
+impl VideoSource {
+    pub fn sendable(&self) -> Option<SendableVideoSource> {
+        let img = self.image.lock().ok()?;
+        Some(SendableVideoSource { image: Some(img.clone()), controls: self.controls.iter().map(|a| a.into()).collect() })
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SendableVideoSource {
     pub image: Option<VideoFrame>,
@@ -354,6 +361,17 @@ pub struct SendableControlElement {
     pub name: String,
     data: ControlData,
     pub value: Option<ControlValue>,
+}
+
+impl From<&ControlElement> for SendableControlElement {
+    fn from(value: &ControlElement) -> Self {
+        Self {
+            id: value.id,
+            name: value.name.clone(),
+            data: value.data.clone(),
+            value: value.value.as_ref().map(|a| a.into()),
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -574,7 +592,7 @@ impl PixelData {
             .collect()
     }
 
-    fn to_rgb(self) -> Self {
+    pub fn to_rgb(self) -> Self {
         match self {
             PixelData::Yuyv(vec) => PixelData::Rgb(Self::yuyv_to_rgb(&vec)),
             PixelData::Rgb(vec) => PixelData::Rgb(vec),

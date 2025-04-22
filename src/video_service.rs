@@ -7,6 +7,7 @@ use ffimage::iter::ColorConvertExt;
 use ffimage::iter::PixelsExt;
 use uobradio_comms::v4l;
 use uobradio_comms::video::ControlElement;
+use uobradio_comms::video::SendableVideoSource;
 use v4l::buffer::Type;
 use v4l::io::traits::CaptureStream;
 use v4l::prelude::*;
@@ -18,166 +19,19 @@ pub enum VideoMessage {
     ControlData { id: u32, value: v4l::control::Value },
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-struct RgbPixel {
-    a: [u8; 3],
-}
-
-#[derive(Clone)]
-pub enum PixelData {
-    Yuyv(Vec<u8>),
-    Rgb(Vec<u8>),
-    Egui(Vec<egui::Color32>),
-}
-
-impl PixelData {
-    fn yuyv_to_rgb(vec: &[u8]) -> Vec<u8> {
-        let mut a = vec![0u8; vec.len() / 2 * 3];
-        vec.iter()
-            .copied()
-            .pixels::<ffimage_yuv::yuv422::Yuyv<u8>>()
-            .colorconvert::<[ffimage_yuv::yuv::Yuv<u8>; 2]>()
-            .flatten()
-            .colorconvert::<ffimage::color::Rgb<u8>>()
-            .bytes()
-            .write(&mut a);
-        a
-    }
-
-    fn rgb_to_egui(vec: &[u8]) -> Vec<egui::Color32> {
-        vec.chunks_exact(3)
-            .map(|i| egui::Color32::from_rgb(i[0], i[1], i[2]))
-            .collect()
-    }
-
-    fn to_rgb(self) -> Self {
-        match self {
-            PixelData::Yuyv(vec) => PixelData::Rgb(Self::yuyv_to_rgb(&vec)),
-            PixelData::Rgb(vec) => PixelData::Rgb(vec),
-            PixelData::Egui(_vec) => todo!(),
-        }
-    }
-
-    fn get_rgb(&self) -> Vec<u8> {
-        match self {
-            PixelData::Yuyv(vec) => Self::yuyv_to_rgb(&vec),
-            PixelData::Rgb(vec) => vec.clone(),
-            PixelData::Egui(_vec) => todo!(),
-        }
-    }
-
-    fn to_egui(self) -> Self {
-        match self {
-            PixelData::Yuyv(vec) => {
-                let a = Self::yuyv_to_rgb(&vec);
-                PixelData::Egui(Self::rgb_to_egui(&a))
-            }
-            PixelData::Rgb(vec) => PixelData::Egui(Self::rgb_to_egui(&vec)),
-            PixelData::Egui(vec) => PixelData::Egui(vec),
-        }
-    }
-
-    pub fn get_egui(&self) -> Vec<egui::Color32> {
-        match self {
-            PixelData::Yuyv(vec) => {
-                let a = Self::yuyv_to_rgb(&vec);
-                Self::rgb_to_egui(&a)
-            }
-            PixelData::Rgb(vec) => Self::rgb_to_egui(&vec),
-            PixelData::Egui(vec) => vec.clone(),
-        }
-    }
-
-    fn general_mirror<T: Clone>(width: u16, hflip: bool, vflip: bool, pixels: &mut Vec<T>) {
-        if hflip && !vflip {
-            for e in pixels.chunks_exact_mut(width as usize) {
-                e.reverse();
-            }
-        } else if hflip && vflip {
-            *pixels = pixels
-                .rchunks_exact(width as usize)
-                .flat_map(|a| {
-                    let mut b = a.to_vec();
-                    b.reverse();
-                    b
-                })
-                .collect();
-        } else if !hflip && vflip {
-            *pixels = pixels
-                .rchunks_exact(width as usize)
-                .flat_map(|a| a.to_vec())
-                .collect();
-        }
-    }
-
-    fn mirroring(&mut self, width: u16, hflip: bool, vflip: bool) {
-        match self {
-            PixelData::Yuyv(_vec) => todo!(),
-            PixelData::Rgb(vec) => {
-                let mut pixels: Vec<RgbPixel> = vec
-                    .chunks_exact(3)
-                    .map(|a| RgbPixel {
-                        a: [a[0], a[1], a[2]],
-                    })
-                    .collect();
-                Self::general_mirror(width, hflip, vflip, &mut pixels);
-                *vec = pixels.iter().flat_map(|a| a.a).collect();
-            }
-            PixelData::Egui(vec) => {
-                Self::general_mirror(width, hflip, vflip, vec);
-            }
-        }
-    }
-}
-
-pub struct VideoFrame {
-    pub width: u16,
-    pub height: u16,
-    pub pixel_data: Option<PixelData>,
-    pub hmirror: bool,
-    pub vmirror: bool,
-}
-
-impl VideoFrame {
-    fn new() -> Self {
-        Self {
-            width: 0,
-            height: 0,
-            pixel_data: None,
-            hmirror: false,
-            vmirror: false,
-        }
-    }
-
-    pub fn get_jpeg(&self) -> Vec<u8> {
-        if let Some(pixels) = &self.pixel_data {
-            let rgb = pixels.get_rgb();
-            let mut thing = Vec::new();
-            let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut thing, 75);
-            let _ = encoder.encode(
-                &rgb,
-                self.width as u32,
-                self.height as u32,
-                image::ExtendedColorType::Rgb8,
-            );
-            thing
-        } else {
-            Vec::new()
-        }
-    }
-
-    fn mirroring(&mut self) {
-        if let Some(pd) = &mut self.pixel_data {
-            pd.mirroring(self.width, self.hmirror, self.vmirror);
-        }
-    }
-}
-
 pub struct VideoSource {
-    pub image: Arc<Mutex<VideoFrame>>,
+    pub image: Arc<Mutex<uobradio_comms::video::VideoFrame>>,
     pub vsend: std::sync::mpsc::Sender<VideoMessage>,
     pub controls: Vec<ControlElement>,
+}
+
+impl VideoSource {
+    pub fn sendable(&self) -> Option<uobradio_comms::video::SendableVideoSource> {
+        let img = self.image.lock().ok()?;
+        Some(uobradio_comms::video::SendableVideoSource {
+            image: Some(img.clone()), controls: self.controls.iter().map(|a| a.into()).collect()
+        })
+    }
 }
 
 impl Drop for VideoSource {
@@ -192,7 +46,7 @@ pub struct Video {
 
 impl Video {
     pub fn video_start(mut dev: Device) -> VideoSource {
-        let image = Arc::new(Mutex::new(VideoFrame::new()));
+        let image = Arc::new(Mutex::new(uobradio_comms::video::VideoFrame::new()));
         let (a, b) = std::sync::mpsc::channel();
         let i2 = image.clone();
         let mut fmt = dev.format().expect("Failed to read format");
@@ -225,7 +79,7 @@ impl Video {
             loop {
                 let (buf, _) = stream.next().unwrap();
                 if let Ok(mut i) = i2.lock() {
-                    i.pixel_data = Some(PixelData::Yuyv(buf.to_vec()).to_rgb());
+                    i.pixel_data = Some(uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb());
                     i.mirroring();
                 }
                 if let Ok(a) = b.try_recv() {
