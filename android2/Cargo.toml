@@ -22,13 +22,13 @@ bincode = {version = "2.0.1", features = ["serde"]}
 bluetooth-rust = { path="../bluetooth"}
 egui = "0.31.1"
 eframe = { version = "0.31.1", features = [ "wgpu" ] }
+image = { version = "0.25.2", features = ["jpeg", "png"] } # Add the types you want support for
 jni-min-helper = "0.3.0"
 log = "0.4"
 pollster = "0.2"
 wgpu = "25.0.0"
 winit = { version = "0.30.7", features = [ "android-native-activity" ] }
 serde = {version = "1.0.219", features = ["derive"]}
-zune-jpeg = "0.4.13"
 
 [dependencies.jni]
 version = "0.21.1"

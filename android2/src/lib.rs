@@ -56,31 +56,27 @@ impl PixelImage<RgbPixel> {
             height,
         }
     }
-    /// Build from gray zune jpeg data
-    pub fn from_zune_jpeg_gray(data: Vec<u8>, ii: &zune_jpeg::ImageInfo) -> Self {
-        let w = ii.width;
-        let h = ii.height;
-        let pixels: Vec<RgbPixel> = data.iter().map(|p| RgbPixel::from_gray(*p)).collect();
-        Self {
-            pixels,
-            width: w,
-            height: h,
-        }
-    }
-    /// Build from color zune jpeg data
-    pub fn from_zune_jpeg(data: Vec<u8>, ii: &zune_jpeg::ImageInfo) -> Self {
-        let w = ii.width;
-        let h = ii.height;
-        let pixels: Vec<RgbPixel> = data
+
+    /// Build from jpeg using the image crate
+    pub fn from_jpeg_image(data: &[u8]) -> Option<Self> {
+        let data2 = std::io::Cursor::new(data);
+        let reader = image::ImageReader::with_format(data2, image::ImageFormat::Jpeg);
+        let image = reader.decode().ok()?;
+        let img = image.into_rgb8();
+        let w = img.width();
+        let h = img.height();
+        let b = img.as_raw().clone();
+        let pixels: Vec<RgbPixel> = b
             .chunks_exact(3)
             .map(|p| RgbPixel::from_rgb(p[0], p[1], p[2]))
             .collect();
-        Self {
+        Some(Self {
             pixels,
-            width: w,
-            height: h,
-        }
+            width: w as u16,
+            height: h as u16,
+        })
     }
+
     /// Build a new image of the specified dimensions
     pub fn new(w: u16, h: u16) -> Self {
         let cap = w as usize * h as usize;
@@ -134,7 +130,7 @@ impl BluetoothConfig {
 }
 
 /// The main struct for holding data for the gui of the application
-pub struct DemoApp {
+pub struct UobRadioMainWindow {
     local_storage: Option<std::path::PathBuf>,
     settings: Result<AppConfig, AppConfigError>,
     _java: Arc<Mutex<Java>>,
@@ -149,7 +145,7 @@ pub struct DemoApp {
     texture: Option<egui::TextureHandle>,
 }
 
-impl DemoApp {
+impl UobRadioMainWindow {
     fn update_shown_image(
         &mut self,
         image: crate::PixelImage<crate::RgbPixel>,
@@ -179,7 +175,7 @@ impl DemoApp {
     }
 }
 
-impl eframe::App for DemoApp {
+impl eframe::App for UobRadioMainWindow {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         //self.bluetooth.enable();
         for (address, radio) in self.radios.iter_mut() {
@@ -196,29 +192,9 @@ impl eframe::App for DemoApp {
                 }
                 comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
                     log::error!("Recieved data for camera {} length {}", index, jpeg.len());
-                    let mut decoder = zune_jpeg::JpegDecoder::new(&jpeg);
-                    if let Ok(img) = decoder.decode() {
-                        let info = decoder.info().unwrap();
-                        if info.components == 3 && info.pixel_density == 8 {
-                            let picture =
-                                crate::PixelImage::<crate::RgbPixel>::from_zune_jpeg(img, &info);
-                            self.update_shown_image(picture, ctx);
-                            log::error!("Got a color jpeg");
-                        } else if info.components == 1 && info.pixel_density == 8 {
-                            let picture = crate::PixelImage::<crate::RgbPixel>::from_zune_jpeg_gray(
-                                img, &info,
-                            );
-                            self.update_shown_image(picture, ctx);
-                            log::error!("Got a gray jpeg");
-                        } else {
-                            log::error!(
-                                "Unexpected image properties {}x{} {} {}",
-                                info.width,
-                                info.height,
-                                info.components,
-                                info.pixel_density
-                            );
-                        }
+                    if let Some(img) = crate::PixelImage::<crate::RgbPixel>::from_jpeg_image(&jpeg)
+                    {
+                        self.update_shown_image(img, ctx);
                     } else {
                         log::error!("Invalid jpeg received");
                     }
@@ -229,7 +205,7 @@ impl eframe::App for DemoApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if ui.button("Find radios").clicked() {
-                    let rs = comms::UobRadio::detect_radios(self.uob_radio_pipe.0.clone());
+                    let rs = comms::UobRadio::detect_radios(self.uob_radio_pipe.0.clone(), 5);
                     if let Ok(radios) = rs {
                         log::error!("Got some radios {}", radios.len());
                         self.radios = radios;
@@ -242,18 +218,18 @@ impl eframe::App for DemoApp {
                     radio.send_camera_request(true, 0);
                     ui.label(format!("Radio at {:?}", address.ip()));
                     ui.horizontal(|ui| {
-                        let winch_response = ui.add(egui::Button::new("Winch forwards").sense(egui::Sense::drag()));
+                        let winch_response =
+                            ui.add(egui::Button::new("Winch IN").sense(egui::Sense::drag()));
                         if winch_response.drag_started() {
                             radio.send_gpio(comms::Gpio::WinchControl(true, false));
-                        }
-                        else if winch_response.drag_released() {
+                        } else if winch_response.drag_released() {
                             radio.send_gpio(comms::Gpio::WinchControl(false, false));
                         }
-                        let winch_response = ui.add(egui::Button::new("Winch backwards").sense(egui::Sense::drag()));
+                        let winch_response =
+                            ui.add(egui::Button::new("Winch OUT").sense(egui::Sense::drag()));
                         if winch_response.drag_started() {
                             radio.send_gpio(comms::Gpio::WinchControl(false, true));
-                        }
-                        else if winch_response.drag_released() {
+                        } else if winch_response.drag_released() {
                             radio.send_gpio(comms::Gpio::WinchControl(false, false));
                         }
                     });
@@ -287,8 +263,10 @@ impl eframe::App for DemoApp {
                                 if config.connect_nap {
                                     self.bluetooth.cancel_discovery();
                                     log::warn!("About to connect");
-                                    let socket =
-                                        d.get_rfcomm_socket(bluetooth_rust::Uuid::NetworkingNap, true);
+                                    let socket = d.get_rfcomm_socket(
+                                        bluetooth_rust::Uuid::NetworkingNap,
+                                        true,
+                                    );
                                     if let Some(mut socket) = socket {
                                         if socket.connect().is_ok() {
                                             ui.label("Connection is ok");
@@ -325,7 +303,7 @@ impl eframe::App for DemoApp {
     }
 }
 
-impl DemoApp {
+impl UobRadioMainWindow {
     fn load_config(&mut self) {
         if let Some(p) = &self.local_storage {
             let mut config = p.clone();
@@ -389,7 +367,7 @@ fn _main(mut options: NativeOptions, app: AndroidApp) {
     let _run = eframe::run_native(
         "UobRadio",
         options,
-        Box::new(move |cc| Ok(Box::new(DemoApp::new(cc, o, app)))),
+        Box::new(move |cc| Ok(Box::new(UobRadioMainWindow::new(cc, o, app)))),
     )
     .unwrap();
 }
