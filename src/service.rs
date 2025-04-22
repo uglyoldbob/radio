@@ -9,9 +9,6 @@ use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
 use video_service::VideoSource;
 
-#[path = "../android2/src/comms.rs"]
-mod comms;
-
 mod video_service;
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
@@ -32,26 +29,26 @@ pub async fn process_app(
     addr: std::net::SocketAddr,
     common: AppUserCommon,
 ) -> Result<(), ()> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncReadExt;
     println!("Processing an app at {:?}", addr);
     loop {
         let length = stream.read_u32().await.map_err(|_| ())?;
         let mut packet = vec![0; length as usize];
         stream.read_exact(&mut packet).await.map_err(|_| ())?;
-        let packet: Result<(comms::MessageFromApp, usize), bincode::error::DecodeError> =
+        let packet: Result<(uobradio_comms::MessageFromApp, usize), bincode::error::DecodeError> =
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
             match packet {
-                comms::MessageFromApp::Ping(id) => {
-                    println!("Received ping packet from user: {}", id);
-                }
-                comms::MessageFromApp::RequestCamera(index) => {
-                    let packet = if let Ok(video) = common.video.lock() {
-                        if let Some(v) = video.get(index as usize) {
-                            let frame = v.image.lock().unwrap();
-                            let jpeg = frame.get_jpeg();
-                            let response = comms::MessageToApp::CameraDataJpeg(index, jpeg);
-                            Some(response)
+                uobradio_comms::MessageFromApp::GetCameraControls(id) => {
+                    let packet = if let Ok(mut vid) = common.video.lock() {
+                        if let Some(vid) = vid.get_mut(id as usize) {
+                            let mut options = Vec::new();
+                            for c in &vid.controls {
+                                let sc = c.sendable();
+                                let raw_sc = bincode::serde::encode_to_vec(sc, bincode::config::standard()).unwrap();
+                                options.push(raw_sc);
+                            }
+                            Some(uobradio_comms::MessageToApp::CameraControls(id, options))
                         }
                         else {
                             None
@@ -63,25 +60,56 @@ pub async fn process_app(
                         packet.send_to_stream(&mut stream).await?;
                     }
                 }
-                comms::MessageFromApp::GpioControl(gpio) => {
-                    match gpio {
-                        comms::Gpio::WinchControl(f, r) => println!("Winch control {} {}", f, r),
-                        comms::Gpio::CameraLedControl(i, s) => println!("Camera led {} to {}", i, s),
-                        comms::Gpio::LockDoors => println!("Received request to lock all doors"),
-                        comms::Gpio::UnlockDoors => println!("Recieved request to unlock all doors"),
-                        comms::Gpio::WindowControl { id, up, down } => println!("Window {} {}/{}", id, up, down),
+                uobradio_comms::MessageFromApp::CameraSettingControl(id, data) => {
+                    let a: uobradio_comms::v4l::control::Value = data.into();
+                    let mut vid = common.video.lock().unwrap();
+                    if let Some(vid) = vid.get_mut(id as usize) {
+
                     }
                 }
+                uobradio_comms::MessageFromApp::RequestCameraOptions => {
+                    let packet = uobradio_comms::MessageToApp::CameraOptions(vec![0]);
+                    packet.send_to_stream(&mut stream).await?;
+                }
+                uobradio_comms::MessageFromApp::Ping(id) => {
+                    let packet = uobradio_comms::MessageToApp::PingReply(id);
+                    packet.send_to_stream(&mut stream).await?;
+                }
+                uobradio_comms::MessageFromApp::RequestCamera(index) => {
+                    let packet = if let Ok(video) = common.video.lock() {
+                        if let Some(v) = video.get(index as usize) {
+                            let frame = v.image.lock().unwrap();
+                            let jpeg = frame.get_jpeg();
+                            let response = uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg);
+                            Some(response)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(packet) = packet {
+                        packet.send_to_stream(&mut stream).await?;
+                    }
+                }
+                uobradio_comms::MessageFromApp::GpioControl(gpio) => match gpio {
+                    uobradio_comms::Gpio::WinchControl(f, r) => println!("Winch control {} {}", f, r),
+                    uobradio_comms::Gpio::CameraLedControl(i, s) => println!("Camera led {} to {}", i, s),
+                    uobradio_comms::Gpio::LockDoors => println!("Received request to lock all doors"),
+                    uobradio_comms::Gpio::UnlockDoors => println!("Recieved request to unlock all doors"),
+                    uobradio_comms::Gpio::WindowControl { id, up, down } => {
+                        println!("Window {} {}/{}", id, up, down)
+                    }
+                },
             }
-        }
-        else {
+        } else {
             println!("Failed to process packet");
             return Err(());
         }
     }
 }
 
-async fn udp_listener(common: AppUserCommon,) -> Result<(), String> {
+async fn udp_listener(_common: AppUserCommon) -> Result<(), String> {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:13456").await.unwrap();
     println!("Starting radio listener");
     let mut response = vec![0; 1500];
@@ -93,10 +121,10 @@ async fn udp_listener(common: AppUserCommon,) -> Result<(), String> {
                 bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
             if let Ok((packet, _len)) = packet {
                 match packet {
-                    comms::MessageFromApp::Ping(val) => {
+                    uobradio_comms::MessageFromApp::Ping(val) => {
                         println!("got ping packet {}", val);
                         let response = bincode::serde::encode_to_vec(
-                            comms::MessageToApp::PingReply(13457),
+                            uobradio_comms::MessageToApp::PingReply(13457),
                             bincode::config::standard(),
                         )
                         .unwrap();
@@ -110,10 +138,9 @@ async fn udp_listener(common: AppUserCommon,) -> Result<(), String> {
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    Ok(())
 }
 
-async fn tcp_listener(common: AppUserCommon,) -> Result<(), String> {
+async fn tcp_listener(common: AppUserCommon) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
     if let Ok(tcp) = tcp {
         loop {
@@ -160,10 +187,10 @@ async fn smain() {
             .level_filter(),
     );
 
-    let (shutdown_send, mut shutdown_recv) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (_shutdown_send, mut shutdown_recv) = tokio::sync::mpsc::unbounded_channel::<()>();
 
     let mut vs = Vec::new();
-    if let Ok(d) = v4l::Device::new(0) {
+    if let Ok(d) = uobradio_comms::v4l::Device::new(0) {
         vs.push(video_service::Video::video_start(d));
     }
     let common = AppUserCommon {

@@ -9,8 +9,6 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use eframe::{NativeOptions, Renderer};
 
-mod comms;
-
 use bluetooth_rust::Java;
 
 /// Represents a color pixel with rgb and alpha components
@@ -137,29 +135,25 @@ pub struct UobRadioMainWindow {
     bluetooth: bluetooth_rust::BluetoothAdapter,
     known_uuids: BTreeMap<String, Vec<bluetooth_rust::Uuid>>,
     bluetooth_devs: BTreeMap<String, BluetoothConfig>,
-    radios: comms::UobRadios,
-    uob_radio_pipe: (
-        std::sync::mpsc::Sender<comms::MessageToApp>,
-        std::sync::mpsc::Receiver<comms::MessageToApp>,
-    ),
+    radios: uobradio_comms::UobRadios,
     texture: Option<egui::TextureHandle>,
 }
 
 impl UobRadioMainWindow {
     fn update_shown_image(
-        &mut self,
+        texture: &mut Option<egui::TextureHandle>,
         image: crate::PixelImage<crate::RgbPixel>,
         ctx: &egui::Context,
     ) {
-        if self.texture.is_none() {
-            self.texture = Some(ctx.load_texture(
+        if texture.is_none() {
+            *texture = Some(ctx.load_texture(
                 "Camera Image1",
                 egui::ColorImage::from(image.clone()),
                 egui::TextureOptions::NEAREST,
             ));
-        } else if let Some(t) = &mut self.texture {
+        } else if let Some(t) = texture {
             if t.size()[0] != image.width as usize || t.size()[1] != image.height as usize {
-                self.texture = Some(ctx.load_texture(
+                *texture = Some(ctx.load_texture(
                     "Camera Image1",
                     egui::ColorImage::from(image.clone()),
                     egui::TextureOptions::NEAREST,
@@ -179,58 +173,63 @@ impl eframe::App for UobRadioMainWindow {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         //self.bluetooth.enable();
         for (address, radio) in self.radios.iter_mut() {
-            if radio.process_received(&mut self.uob_radio_pipe.0).is_err() {
+            if radio.process_received(|packet| {
+                match packet {
+                    uobradio_comms::MessageToApp::CameraControls(id, data) => {
+                        log::error!("Received some camera controls: {} of them", data.len());
+                    }
+                    uobradio_comms::MessageToApp::CameraOptions(options) => {
+                        log::error!("Got camera options {:?}", options);
+                    }
+                    uobradio_comms::MessageToApp::PingReply(port) => {
+                        log::error!("got ping packet port {}", port);
+                    }
+                    uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
+                        log::error!("Recieved data for camera {} length {}", index, jpeg.len());
+                        if let Some(img) = crate::PixelImage::<crate::RgbPixel>::from_jpeg_image(&jpeg)
+                        {
+                            Self::update_shown_image(&mut self.texture, img, ctx);
+                        } else {
+                            log::error!("Invalid jpeg received");
+                        }
+                    }
+                }
+            }).is_err() {
                 log::error!("Reconnecting to radio due to error");
                 radio.disconnect();
                 radio.connect();
-            }
-        }
-        while let Ok(m) = self.uob_radio_pipe.1.try_recv() {
-            match m {
-                comms::MessageToApp::PingReply(port) => {
-                    log::error!("got ping packet in update method port {}", port);
-                }
-                comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
-                    log::error!("Recieved data for camera {} length {}", index, jpeg.len());
-                    if let Some(img) = crate::PixelImage::<crate::RgbPixel>::from_jpeg_image(&jpeg)
-                    {
-                        self.update_shown_image(img, ctx);
-                    } else {
-                        log::error!("Invalid jpeg received");
-                    }
-                }
             }
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(10));
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if ui.button("Find radios").clicked() {
-                    let rs = comms::UobRadio::detect_radios(self.uob_radio_pipe.0.clone(), 5);
+                    let rs = uobradio_comms::UobRadio::detect_radios(5);
                     if let Ok(radios) = rs {
                         log::error!("Got some radios {}", radios.len());
                         self.radios = radios;
                     } else {
-                        log::error!("Failed to get any radios at all {:?}", rs);
+                        log::error!("Failed to get any radios at all");
                     }
                 }
                 for (address, radio) in self.radios.iter_mut() {
                     radio.connect();
-                    radio.send_camera_request(true, 0);
+                    radio.send_camera_request(0);
                     ui.label(format!("Radio at {:?}", address.ip()));
                     ui.horizontal(|ui| {
                         let winch_response =
                             ui.add(egui::Button::new("Winch IN").sense(egui::Sense::drag()));
                         if winch_response.drag_started() {
-                            radio.send_gpio(comms::Gpio::WinchControl(true, false));
+                            radio.send_gpio(uobradio_comms::Gpio::WinchControl(true, false));
                         } else if winch_response.drag_released() {
-                            radio.send_gpio(comms::Gpio::WinchControl(false, false));
+                            radio.send_gpio(uobradio_comms::Gpio::WinchControl(false, false));
                         }
                         let winch_response =
                             ui.add(egui::Button::new("Winch OUT").sense(egui::Sense::drag()));
                         if winch_response.drag_started() {
-                            radio.send_gpio(comms::Gpio::WinchControl(false, true));
+                            radio.send_gpio(uobradio_comms::Gpio::WinchControl(false, true));
                         } else if winch_response.drag_released() {
-                            radio.send_gpio(comms::Gpio::WinchControl(false, false));
+                            radio.send_gpio(uobradio_comms::Gpio::WinchControl(false, false));
                         }
                     });
                 }
@@ -352,8 +351,7 @@ impl UobRadioMainWindow {
             bluetooth: bluetooth_rust::BluetoothAdapter::new(app),
             known_uuids: BTreeMap::new(),
             bluetooth_devs: BTreeMap::new(),
-            radios: comms::UobRadios::new(),
-            uob_radio_pipe: std::sync::mpsc::channel(),
+            radios: uobradio_comms::UobRadios::new(),
             texture: None,
         };
         s.load_config();

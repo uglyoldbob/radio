@@ -16,7 +16,7 @@ impl SubwindowTrait for BluetoothConfig {
         &mut self,
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
-        common: &mut CommonWindowProperties,
+        _common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label("Future expansion here for bluetooth settings")

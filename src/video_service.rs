@@ -1,145 +1,21 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use eframe::egui;
 use ffimage::iter::BytesExt;
 use ffimage::iter::ColorConvertExt;
 use ffimage::iter::PixelsExt;
+use uobradio_comms::v4l;
+use uobradio_comms::video::ControlElement;
 use v4l::buffer::Type;
 use v4l::io::traits::CaptureStream;
 use v4l::prelude::*;
 use v4l::video::Capture;
 use v4l::FourCC;
-use eframe::egui;
 
 pub enum VideoMessage {
     Quit,
     ControlData { id: u32, value: v4l::control::Value },
-}
-
-enum ControlData {
-    Integer {
-        val: i64,
-        min: i64,
-        default: i64,
-        max: i64,
-    },
-    Boolean {
-        val: bool,
-        default: bool,
-    },
-    String(String),
-    Bitmask(u64),
-    U8 {
-        val: u8,
-        min: u8,
-        default: u8,
-        max: u8,
-    },
-    U16 {
-        val: u16,
-        min: u16,
-        default: u16,
-        max: u16,
-    },
-    U32 {
-        val: u32,
-        min: u32,
-        default: u32,
-        max: u32,
-    },
-}
-
-pub struct ControlElement {
-    pub id: u32,
-    pub name: String,
-    data: ControlData,
-    pub value: Option<v4l::control::Value>,
-}
-
-impl ControlElement {
-    fn new(
-        d: &v4l::control::Description,
-        value: Option<v4l::control::Value>,
-    ) -> Result<Self, String> {
-        let cd = match d.typ {
-            v4l::control::Type::Integer => Ok(ControlData::Integer {
-                val: d.default,
-                min: d.minimum,
-                max: d.maximum,
-                default: d.default,
-            }),
-            v4l::control::Type::Boolean => Ok(ControlData::Boolean {
-                val: d.default != 0,
-                default: d.default != 0,
-            }),
-            v4l::control::Type::Menu => Err(format!("Unsupported control Menu {}", d.name)),
-            v4l::control::Type::Button => Err(format!("Unsupported control Button {}", d.name)),
-            v4l::control::Type::Integer64 => Ok(ControlData::Integer {
-                val: d.default,
-                min: d.minimum,
-                max: d.maximum,
-                default: d.default,
-            }),
-            v4l::control::Type::CtrlClass => {
-                Err(format!("Unsupported control CtrlClass {}", d.name))
-            }
-            v4l::control::Type::String => Ok(ControlData::String("dummy".to_string())),
-            v4l::control::Type::Bitmask => Ok(ControlData::Bitmask(d.default as u64)),
-            v4l::control::Type::IntegerMenu => {
-                Err(format!("Unsupported control IntegerMenu {}", d.name))
-            }
-            v4l::control::Type::U8 => Ok(ControlData::U8 {
-                val: d.default as u8,
-                min: d.minimum as u8,
-                max: d.maximum as u8,
-                default: d.default as u8,
-            }),
-            v4l::control::Type::U16 => Ok(ControlData::U16 {
-                val: d.default as u16,
-                min: d.minimum as u16,
-                max: d.maximum as u16,
-                default: d.default as u16,
-            }),
-            v4l::control::Type::U32 => Ok(ControlData::U32 {
-                val: d.default as u32,
-                min: d.minimum as u32,
-                max: d.maximum as u32,
-                default: d.default as u32,
-            }),
-            v4l::control::Type::Area => Err(format!("Unsupported control Area {}", d.name)),
-        };
-        Ok(Self {
-            id: d.id,
-            name: d.name.clone(),
-            data: cd?,
-            value,
-        })
-    }
-
-    pub fn send_update(&mut self, sender: &mut std::sync::mpsc::Sender<VideoMessage>) {
-        if let Some(v) = &self.value {
-            let v2 = match v {
-                v4l::control::Value::None => v4l::control::Value::None,
-                v4l::control::Value::Integer(a) => v4l::control::Value::Integer(a.to_owned()),
-                v4l::control::Value::Boolean(a) => v4l::control::Value::Boolean(a.to_owned()),
-                v4l::control::Value::String(a) => v4l::control::Value::String(a.to_owned()),
-                v4l::control::Value::CompoundU8(a) => v4l::control::Value::CompoundU8(a.to_owned()),
-                v4l::control::Value::CompoundU16(a) => {
-                    v4l::control::Value::CompoundU16(a.to_owned())
-                }
-                v4l::control::Value::CompoundU32(a) => {
-                    v4l::control::Value::CompoundU32(a.to_owned())
-                }
-                v4l::control::Value::CompoundPtr(a) => {
-                    v4l::control::Value::CompoundPtr(a.to_owned())
-                }
-            };
-            sender.send(VideoMessage::ControlData {
-                id: self.id,
-                value: v2,
-            });
-        }
-    }
 }
 
 #[derive(Copy, Clone)]
@@ -179,7 +55,7 @@ impl PixelData {
         match self {
             PixelData::Yuyv(vec) => PixelData::Rgb(Self::yuyv_to_rgb(&vec)),
             PixelData::Rgb(vec) => PixelData::Rgb(vec),
-            PixelData::Egui(vec) => todo!(),
+            PixelData::Egui(_vec) => todo!(),
         }
     }
 
@@ -275,14 +151,18 @@ impl VideoFrame {
     }
 
     pub fn get_jpeg(&self) -> Vec<u8> {
-        if let Some(pixels) = & self.pixel_data {
+        if let Some(pixels) = &self.pixel_data {
             let rgb = pixels.get_rgb();
             let mut thing = Vec::new();
             let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut thing, 75);
-            let a = encoder.encode(&rgb, self.width as u32, self.height as u32, image::ExtendedColorType::Rgb8);
+            let _ = encoder.encode(
+                &rgb,
+                self.width as u32,
+                self.height as u32,
+                image::ExtendedColorType::Rgb8,
+            );
             thing
-        }
-        else {
+        } else {
             Vec::new()
         }
     }
@@ -343,7 +223,7 @@ impl Video {
             let mut stream = MmapStream::with_buffers(&mut dev, Type::VideoCapture, 4)
                 .expect("Failed to create video buffer stream");
             loop {
-                let (buf, meta) = stream.next().unwrap();
+                let (buf, _) = stream.next().unwrap();
                 if let Ok(mut i) = i2.lock() {
                     i.pixel_data = Some(PixelData::Yuyv(buf.to_vec()).to_rgb());
                     i.mirroring();
@@ -366,8 +246,6 @@ impl Video {
     }
 
     pub fn new() -> Self {
-        Self {
-            which_video: 0,
-        }
+        Self { which_video: 0 }
     }
 }

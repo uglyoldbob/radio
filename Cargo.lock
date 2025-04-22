@@ -3116,9 +3116,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.22"
+version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "479cf940fbbb3426c32c5d5176f62ad57549a0bb84773423ba8be9d089f5faba"
+checksum = "664ec5419c51e34154eec046ebcba56312d5a2fc3b09a06da188e1ad21afadf6"
 dependencies = [
  "proc-macro2",
  "syn",
@@ -3241,7 +3241,7 @@ dependencies = [
  "simple_logger 5.0.0",
  "tokio",
  "toml",
- "v4l",
+ "uobradio-comms",
 ]
 
 [[package]]
@@ -4292,6 +4292,21 @@ name = "unty"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
+
+[[package]]
+name = "uobradio-comms"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "egui 0.30.0",
+ "ffimage",
+ "ffimage_yuv",
+ "image",
+ "log",
+ "serde",
+ "tokio",
+ "v4l",
+]
 
 [[package]]
 name = "ureq"

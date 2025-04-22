@@ -2,11 +2,6 @@ mod bluetooth;
 mod settings;
 mod video;
 
-#[path = "../android2/src/comms.rs"]
-mod comms;
-
-use std::collections::BTreeMap;
-
 use eframe::egui::{self, Vec2};
 
 #[enum_dispatch::enum_dispatch]
@@ -25,8 +20,8 @@ impl SubwindowTrait for MainPage {
     fn update(
         &mut self,
         ctx: &egui::Context,
-        frame: &mut eframe::Frame,
-        common: &mut CommonWindowProperties,
+        _frame: &mut eframe::Frame,
+        _common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
         let r = None;
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -70,13 +65,13 @@ fn main() {
 }
 
 struct CommonWindowProperties {
-    video_sources: Vec<video::VideoSource>,
+    radio: uobradio_comms::UobRadio,
 }
 
 impl CommonWindowProperties {
     pub fn new() -> Self {
         Self {
-            video_sources: Vec::new(),
+            radio: uobradio_comms::UobRadio::localhost(),
         }
     }
 }
@@ -88,11 +83,7 @@ struct MyEguiApp {
 }
 
 impl MyEguiApp {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
-        // Restore app state using cc.storage (requires the "persistence" feature).
-        // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
-        // for e.g. egui::PaintCallback.
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         Self {
             subwindow: Subwindow::MainPage(MainPage {}),
             check: false,
@@ -106,22 +97,49 @@ impl eframe::App for MyEguiApp {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         ctx.request_repaint();
-
+        self.common.radio.connect();
+        if self
+            .common
+            .radio
+            .process_received(|packet| {
+                match packet {
+                    uobradio_comms::MessageToApp::CameraControls(id, data) => {
+                        log::error!("Received some camera controls: {} of them", data.len());
+                    }
+                    uobradio_comms::MessageToApp::CameraOptions(options) => {
+                        log::error!("Got camera options {:?}", options);
+                    }
+                    uobradio_comms::MessageToApp::PingReply(port) => {
+                        log::error!("got ping packet in update method port {}", port);
+                    }
+                    uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
+                        log::error!("Recieved data for camera {} length {}", index, jpeg.len());
+                    }
+                }
+            })
+            .is_err()
+        {
+            log::error!("Reconnecting to radio due to error");
+            self.common.radio.disconnect();
+            self.common.radio.connect();
+        }
         egui_extras::install_image_loaders(ctx);
         egui::TopBottomPanel::bottom("Bottom Icons")
             .min_height(74.0)
             .max_height(74.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    if !self.common.video_sources.is_empty() {
-                        if ui
-                            .button(
-                                eframe::egui::RichText::new("V")
-                                    .font(eframe::egui::FontId::proportional(64.0)),
-                            )
-                            .clicked()
-                        {
-                            self.subwindow = Subwindow::Video(video::Video::new());
+                    if let Some(cameras) = self.common.radio.cameras() {
+                        if !cameras.is_empty() {
+                            if ui
+                                .button(
+                                    eframe::egui::RichText::new("V")
+                                        .font(eframe::egui::FontId::proportional(64.0)),
+                                )
+                                .clicked()
+                            {
+                                self.subwindow = Subwindow::Video(video::Video::new());
+                            }
                         }
                     }
                     if ui
