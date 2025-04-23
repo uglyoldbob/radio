@@ -1,0 +1,9 @@
+[package]
+name = "android-auto-sys"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+[build-dependencies.cmake]
+version = "^0.1.47"

@@ -193,6 +193,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "android-auto"
+version = "0.1.0"
+dependencies = [
+ "android-auto-sys",
+]
+
+[[package]]
+name = "android-auto-sys"
+version = "0.1.0"
+dependencies = [
+ "cmake",
+]
+
+[[package]]
 name = "android-properties"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -877,6 +891,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15efe7a882b08f34e38556b14f2fb3daa98769d06c7f0c1b076dfd0d983bc892"
 dependencies = [
  "error-code",
+]
+
+[[package]]
+name = "cmake"
+version = "0.1.54"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e7caa3f9de89ddbe2c607f4101924c5abec803763ae9534e4f4d7d8f84aa81f0"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -4328,6 +4351,7 @@ checksum = "6d49784317cd0d1ee7ec5c716dd598ec5b4483ea832a2dced265471cc0f690ae"
 name = "uobradio-comms"
 version = "0.1.0"
 dependencies = [
+ "android-auto",
  "bincode",
  "egui 0.31.1",
  "ffimage",

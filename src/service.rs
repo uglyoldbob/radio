@@ -4,7 +4,10 @@
 
 //! This program is for handling the video and audio components for the radio
 
-use std::sync::{Arc, Mutex};
+use std::{
+    io::Read,
+    sync::{Arc, Mutex},
+};
 
 use tokio::io::AsyncReadExt;
 use uobradio_comms::NonvolatileSettings;
@@ -19,8 +22,31 @@ struct MainConfiguration {
     debug_level: Option<service::LogLevel>,
 }
 
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+struct SystemSettings {
+    #[cfg(feature = "wifi")]
+    wifi_name: String,
+}
+
+impl SystemSettings {
+    pub fn load() -> Self {
+        let f = std::fs::File::open("./settings.toml");
+        if let Ok(mut f) = f {
+            let mut a = String::new();
+            if f.read_to_string(&mut a).is_ok() {
+                toml::from_str(&a).unwrap_or_default()
+            } else {
+                Self::default()
+            }
+        } else {
+            Self::default()
+        }
+    }
+}
+
 /// The common data for an app user
 pub struct AppUserCommon {
+    system: SystemSettings,
     #[cfg(feature = "wifi")]
     wifi: wifi_rs::WiFi,
     #[cfg(feature = "wifi")]
@@ -281,11 +307,13 @@ async fn smain() {
         vs.push(video_service::Video::video_start(d));
     }
     let s = NonvolatileSettings::load();
+    let sys = SystemSettings::load();
     let common = Arc::new(Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
-            interface: Some("wlp0s20f3"),
+            interface: Some(&sys.wifi_name),
         })),
+        system: sys,
         #[cfg(feature = "wifi")]
         hotspot: None,
         video: Arc::new(Mutex::new(vs)),

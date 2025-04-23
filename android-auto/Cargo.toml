@@ -1,0 +1,7 @@
+[package]
+name = "android-auto"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+android-auto-sys = { path = "../android-auto-sys" }
