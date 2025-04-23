@@ -13,6 +13,7 @@ ffimage = "0.10.0"
 ffimage_yuv = "0.10.0"
 image = { version = "0.25.2", features = ["jpeg", "png"] } # Add the types you want support for
 log = "0.4.27"
+qrcode = { version = "0.14.1", optional = true}
 serde = {version = "1.0.219", features = ["derive"]}
 simple_logger = "5.0.0"
 tokio = { version = "1.40.0", features = ["full"] }
@@ -30,3 +31,7 @@ path = "src/service.rs"
 [[bin]]
 name = "radio_gui"
 path = "src/main.rs"
+
+[features]
+default = ["wifi"]
+wifi = ["dep:qrcode"]

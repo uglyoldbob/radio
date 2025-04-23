@@ -7,6 +7,7 @@
 use std::sync::{Arc, Mutex};
 
 use tokio::io::AsyncReadExt;
+use uobradio_comms::NonvolatileSettings;
 use video_service::VideoSource;
 
 mod video_service;
@@ -21,6 +22,7 @@ struct MainConfiguration {
 /// The common data for an app user
 pub struct AppUserCommon {
     video: Arc<Mutex<Vec<VideoSource>>>,
+    settings: Arc<Mutex<NonvolatileSettings>>,
 }
 
 #[cfg(not(target_os = "android"))]
@@ -45,6 +47,24 @@ pub async fn process_app(
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
             match packet {
+                uobradio_comms::MessageFromApp::RequestSettings => {
+                    let packet = if let Ok(c) = common.settings.lock() {
+                        Some(uobradio_comms::MessageToApp::NewSettings(c.clone()))
+                    }
+                    else {
+                        None
+                    };
+                    if let Some(packet) = packet {
+                        packet.send_to_stream(&mut stream).await?;
+                    }
+                }
+                uobradio_comms::MessageFromApp::NewSettings(s) => {
+                    let settings = common.settings.lock();
+                    if let Ok(mut settings) = settings {
+                        *settings = s;
+                        settings.save();
+                    }
+                }
                 uobradio_comms::MessageFromApp::CameraSettingControl(id, control, data) => {
                     let a: uobradio_comms::v4l::control::Value = data.into();
                     let mut vid = common.video.lock().unwrap();
@@ -122,6 +142,7 @@ async fn udp_listener(_common: AppUserCommon) -> Result<(), String> {
     println!("Starting radio listener");
     let mut response = vec![0; 1500];
     loop {
+        log::info!("Waiting for a udp client");
         while let Ok((n, addr)) = socket.recv_from(&mut response).await {
             let addr = addr.clone();
             println!("Got request from {:?} {} {:x?}", addr, n, &response[0..n]);
@@ -152,6 +173,7 @@ async fn tcp_listener(common: AppUserCommon) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
     if let Ok(tcp) = tcp {
         loop {
+            log::info!("Waiting for a tcp client");
             if let Ok((stream, addr)) = tcp.accept().await {
                 let common2 = common.clone();
                 let _ = tokio::task::spawn(async move {
@@ -203,6 +225,7 @@ async fn smain() {
     }
     let common = AppUserCommon {
         video: Arc::new(Mutex::new(vs)),
+        settings: Arc::new(Mutex::new(NonvolatileSettings::load())),
     };
 
     let mut tasks: tokio::task::JoinSet<Result<(), String>> = tokio::task::JoinSet::new();

@@ -1,6 +1,6 @@
 //! Module for communicating with a uobradio
 
-use std::{collections::BTreeMap, io::Write, thread::JoinHandle};
+use std::{collections::BTreeMap, io::{Read, Write}, thread::JoinHandle};
 
 pub mod video;
 
@@ -97,6 +97,8 @@ pub enum MessageFromApp {
     GpioControl(Gpio),
     /// The camera index with the bincode encoded data for the setting to change
     CameraSettingControl(u8, u8, video::ControlValue),
+    NewSettings(NonvolatileSettings),
+    RequestSettings,
 }
 
 pub struct MessageFromAppWithAddr {
@@ -112,6 +114,8 @@ pub enum MessageToApp {
     CameraDataJpeg(u8, Vec<u8>),
     /// Send the btreemap of all cameras
     CamerasBtreeMap(BTreeMap<u8, video::SendableVideoSource>),
+    /// The new settings for the radio
+    NewSettings(NonvolatileSettings),
 }
 
 impl MessageFromApp {
@@ -373,5 +377,40 @@ impl UobRadio {
             }
         }
         Ok(radios)
+    }
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub struct NonvolatileSettings {
+    #[cfg(feature = "wifi")]
+    /// Optional wifi name and password for wifi hotspot
+    pub hotspot_enabled: Option<(String, String)>,
+}
+
+impl NonvolatileSettings {
+    pub fn save(&self) {
+        let d = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
+        let f = std::fs::File::create("./settings.bin");
+        if let Ok(mut f) = f {
+            let _ = f.write_all(&d);
+        }
+    }
+
+    pub fn load() -> Self {
+        let f = std::fs::File::open("./settings.bin");
+        if let Ok(mut f) = f {
+            let mut contents = Vec::new();
+            let _ = f.read_to_end(&mut contents);
+            let s = bincode::serde::decode_from_slice(&contents, bincode::config::standard());
+            if let Ok((s, _)) = s {
+                s
+            }
+            else {
+                Self::default()
+            }
+        }
+        else {
+            Self::default()
+        }
     }
 }

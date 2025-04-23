@@ -81,6 +81,17 @@ impl PixelImage<RgbPixel> {
     }
 }
 
+impl From<image::ImageBuffer<image::Rgb<u8>, Vec<u8>>> for PixelImage<RgbPixel> {
+    fn from(value: image::ImageBuffer<image::Rgb<u8>, Vec<u8>>) -> Self {
+        let p = value.pixels().map(|p| RgbPixel{ colors: p.0 }).collect();
+        Self {
+            pixels: p,
+            width: value.width() as u16,
+            height: value.height() as u16,
+        }
+    }
+}
+
 impl From<PixelImage<RgbPixel>> for egui::ColorImage {
     fn from(value: PixelImage<RgbPixel>) -> Self {
         let pixels = value

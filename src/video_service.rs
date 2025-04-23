@@ -11,6 +11,7 @@ use v4l::FourCC;
 
 pub enum VideoMessage {
     Quit,
+    CameraUsed(bool),
     ControlData { id: u32, value: v4l::control::Value },
 }
 
@@ -78,6 +79,7 @@ impl Video {
             })
             .collect();
         std::thread::spawn(move || {
+            let mut grab_images = true;
             fmt.width = 320;
             fmt.height = 240;
             fmt.fourcc = FourCC::new(b"YUYV");
@@ -98,13 +100,18 @@ impl Video {
             let mut stream = MmapStream::with_buffers(&mut dev, Type::VideoCapture, 4)
                 .expect("Failed to create video buffer stream");
             loop {
-                let (buf, _) = stream.next().unwrap();
-                if let Ok(mut i) = i2.lock() {
-                    i.pixel_data = Some(uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb());
-                    i.mirroring();
+                if grab_images {
+                    let (buf, _) = stream.next().unwrap();
+                    if let Ok(mut i) = i2.lock() {
+                        i.pixel_data = Some(uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb());
+                        i.mirroring();
+                    }
                 }
                 if let Ok(a) = b.try_recv() {
                     match a {
+                        VideoMessage::CameraUsed(b) => {
+                            grab_images = b;
+                        }
                         VideoMessage::Quit => break,
                         VideoMessage::ControlData { id, value } => {
                             let v2 = clone_v4l_value(&value);

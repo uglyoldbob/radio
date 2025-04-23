@@ -2,6 +2,11 @@ mod bluetooth;
 mod settings;
 mod video;
 
+#[cfg(feature = "wifi")]
+mod wifi;
+
+use std::io::{Read, Write};
+
 use eframe::egui::{self, Vec2};
 
 #[enum_dispatch::enum_dispatch]
@@ -39,6 +44,8 @@ enum Subwindow {
     MainPage(MainPage),
     BluetoothConfig(bluetooth::BluetoothConfig),
     Video(video::Video),
+    #[cfg(feature = "wifi")]
+    Wifi(wifi::Screen),
     Settings(settings::Settings),
 }
 
@@ -66,12 +73,14 @@ fn main() {
 
 struct CommonWindowProperties {
     radio: uobradio_comms::UobRadio,
+    pub settings: uobradio_comms::NonvolatileSettings,
 }
 
 impl CommonWindowProperties {
     pub fn new() -> Self {
         Self {
             radio: uobradio_comms::UobRadio::localhost(),
+            settings: uobradio_comms::NonvolatileSettings::default(),
         }
     }
 }
@@ -111,6 +120,9 @@ impl eframe::App for MyEguiApp {
             }
             uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
             }
+            uobradio_comms::MessageToApp::NewSettings(s) => {
+                self.common.settings = s.clone();
+            }
         }) {
             log::error!("Reconnecting to radio due to error: {:?}", e);
             self.common.radio.disconnect();
@@ -133,6 +145,18 @@ impl eframe::App for MyEguiApp {
                                 self.subwindow = Subwindow::Video(video::Video::new());
                             }
                         }
+                    }
+                    #[cfg(feature = "wifi")]
+                    {
+                        if ui
+                                .button(
+                                    eframe::egui::RichText::new("W")
+                                        .font(eframe::egui::FontId::proportional(64.0)),
+                                )
+                                .clicked()
+                            {
+                                self.subwindow = Subwindow::Wifi(wifi::Screen::new());
+                            }
                     }
                     if ui
                         .button(
