@@ -52,13 +52,14 @@ pub struct UobRadioMainWindow {
 impl UobRadioMainWindow {
     fn update_shown_image(
         texture: &mut Option<egui::TextureHandle>,
-        image: crate::PixelImage<crate::RgbPixel>,
+        image: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel>,
         ctx: &egui::Context,
     ) {
         if texture.is_none() {
+            let eimg: egui::ColorImage = image.into();
             *texture = Some(ctx.load_texture(
                 "Camera Image1",
-                egui::ColorImage::from(image.clone()),
+                eimg,
                 egui::TextureOptions::NEAREST,
             ));
         } else if let Some(t) = texture {
@@ -85,11 +86,8 @@ impl eframe::App for UobRadioMainWindow {
         for (address, radio) in self.radios.iter_mut() {
             if radio
                 .process_received(|packet| match packet {
-                    uobradio_comms::MessageToApp::CameraControls(id, data) => {
-                        log::error!("Received some camera controls: {} of them", data.len());
-                    }
-                    uobradio_comms::MessageToApp::CameraOptions(options) => {
-                        log::error!("Got camera options {:?}", options);
+                    uobradio_comms::MessageToApp::CamerasBtreeMap(map) => {
+                        log::error!("Got camera map with {} items", map.len());
                     }
                     uobradio_comms::MessageToApp::PingReply(port) => {
                         log::error!("got ping packet port {}", port);
@@ -97,7 +95,7 @@ impl eframe::App for UobRadioMainWindow {
                     uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
                         log::error!("Recieved data for camera {} length {}", index, jpeg.len());
                         if let Some(img) =
-                            crate::PixelImage::<crate::RgbPixel>::from_jpeg_image(&jpeg)
+                        uobradio_comms::video::PixelImage::<uobradio_comms::video::RgbPixel>::from_jpeg_image(&jpeg)
                         {
                             Self::update_shown_image(&mut self.texture, img, ctx);
                         } else {

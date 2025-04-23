@@ -153,7 +153,7 @@ impl eframe::App for MyEguiApp {
                                 .max_height(64.0)
                                 .sense(egui::Sense::click()),
                         )
-                        .clicked
+                        .clicked()
                     {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                     }

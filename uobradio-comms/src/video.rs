@@ -333,6 +333,7 @@ pub struct VideoSource {
     pub controls: Vec<ControlElement>,
 }
 
+#[cfg(target_os="linux")]
 impl VideoSource {
     pub fn sendable(&self) -> Option<SendableVideoSource> {
         let img = self.image.lock().ok()?;
@@ -363,6 +364,7 @@ pub struct SendableControlElement {
     pub value: Option<ControlValue>,
 }
 
+#[cfg(target_os="linux")]
 impl From<&ControlElement> for SendableControlElement {
     fn from(value: &ControlElement) -> Self {
         Self {
