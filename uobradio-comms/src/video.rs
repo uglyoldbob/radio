@@ -155,6 +155,22 @@ impl From<&v4l::control::Value> for ControlValue {
     }
 }
 
+#[cfg(target_os = "linux")]
+impl From<v4l::control::Value> for ControlValue {
+    fn from(value: v4l::control::Value) -> Self {
+        match value {
+            v4l::control::Value::None => Self::None,
+            v4l::control::Value::Integer(v) => Self::Int64(v),
+            v4l::control::Value::Boolean(v) => Self::Bool(v),
+            v4l::control::Value::String(v) => Self::String(v),
+            v4l::control::Value::CompoundU8(items) => Self::VecU8(items),
+            v4l::control::Value::CompoundU16(items) => Self::VecU16(items),
+            v4l::control::Value::CompoundU32(items) => Self::VecU32(items),
+            v4l::control::Value::CompoundPtr(items) => Self::Ptr(items),
+        }
+    }
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct VideoFrame {
     pub width: u16,
@@ -253,7 +269,7 @@ pub struct ControlElement {
     pub id: u32,
     pub name: String,
     data: ControlData,
-    pub value: Option<v4l::control::Value>,
+    pub value: v4l::control::Value,
 }
 
 #[cfg(target_os = "linux")]
@@ -263,13 +279,13 @@ impl ControlElement {
             id: self.id,
             name: self.name.clone(),
             data: self.data.clone(),
-            value: self.value.as_ref().map(|a| a.into()),
+            value: (&self.value).into(),
         }
     }
 
     pub fn new(
         d: &v4l::control::Description,
-        value: Option<v4l::control::Value>,
+        value: v4l::control::Value,
     ) -> Result<Self, String> {
         let cd = match d.typ {
             v4l::control::Type::Integer => Ok(ControlData::Integer {
@@ -361,7 +377,7 @@ pub struct SendableControlElement {
     pub id: u32,
     pub name: String,
     data: ControlData,
-    pub value: Option<ControlValue>,
+    pub value: ControlValue,
 }
 
 #[cfg(target_os="linux")]
@@ -371,7 +387,7 @@ impl From<&ControlElement> for SendableControlElement {
             id: value.id,
             name: value.name.clone(),
             data: value.data.clone(),
-            value: value.value.as_ref().map(|a| a.into()),
+            value: (&value.value).into(),
         }
     }
 }
@@ -380,7 +396,7 @@ impl From<&ControlElement> for SendableControlElement {
 impl SendableControlElement {
     pub fn egui_show(&mut self, ui: &mut egui::Ui) -> bool {
         ui.label(self.name.clone());
-        let mut value: Option<v4l::control::Value> = self.value.as_ref().map(|a| a.into());
+        let mut value = &mut self.value;
         match &mut self.data {
             ControlData::Integer {
                 val: _,
@@ -388,19 +404,12 @@ impl SendableControlElement {
                 default: _,
                 max,
             } => {
-                let a = value
-                    .as_mut()
-                    .map(|a| match a {
-                        v4l::control::Value::None => None,
-                        v4l::control::Value::Integer(a) => Some(a),
-                        v4l::control::Value::Boolean(_) => None,
-                        v4l::control::Value::String(_) => None,
-                        v4l::control::Value::CompoundU8(_vec) => None,
-                        v4l::control::Value::CompoundU16(_vec) => None,
-                        v4l::control::Value::CompoundU32(_vec) => None,
-                        v4l::control::Value::CompoundPtr(_vec) => None,
-                    })
-                    .flatten();
+                let a = if let ControlValue::Int64(i) = value {
+                    Some(i)
+                }
+                else {
+                    None
+                };
                 let mut r = false;
                 if let Some(a) = a {
                     r = ui
@@ -410,19 +419,12 @@ impl SendableControlElement {
                 r
             }
             ControlData::Boolean { val: _, default: _ } => {
-                let a = value
-                    .as_mut()
-                    .map(|a| match a {
-                        v4l::control::Value::None => None,
-                        v4l::control::Value::Integer(_) => None,
-                        v4l::control::Value::Boolean(b) => Some(b),
-                        v4l::control::Value::String(_) => None,
-                        v4l::control::Value::CompoundU8(_vec) => None,
-                        v4l::control::Value::CompoundU16(_vec) => None,
-                        v4l::control::Value::CompoundU32(_vec) => None,
-                        v4l::control::Value::CompoundPtr(_vec) => None,
-                    })
-                    .flatten();
+                let a = if let ControlValue::Bool(i) = value {
+                    Some(i)
+                }
+                else {
+                    None
+                };
                 let mut r = false;
                 if let Some(a) = a {
                     r = ui.checkbox(a, self.name.clone()).changed()
@@ -430,19 +432,12 @@ impl SendableControlElement {
                 r
             }
             ControlData::String(_s) => {
-                let a = value
-                    .as_mut()
-                    .map(|a| match a {
-                        v4l::control::Value::None => None,
-                        v4l::control::Value::Integer(_) => None,
-                        v4l::control::Value::Boolean(_) => None,
-                        v4l::control::Value::String(s) => Some(s),
-                        v4l::control::Value::CompoundU8(_vec) => None,
-                        v4l::control::Value::CompoundU16(_vec) => None,
-                        v4l::control::Value::CompoundU32(_vec) => None,
-                        v4l::control::Value::CompoundPtr(_vec) => None,
-                    })
-                    .flatten();
+                let a = if let ControlValue::String(i) = value {
+                    Some(i)
+                }
+                else {
+                    None
+                };
                 let mut r = false;
                 if let Some(a) = a {
                     r = ui.text_edit_singleline(a).changed()
@@ -450,19 +445,12 @@ impl SendableControlElement {
                 r
             }
             ControlData::Bitmask(_m) => {
-                let a = value
-                    .as_mut()
-                    .map(|a| match a {
-                        v4l::control::Value::None => None,
-                        v4l::control::Value::Integer(i) => Some(i),
-                        v4l::control::Value::Boolean(_) => None,
-                        v4l::control::Value::String(_) => None,
-                        v4l::control::Value::CompoundU8(_vec) => None,
-                        v4l::control::Value::CompoundU16(_vec) => None,
-                        v4l::control::Value::CompoundU32(_vec) => None,
-                        v4l::control::Value::CompoundPtr(_vec) => None,
-                    })
-                    .flatten();
+                let a = if let ControlValue::Int64(i) = value {
+                    Some(i)
+                }
+                else {
+                    None
+                };
                 let r = false;
                 if let Some(a) = a {
                     ui.label(format!("{:X}", a));
@@ -475,19 +463,12 @@ impl SendableControlElement {
                 default: _,
                 max,
             } => {
-                let a = value
-                    .as_mut()
-                    .map(|a| match a {
-                        v4l::control::Value::None => None,
-                        v4l::control::Value::Integer(a) => Some(a),
-                        v4l::control::Value::Boolean(_) => None,
-                        v4l::control::Value::String(_) => None,
-                        v4l::control::Value::CompoundU8(_vec) => None,
-                        v4l::control::Value::CompoundU16(_vec) => None,
-                        v4l::control::Value::CompoundU32(_vec) => None,
-                        v4l::control::Value::CompoundPtr(_vec) => None,
-                    })
-                    .flatten();
+                let a = if let ControlValue::Int64(i) = value {
+                    Some(i)
+                }
+                else {
+                    None
+                };
                 let mut r = false;
                 if let Some(a) = a {
                     r = ui
@@ -505,19 +486,12 @@ impl SendableControlElement {
                 default: _,
                 max,
             } => {
-                let a = value
-                    .as_mut()
-                    .map(|a| match a {
-                        v4l::control::Value::None => None,
-                        v4l::control::Value::Integer(a) => Some(a),
-                        v4l::control::Value::Boolean(_) => None,
-                        v4l::control::Value::String(_) => None,
-                        v4l::control::Value::CompoundU8(_vec) => None,
-                        v4l::control::Value::CompoundU16(_vec) => None,
-                        v4l::control::Value::CompoundU32(_vec) => None,
-                        v4l::control::Value::CompoundPtr(_vec) => None,
-                    })
-                    .flatten();
+                let a = if let ControlValue::Int64(i) = value {
+                    Some(i)
+                }
+                else {
+                    None
+                };
                 let mut r = false;
                 if let Some(a) = a {
                     r = ui
@@ -535,19 +509,12 @@ impl SendableControlElement {
                 default: _,
                 max,
             } => {
-                let a = value
-                    .as_mut()
-                    .map(|a| match a {
-                        v4l::control::Value::None => None,
-                        v4l::control::Value::Integer(a) => Some(a),
-                        v4l::control::Value::Boolean(_) => None,
-                        v4l::control::Value::String(_) => None,
-                        v4l::control::Value::CompoundU8(_vec) => None,
-                        v4l::control::Value::CompoundU16(_vec) => None,
-                        v4l::control::Value::CompoundU32(_vec) => None,
-                        v4l::control::Value::CompoundPtr(_vec) => None,
-                    })
-                    .flatten();
+                let a = if let ControlValue::Int64(i) = value {
+                    Some(i)
+                }
+                else {
+                    None
+                };
                 let mut r = false;
                 if let Some(a) = a {
                     r = ui

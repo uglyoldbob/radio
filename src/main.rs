@@ -110,7 +110,6 @@ impl eframe::App for MyEguiApp {
                 log::error!("got ping packet in update method port {}", port);
             }
             uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
-                log::error!("Recieved data for camera {} length {}", index, jpeg.len());
             }
         }) {
             log::error!("Reconnecting to radio due to error: {:?}", e);

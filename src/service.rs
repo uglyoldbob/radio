@@ -49,7 +49,8 @@ pub async fn process_app(
                     let a: uobradio_comms::v4l::control::Value = data.into();
                     let mut vid = common.video.lock().unwrap();
                     if let Some(vid) = vid.get_mut(id as usize) {
-                        vid.controls[control as usize].value.replace(a);
+                        let res = vid.send_update(control as usize, &a);
+                        vid.controls[control as usize].value = a;
                     }
                 }
                 uobradio_comms::MessageFromApp::RequestCameras => {

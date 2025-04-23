@@ -1,13 +1,8 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use eframe::egui;
-use ffimage::iter::BytesExt;
-use ffimage::iter::ColorConvertExt;
-use ffimage::iter::PixelsExt;
 use uobradio_comms::v4l;
 use uobradio_comms::video::ControlElement;
-use uobradio_comms::video::SendableVideoSource;
 use v4l::buffer::Type;
 use v4l::io::traits::CaptureStream;
 use v4l::prelude::*;
@@ -25,12 +20,31 @@ pub struct VideoSource {
     pub controls: Vec<ControlElement>,
 }
 
+pub fn clone_v4l_value(control: &v4l::control::Value) -> v4l::control::Value {
+    match control {
+        v4l::control::Value::None => v4l::control::Value::None,
+        v4l::control::Value::Integer(v) => v4l::control::Value::Integer(*v),
+        v4l::control::Value::Boolean(v) => v4l::control::Value::Boolean(*v),
+        v4l::control::Value::String(v) => v4l::control::Value::String(v.clone()),
+        v4l::control::Value::CompoundU8(items) => v4l::control::Value::CompoundU8(items.clone()),
+        v4l::control::Value::CompoundU16(items) => v4l::control::Value::CompoundU16(items.clone()),
+        v4l::control::Value::CompoundU32(items) => v4l::control::Value::CompoundU32(items.clone()),
+        v4l::control::Value::CompoundPtr(items) => v4l::control::Value::CompoundPtr(items.clone()),
+    }
+}
+
 impl VideoSource {
     pub fn sendable(&self) -> Option<uobradio_comms::video::SendableVideoSource> {
         let img = self.image.lock().ok()?;
         Some(uobradio_comms::video::SendableVideoSource {
             image: Some(img.clone()), controls: self.controls.iter().map(|a| a.into()).collect()
         })
+    }
+
+    pub fn send_update(&mut self, id: usize, val: &v4l::control::Value) -> Option<()> {
+        let c = &self.controls[id];
+        let v = clone_v4l_value(val);
+        self.vsend.send(VideoMessage::ControlData { id: c.id, value: v }).ok()
     }
 }
 
@@ -54,7 +68,14 @@ impl Video {
             .query_controls()
             .unwrap()
             .iter()
-            .filter_map(|c| ControlElement::new(c, dev.control(c.id).ok().map(|a| a.value)).ok())
+            .filter_map(|c| {
+                if let Ok(control) = dev.control(c.id) {
+                    ControlElement::new(c, control.value).ok()
+                }
+                else {
+                    None
+                }
+            })
             .collect();
         std::thread::spawn(move || {
             fmt.width = 320;
@@ -86,7 +107,8 @@ impl Video {
                     match a {
                         VideoMessage::Quit => break,
                         VideoMessage::ControlData { id, value } => {
-                            dev.set_control(v4l::control::Control { id, value });
+                            let v2 = clone_v4l_value(&value);
+                            let _ = dev.set_control(v4l::control::Control { id, value: v2 });
                         }
                     }
                 }

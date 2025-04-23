@@ -116,13 +116,11 @@ pub enum MessageToApp {
 
 impl MessageFromApp {
     pub fn send_to_stream(&self, stream: &mut std::net::TcpStream) -> Result<(), String> {
-        log::info!("Sending packet to radio: {:?}", self);
         let packet = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
         stream
             .write_all(&((packet.len() as u32).to_be_bytes()[0..4]))
             .map_err(|e| e.to_string())?;
         stream.write_all(&packet).map_err(|e| e.to_string())?;
-        log::info!("Done sending the packet");
         Ok(())
     }
 }
@@ -205,7 +203,6 @@ impl UobRadio {
                                     match &packet {
                                         MessageToApp::CameraDataJpeg(id, data) => {
                                             self.waiting_until = None;
-                                            log::info!("Got a camera jpeg for camera {}", id);
                                             if let Some(cameras) = &mut self.cameras {
                                                 let vsrc = cameras.get_mut(id);
                                                 if let Some(camera) = vsrc {
@@ -252,8 +249,8 @@ impl UobRadio {
             if !self.waiting_for_camera_options {
                 let packet = MessageFromApp::RequestCameras;
                 if let Some(comms) = &mut self.comms {
-                    let _ = packet.send_to_stream(comms);
-                    self.waiting_for_camera_options = true;
+                    let a = packet.send_to_stream(comms);
+                    self.waiting_for_camera_options = a.is_ok();
                     self.update_ping_time();
                 }
             }
@@ -290,6 +287,14 @@ impl UobRadio {
                 );
                 self.waiting_until = None;
                 std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+        }
+    }
+
+    pub fn send_packet(&mut self, packet: MessageFromApp) {
+        if let Some(stream) = &mut self.comms {
+            if packet.send_to_stream(stream).is_err() {
+                self.disconnect();
             }
         }
     }
