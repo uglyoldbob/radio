@@ -237,9 +237,7 @@ async fn tcp_listener(common: Arc<Mutex<AppUserCommon>>) -> Result<(), String> {
                     let r = process_app(stream, addr, common2).await;
                     println!("Completed handling user {:?}", r);
                     r
-                })
-                .await
-                .unwrap();
+                });
             }
         }
     } else {
