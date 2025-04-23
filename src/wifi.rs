@@ -20,6 +20,7 @@ impl Screen {
     pub fn make_wifi_qr(&self, wifi_name: &String, wifi_password: &String) -> Vec<u8> {
         log::info!("Making qr code with {}/{}", wifi_name, wifi_password);
         let a = format!("WIFI:S:{};T:WPA;P:{};H:false;;", wifi_name, wifi_password);
+        log::info!("Qr code contents ->{}", a);
         a.as_bytes().to_vec()
     }
 }
@@ -67,7 +68,7 @@ impl SubwindowTrait for Screen {
             let mut hotspot = common.settings.hotspot_enabled.is_some();
             if ui.checkbox(&mut hotspot, "Enable hotspot").changed() {
                 if hotspot {
-                    common.settings.hotspot_enabled = Some(("ueiojowjfoiewj".to_string(), "qwertyuiop".to_string()));
+                    common.settings.hotspot_enabled = Some(("UobRadio Hotspot".to_string(), "qwertyuiop".to_string()));
                 }
                 else {
                     common.settings.hotspot_enabled = None;

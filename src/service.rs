@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
 use uobradio_comms::NonvolatileSettings;
 use video_service::VideoSource;
-use wifi_rs::prelude::WifiHotspot;
+use wifi_rs::prelude::{WifiHotspotCreator, WifiHotspotTrait};
 
 mod video_service;
 
@@ -23,20 +23,20 @@ struct MainConfiguration {
 pub struct AppUserCommon {
     #[cfg(feature = "wifi")]
     wifi: wifi_rs::WiFi,
+    #[cfg(feature = "wifi")]
+    hotspot: Option<wifi_rs::prelude::WifiHotspot>,
     video: Arc<Mutex<Vec<VideoSource>>>,
     old_settings: Arc<Mutex<NonvolatileSettings>>,
     settings: Arc<Mutex<NonvolatileSettings>>,
 }
 
 #[cfg(feature = "wifi")]
-fn create_hotspot(wifi: &mut wifi_rs::WiFi, name: &String, password: &String) {
-    use wifi_rs::prelude::WifiHotspot;
+fn create_hotspot(wifi: &mut wifi_rs::WiFi, name: &String, password: &String) -> Option<wifi_rs::prelude::WifiHotspot> {
+    use wifi_rs::prelude::WifiHotspotCreator;
     let configuration = wifi_rs::prelude::HotspotConfig::new(None, None);
     log::info!("Attempting to create hotspot {:?} {:?}", name, password);
     let a = wifi.create_hotspot(name, password, Some(&configuration)).ok();
-    std::thread::sleep(std::time::Duration::from_secs(2));
-    let b = wifi_rs::WiFi::start_hotspot();
-    log::info!("Wifi hotspot creation: {:?} {:?}", a, b);
+    a
 }
 
 #[cfg(not(target_os = "android"))]
@@ -48,7 +48,6 @@ pub async fn process_app(
 ) -> Result<(), String> {
     use std::collections::BTreeMap;
     use tokio::io::AsyncReadExt;
-    use wifi_rs::prelude::WifiHotspot;
     
     println!("Processing an app at {:?}", addr);
 
@@ -101,9 +100,14 @@ pub async fn process_app(
                             } else {
                                 None
                             };
-                            common.wifi.stop_hotspot();
                             if let Some((n, p)) = hotspot {
-                                create_hotspot(&mut common.wifi, &n, &p);
+                                common.hotspot = create_hotspot(&mut common.wifi, &n, &p);
+                            }
+                            else {
+                                common.hotspot = None;
+                            }
+                            if let Some(hotspot) = &mut common.hotspot {
+                                let _ = hotspot.start_hotspot();
                             }
                         }
                     }
@@ -280,6 +284,8 @@ async fn smain() {
     let common = Arc::new(Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config { interface: Some("wlp0s20f3") })),
+        #[cfg(feature = "wifi")]
+        hotspot: None,
         video: Arc::new(Mutex::new(vs)),
         old_settings: Arc::new(Mutex::new(s.clone())),
         settings: Arc::new(Mutex::new(s.clone())),
@@ -291,9 +297,11 @@ async fn smain() {
         } else {
             None
         };
-        common.wifi.stop_hotspot();
         if let Some((n, p)) = hotspot {
-            create_hotspot(&mut common.wifi, &n, &p);
+            common.hotspot = create_hotspot(&mut common.wifi, &n, &p);
+            if let Some(hotspot) = &mut common.hotspot {
+                let _ = hotspot.start_hotspot();
+            }
         }
     }
 
