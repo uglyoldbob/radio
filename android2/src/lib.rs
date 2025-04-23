@@ -41,6 +41,7 @@ impl BluetoothConfig {
 pub struct UobRadioMainWindow {
     local_storage: Option<std::path::PathBuf>,
     settings: Result<AppConfig, AppConfigError>,
+    nvsettings: uobradio_comms::NonvolatileSettings,
     _java: Arc<Mutex<Java>>,
     bluetooth: bluetooth_rust::BluetoothAdapter,
     known_uuids: BTreeMap<String, Vec<bluetooth_rust::Uuid>>,
@@ -57,11 +58,7 @@ impl UobRadioMainWindow {
     ) {
         if texture.is_none() {
             let eimg: egui::ColorImage = image.into();
-            *texture = Some(ctx.load_texture(
-                "Camera Image1",
-                eimg,
-                egui::TextureOptions::NEAREST,
-            ));
+            *texture = Some(ctx.load_texture("Camera Image1", eimg, egui::TextureOptions::NEAREST));
         } else if let Some(t) = texture {
             if t.size()[0] != image.width as usize || t.size()[1] != image.height as usize {
                 *texture = Some(ctx.load_texture(
@@ -78,6 +75,17 @@ impl UobRadioMainWindow {
             }
         }
     }
+
+    /// Get the minimum size for ui elements
+    pub fn min_size(ui: &egui::Ui) -> egui::Vec2 {
+        let m = ui.pixels_per_point();
+        egui::vec2(10.0 * m, 10.0 * m)
+    }
+
+    /// Get the font size
+    pub fn font_size() -> f32 {
+        24.0
+    }
 }
 
 impl eframe::App for UobRadioMainWindow {
@@ -86,6 +94,9 @@ impl eframe::App for UobRadioMainWindow {
         for (address, radio) in self.radios.iter_mut() {
             if radio
                 .process_received(|packet| match packet {
+                    uobradio_comms::MessageToApp::NewSettings(s) => {
+                        self.nvsettings = s.clone();
+                    }
                     uobradio_comms::MessageToApp::CamerasBtreeMap(map) => {
                         log::error!("Got camera map with {} items", map.len());
                     }
@@ -94,8 +105,9 @@ impl eframe::App for UobRadioMainWindow {
                     }
                     uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
                         log::error!("Recieved data for camera {} length {}", index, jpeg.len());
-                        if let Some(img) =
-                        uobradio_comms::video::PixelImage::<uobradio_comms::video::RgbPixel>::from_jpeg_image(&jpeg)
+                        if let Some(img) = uobradio_comms::video::PixelImage::<
+                            uobradio_comms::video::RgbPixel,
+                        >::from_jpeg_image(&jpeg)
                         {
                             Self::update_shown_image(&mut self.texture, img, ctx);
                         } else {
@@ -112,8 +124,17 @@ impl eframe::App for UobRadioMainWindow {
         }
         ctx.request_repaint_after(std::time::Duration::from_millis(10));
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.label(
+                egui::RichText::new(format!("Size 1: {}", ui.pixels_per_point()))
+                    .size(Self::font_size()),
+            );
+            let min_size = Self::min_size(ui);
             egui::ScrollArea::vertical().show(ui, |ui| {
-                if ui.button("Find radios").clicked() {
+                let find = ui.add(
+                    egui::Button::new(egui::RichText::new("Find radios").size(Self::font_size()))
+                        .min_size(min_size),
+                );
+                if find.clicked() {
                     let rs = uobradio_comms::UobRadio::detect_radios(5);
                     if let Ok(radios) = rs {
                         log::error!("Got some radios {}", radios.len());
@@ -127,15 +148,21 @@ impl eframe::App for UobRadioMainWindow {
                     radio.send_camera_request(0);
                     ui.label(format!("Radio at {:?}", address.ip()));
                     ui.horizontal(|ui| {
-                        let winch_response =
-                            ui.add(egui::Button::new("Winch IN").sense(egui::Sense::drag()));
+                        let winch_response = ui.add(
+                            egui::Button::new("Winch IN")
+                                .min_size(min_size)
+                                .sense(egui::Sense::drag()),
+                        );
                         if winch_response.drag_started() {
                             radio.send_gpio(uobradio_comms::Gpio::WinchControl(true, false));
                         } else if winch_response.drag_released() {
                             radio.send_gpio(uobradio_comms::Gpio::WinchControl(false, false));
                         }
-                        let winch_response =
-                            ui.add(egui::Button::new("Winch OUT").sense(egui::Sense::drag()));
+                        let winch_response = ui.add(
+                            egui::Button::new("Winch OUT")
+                                .min_size(min_size)
+                                .sense(egui::Sense::drag()),
+                        );
                         if winch_response.drag_started() {
                             radio.send_gpio(uobradio_comms::Gpio::WinchControl(false, true));
                         } else if winch_response.drag_released() {
@@ -166,7 +193,10 @@ impl eframe::App for UobRadioMainWindow {
                             }
                             if let Some(config) = self.bluetooth_devs.get_mut(&address) {
                                 ui.label(format!("Config is {:?}", config));
-                                if ui.button("Connect").clicked() {
+                                if ui
+                                    .add(egui::Button::new("Connect").min_size(min_size))
+                                    .clicked()
+                                {
                                     config.connect_nap = true;
                                 }
                                 if config.connect_nap {
@@ -198,7 +228,10 @@ impl eframe::App for UobRadioMainWindow {
                                     ui.label(format!("UUID: {:?}", uuid));
                                 }
                             }
-                            if ui.button("UUIDS").clicked() {
+                            if ui
+                                .add(egui::Button::new("UUIDS").min_size(min_size))
+                                .clicked()
+                            {
                                 let uuids = d.get_uuids();
                                 if let Ok(uuids) = uuids {
                                     self.known_uuids.insert(address.clone(), uuids);
@@ -257,6 +290,7 @@ impl UobRadioMainWindow {
         let mut s = Self {
             local_storage: options.android_app.unwrap().internal_data_path(),
             settings: Err(AppConfigError::NotLoaded),
+            nvsettings: uobradio_comms::NonvolatileSettings::default(),
             _java: Arc::new(Mutex::new(java)),
             bluetooth: bluetooth_rust::BluetoothAdapter::new(app),
             known_uuids: BTreeMap::new(),

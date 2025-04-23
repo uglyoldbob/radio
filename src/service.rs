@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
 use uobradio_comms::NonvolatileSettings;
 use video_service::VideoSource;
-use wifi_rs::prelude::{WifiHotspotCreator, WifiHotspotTrait};
+use wifi_rs::prelude::WifiHotspotTrait;
 
 mod video_service;
 
@@ -31,11 +31,17 @@ pub struct AppUserCommon {
 }
 
 #[cfg(feature = "wifi")]
-fn create_hotspot(wifi: &mut wifi_rs::WiFi, name: &String, password: &String) -> Option<wifi_rs::prelude::WifiHotspot> {
+fn create_hotspot(
+    wifi: &mut wifi_rs::WiFi,
+    name: &String,
+    password: &String,
+) -> Option<wifi_rs::prelude::WifiHotspot> {
     use wifi_rs::prelude::WifiHotspotCreator;
     let configuration = wifi_rs::prelude::HotspotConfig::new(None, None);
     log::info!("Attempting to create hotspot {:?} {:?}", name, password);
-    let a = wifi.create_hotspot(name, password, Some(&configuration)).ok();
+    let a = wifi
+        .create_hotspot(name, password, Some(&configuration))
+        .ok();
     a
 }
 
@@ -48,7 +54,7 @@ pub async fn process_app(
 ) -> Result<(), String> {
     use std::collections::BTreeMap;
     use tokio::io::AsyncReadExt;
-    
+
     println!("Processing an app at {:?}", addr);
 
     loop {
@@ -63,21 +69,19 @@ pub async fn process_app(
         if let Ok((packet, _length)) = packet {
             match packet {
                 uobradio_comms::MessageFromApp::RequestSettings => {
-                    let packet = 
-                        if let Ok(common) = common.lock() {
-                            if let Ok(c) = common.settings.lock() {
-                                Some(uobradio_comms::MessageToApp::NewSettings(c.clone()))
-                            }
-                            else {
-                                None
-                            }
-                        } else { 
-                            None 
-                        };
-                        if let Some(packet) = packet {
-                            packet.send_to_stream(&mut stream).await?;
+                    let packet = if let Ok(common) = common.lock() {
+                        if let Ok(c) = common.settings.lock() {
+                            Some(uobradio_comms::MessageToApp::NewSettings(c.clone()))
+                        } else {
+                            None
                         }
+                    } else {
+                        None
+                    };
+                    if let Some(packet) = packet {
+                        packet.send_to_stream(&mut stream).await?;
                     }
+                }
                 uobradio_comms::MessageFromApp::NewSettings(s) => {
                     if let Ok(mut common) = common.lock() {
                         #[cfg(feature = "wifi")]
@@ -102,8 +106,7 @@ pub async fn process_app(
                             };
                             if let Some((n, p)) = hotspot {
                                 common.hotspot = create_hotspot(&mut common.wifi, &n, &p);
-                            }
-                            else {
+                            } else {
                                 common.hotspot = None;
                             }
                             if let Some(hotspot) = &mut common.hotspot {
@@ -117,7 +120,7 @@ pub async fn process_app(
                     if let Ok(common) = common.lock() {
                         let mut vid = common.video.lock().unwrap();
                         if let Some(vid) = vid.get_mut(id as usize) {
-                            let res = vid.send_update(control as usize, &a);
+                            let _ = vid.send_update(control as usize, &a);
                             vid.controls[control as usize].value = a;
                         }
                     }
@@ -132,8 +135,7 @@ pub async fn process_app(
                                 }
                             }
                             Some(uobradio_comms::MessageToApp::CamerasBtreeMap(map))
-                        }
-                        else {
+                        } else {
                             None
                         }
                     } else {
@@ -281,7 +283,9 @@ async fn smain() {
     let s = NonvolatileSettings::load();
     let common = Arc::new(Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
-        wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config { interface: Some("wlp0s20f3") })),
+        wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
+            interface: Some("wlp0s20f3"),
+        })),
         #[cfg(feature = "wifi")]
         hotspot: None,
         video: Arc::new(Mutex::new(vs)),

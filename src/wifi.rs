@@ -12,9 +12,7 @@ pub struct Screen {
 
 impl Screen {
     pub fn new() -> Self {
-        Self {
-            texture: None,
-        }
+        Self { texture: None }
     }
 
     pub fn make_wifi_qr(&self, wifi_name: &String, wifi_password: &String) -> Vec<u8> {
@@ -32,20 +30,18 @@ impl SubwindowTrait for Screen {
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
-        let h = ctx.screen_rect().height();
-        common.radio.send_packet(uobradio_comms::MessageFromApp::RequestSettings);
+        common
+            .radio
+            .send_packet(uobradio_comms::MessageFromApp::RequestSettings);
         if self.texture.is_none() {
             if let Some((wn, wp)) = &common.settings.hotspot_enabled {
                 let contents = self.make_wifi_qr(wn, wp);
                 let code = qrcode::QrCode::new(contents).unwrap();
                 let image = code.render::<image::Rgb<u8>>().build();
-                let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> = image.into();
-                let cimg : egui::ColorImage = img.into();
-                self.texture = Some(ctx.load_texture(
-                    "qrcode",
-                    cimg,
-                    egui::TextureOptions::LINEAR,
-                ));
+                let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
+                    image.into();
+                let cimg: egui::ColorImage = img.into();
+                self.texture = Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
             }
         }
         if common.settings.hotspot_enabled.is_none() && self.texture.is_some() {
@@ -68,12 +64,16 @@ impl SubwindowTrait for Screen {
             let mut hotspot = common.settings.hotspot_enabled.is_some();
             if ui.checkbox(&mut hotspot, "Enable hotspot").changed() {
                 if hotspot {
-                    common.settings.hotspot_enabled = Some(("UobRadio Hotspot".to_string(), "qwertyuiop".to_string()));
-                }
-                else {
+                    common.settings.hotspot_enabled =
+                        Some(("UobRadio Hotspot".to_string(), "qwertyuiop".to_string()));
+                } else {
                     common.settings.hotspot_enabled = None;
                 }
-                common.radio.send_packet(uobradio_comms::MessageFromApp::NewSettings(common.settings.clone()));
+                common
+                    .radio
+                    .send_packet(uobradio_comms::MessageFromApp::NewSettings(
+                        common.settings.clone(),
+                    ));
             }
         });
         None

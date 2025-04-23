@@ -38,14 +38,17 @@ impl VideoSource {
     pub fn sendable(&self) -> Option<uobradio_comms::video::SendableVideoSource> {
         let img = self.image.lock().ok()?;
         Some(uobradio_comms::video::SendableVideoSource {
-            image: Some(img.clone()), controls: self.controls.iter().map(|a| a.into()).collect()
+            image: Some(img.clone()),
+            controls: self.controls.iter().map(|a| a.into()).collect(),
         })
     }
 
     pub fn send_update(&mut self, id: usize, val: &v4l::control::Value) -> Option<()> {
         let c = &self.controls[id];
         let v = clone_v4l_value(val);
-        self.vsend.send(VideoMessage::ControlData { id: c.id, value: v }).ok()
+        self.vsend
+            .send(VideoMessage::ControlData { id: c.id, value: v })
+            .ok()
     }
 }
 
@@ -55,9 +58,7 @@ impl Drop for VideoSource {
     }
 }
 
-pub struct Video {
-    which_video: usize,
-}
+pub struct Video {}
 
 impl Video {
     pub fn video_start(mut dev: Device) -> VideoSource {
@@ -72,8 +73,7 @@ impl Video {
             .filter_map(|c| {
                 if let Ok(control) = dev.control(c.id) {
                     ControlElement::new(c, control.value).ok()
-                }
-                else {
+                } else {
                     None
                 }
             })
@@ -103,7 +103,8 @@ impl Video {
                 if grab_images {
                     let (buf, _) = stream.next().unwrap();
                     if let Ok(mut i) = i2.lock() {
-                        i.pixel_data = Some(uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb());
+                        i.pixel_data =
+                            Some(uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb());
                         i.mirroring();
                     }
                 }
@@ -126,9 +127,5 @@ impl Video {
             vsend: a,
             controls,
         }
-    }
-
-    pub fn new() -> Self {
-        Self { which_video: 0 }
     }
 }

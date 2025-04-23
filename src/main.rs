@@ -5,8 +5,6 @@ mod video;
 #[cfg(feature = "wifi")]
 mod wifi;
 
-use std::io::{Read, Write};
-
 use eframe::egui::{self, Vec2};
 
 #[enum_dispatch::enum_dispatch]
@@ -30,8 +28,10 @@ impl SubwindowTrait for MainPage {
     ) -> Option<Subwindow> {
         let r = None;
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Hello World!");
-            if ui.button("quit").clicked() {
+            let min_size = CommonWindowProperties::min_size(ui);
+            ui.label(format!("Size 1: {}", ui.pixels_per_point()));
+            let quit = ui.add(egui::Button::new("Quit").min_size(min_size));
+            if quit.clicked() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             }
         });
@@ -83,6 +83,12 @@ impl CommonWindowProperties {
             settings: uobradio_comms::NonvolatileSettings::default(),
         }
     }
+
+    /// Get the minimum size for ui elements
+    pub fn min_size(ui: &egui::Ui) -> egui::Vec2 {
+        let m = ui.pixels_per_point();
+        egui::vec2(30.0 * m, 30.0 * m)
+    }
 }
 
 struct MyEguiApp {
@@ -118,8 +124,7 @@ impl eframe::App for MyEguiApp {
             uobradio_comms::MessageToApp::PingReply(port) => {
                 log::error!("got ping packet in update method port {}", port);
             }
-            uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg) => {
-            }
+            uobradio_comms::MessageToApp::CameraDataJpeg(_index, _jpeg) => {}
             uobradio_comms::MessageToApp::NewSettings(s) => {
                 self.common.settings = s.clone();
             }
@@ -149,14 +154,14 @@ impl eframe::App for MyEguiApp {
                     #[cfg(feature = "wifi")]
                     {
                         if ui
-                                .button(
-                                    eframe::egui::RichText::new("W")
-                                        .font(eframe::egui::FontId::proportional(64.0)),
-                                )
-                                .clicked()
-                            {
-                                self.subwindow = Subwindow::Wifi(wifi::Screen::new());
-                            }
+                            .button(
+                                eframe::egui::RichText::new("W")
+                                    .font(eframe::egui::FontId::proportional(64.0)),
+                            )
+                            .clicked()
+                        {
+                            self.subwindow = Subwindow::Wifi(wifi::Screen::new());
+                        }
                     }
                     if ui
                         .button(
