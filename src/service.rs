@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::AsyncReadExt;
 use uobradio_comms::NonvolatileSettings;
 use video_service::VideoSource;
+use wifi_rs::prelude::WifiHotspot;
 
 mod video_service;
 
@@ -18,11 +19,24 @@ struct MainConfiguration {
     debug_level: Option<service::LogLevel>,
 }
 
-#[derive(Clone)]
 /// The common data for an app user
 pub struct AppUserCommon {
+    #[cfg(feature = "wifi")]
+    wifi: wifi_rs::WiFi,
     video: Arc<Mutex<Vec<VideoSource>>>,
+    old_settings: Arc<Mutex<NonvolatileSettings>>,
     settings: Arc<Mutex<NonvolatileSettings>>,
+}
+
+#[cfg(feature = "wifi")]
+fn create_hotspot(wifi: &mut wifi_rs::WiFi, name: &String, password: &String) {
+    use wifi_rs::prelude::WifiHotspot;
+    let configuration = wifi_rs::prelude::HotspotConfig::new(None, None);
+    log::info!("Attempting to create hotspot {:?} {:?}", name, password);
+    let a = wifi.create_hotspot(name, password, Some(&configuration)).ok();
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    let b = wifi_rs::WiFi::start_hotspot();
+    log::info!("Wifi hotspot creation: {:?} {:?}", a, b);
 }
 
 #[cfg(not(target_os = "android"))]
@@ -30,12 +44,14 @@ pub struct AppUserCommon {
 pub async fn process_app(
     mut stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
-    common: AppUserCommon,
+    common: Arc<Mutex<AppUserCommon>>,
 ) -> Result<(), String> {
     use std::collections::BTreeMap;
-
     use tokio::io::AsyncReadExt;
+    use wifi_rs::prelude::WifiHotspot;
+    
     println!("Processing an app at {:?}", addr);
+
     loop {
         let length = stream.read_u32().await.map_err(|e| e.to_string())?;
         let mut packet = vec![0; length as usize];
@@ -48,42 +64,75 @@ pub async fn process_app(
         if let Ok((packet, _length)) = packet {
             match packet {
                 uobradio_comms::MessageFromApp::RequestSettings => {
-                    let packet = if let Ok(c) = common.settings.lock() {
-                        Some(uobradio_comms::MessageToApp::NewSettings(c.clone()))
+                    let packet = 
+                        if let Ok(common) = common.lock() {
+                            if let Ok(c) = common.settings.lock() {
+                                Some(uobradio_comms::MessageToApp::NewSettings(c.clone()))
+                            }
+                            else {
+                                None
+                            }
+                        } else { 
+                            None 
+                        };
+                        if let Some(packet) = packet {
+                            packet.send_to_stream(&mut stream).await?;
+                        }
                     }
-                    else {
-                        None
-                    };
-                    if let Some(packet) = packet {
-                        packet.send_to_stream(&mut stream).await?;
-                    }
-                }
                 uobradio_comms::MessageFromApp::NewSettings(s) => {
-                    let settings = common.settings.lock();
-                    if let Ok(mut settings) = settings {
-                        *settings = s;
-                        settings.save();
+                    if let Ok(mut common) = common.lock() {
+                        #[cfg(feature = "wifi")]
+                        let mut change_hotspot = false;
+                        if let Ok(mut settings) = common.settings.lock() {
+                            *settings = s;
+                            settings.save();
+                            #[cfg(feature = "wifi")]
+                            if let Ok(mut oldsettings) = common.old_settings.lock() {
+                                if oldsettings.hotspot_enabled != settings.hotspot_enabled {
+                                    oldsettings.hotspot_enabled = settings.hotspot_enabled.clone();
+                                    change_hotspot = true;
+                                }
+                            }
+                        }
+                        #[cfg(feature = "wifi")]
+                        if change_hotspot {
+                            let hotspot = if let Ok(settings) = common.settings.lock() {
+                                settings.hotspot_enabled.clone()
+                            } else {
+                                None
+                            };
+                            common.wifi.stop_hotspot();
+                            if let Some((n, p)) = hotspot {
+                                create_hotspot(&mut common.wifi, &n, &p);
+                            }
+                        }
                     }
                 }
                 uobradio_comms::MessageFromApp::CameraSettingControl(id, control, data) => {
                     let a: uobradio_comms::v4l::control::Value = data.into();
-                    let mut vid = common.video.lock().unwrap();
-                    if let Some(vid) = vid.get_mut(id as usize) {
-                        let res = vid.send_update(control as usize, &a);
-                        vid.controls[control as usize].value = a;
+                    if let Ok(common) = common.lock() {
+                        let mut vid = common.video.lock().unwrap();
+                        if let Some(vid) = vid.get_mut(id as usize) {
+                            let res = vid.send_update(control as usize, &a);
+                            vid.controls[control as usize].value = a;
+                        }
                     }
                 }
                 uobradio_comms::MessageFromApp::RequestCameras => {
-                    let packet = if let Ok(cams) = common.video.lock() {
-                        let mut map = BTreeMap::new();
-                        for (i, cam) in cams.iter().enumerate() {
-                            if let Some(c) = cam.sendable() {
-                                map.insert(i as u8, c);
+                    let packet = if let Ok(common) = common.lock() {
+                        if let Ok(cams) = common.video.lock() {
+                            let mut map = BTreeMap::new();
+                            for (i, cam) in cams.iter().enumerate() {
+                                if let Some(c) = cam.sendable() {
+                                    map.insert(i as u8, c);
+                                }
                             }
+                            Some(uobradio_comms::MessageToApp::CamerasBtreeMap(map))
                         }
-                        Some(uobradio_comms::MessageToApp::CamerasBtreeMap(map))
-                    }
-                    else {
+                        else {
+                            None
+                        }
+                    } else {
                         None
                     };
                     if let Some(packet) = packet {
@@ -95,13 +144,17 @@ pub async fn process_app(
                     packet.send_to_stream(&mut stream).await?;
                 }
                 uobradio_comms::MessageFromApp::RequestCamera(index) => {
-                    let packet = if let Ok(video) = common.video.lock() {
-                        if let Some(v) = video.get(index as usize) {
-                            let frame = v.image.lock().unwrap();
-                            let jpeg = frame.get_jpeg();
-                            let response =
-                                uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg);
-                            Some(response)
+                    let packet = if let Ok(common) = common.lock() {
+                        if let Ok(video) = common.video.lock() {
+                            if let Some(v) = video.get(index as usize) {
+                                let frame = v.image.lock().unwrap();
+                                let jpeg = frame.get_jpeg();
+                                let response =
+                                    uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg);
+                                Some(response)
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         }
@@ -137,7 +190,7 @@ pub async fn process_app(
     }
 }
 
-async fn udp_listener(_common: AppUserCommon) -> Result<(), String> {
+async fn udp_listener(_common: Arc<Mutex<AppUserCommon>>) -> Result<(), String> {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:13456").await.unwrap();
     println!("Starting radio listener");
     let mut response = vec![0; 1500];
@@ -169,7 +222,7 @@ async fn udp_listener(_common: AppUserCommon) -> Result<(), String> {
     }
 }
 
-async fn tcp_listener(common: AppUserCommon) -> Result<(), String> {
+async fn tcp_listener(common: Arc<Mutex<AppUserCommon>>) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
     if let Ok(tcp) = tcp {
         loop {
@@ -223,10 +276,26 @@ async fn smain() {
     if let Ok(d) = uobradio_comms::v4l::Device::new(0) {
         vs.push(video_service::Video::video_start(d));
     }
-    let common = AppUserCommon {
+    let s = NonvolatileSettings::load();
+    let common = Arc::new(Mutex::new(AppUserCommon {
+        #[cfg(feature = "wifi")]
+        wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config { interface: Some("wlp0s20f3") })),
         video: Arc::new(Mutex::new(vs)),
-        settings: Arc::new(Mutex::new(NonvolatileSettings::load())),
-    };
+        old_settings: Arc::new(Mutex::new(s.clone())),
+        settings: Arc::new(Mutex::new(s.clone())),
+    }));
+
+    if let Ok(mut common) = common.lock() {
+        let hotspot = if let Ok(settings) = common.settings.lock() {
+            settings.hotspot_enabled.clone()
+        } else {
+            None
+        };
+        common.wifi.stop_hotspot();
+        if let Some((n, p)) = hotspot {
+            create_hotspot(&mut common.wifi, &n, &p);
+        }
+    }
 
     let mut tasks: tokio::task::JoinSet<Result<(), String>> = tokio::task::JoinSet::new();
     let common2 = common.clone();

@@ -19,6 +19,7 @@ simple_logger = "5.0.0"
 tokio = { version = "1.40.0", features = ["full"] }
 toml = "0.8.20"
 uobradio-comms = { path = "./uobradio-comms" }
+wifi-rs = { version = "0.2.4", optional = true }
 
 [dependencies.service]
 git = "https://github.com/uglyoldbob/service.git"
@@ -34,4 +35,4 @@ path = "src/main.rs"
 
 [features]
 default = ["wifi"]
-wifi = ["dep:qrcode"]
+wifi = ["dep:qrcode", "dep:wifi-rs"]
