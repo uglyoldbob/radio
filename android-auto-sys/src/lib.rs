@@ -1,14 +1,6 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+#[cfg(all(feature = "cxx", feature = "native"))]
+compile_error!("Feature cxx and native are mutually exclusive and cannot be enabled together");
+#[cfg(feature = "cxx")]
+mod aasdk;
+#[cfg(feature = "cxx")]
+pub use aasdk::*;

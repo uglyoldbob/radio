@@ -12,6 +12,8 @@ use std::sync::{Arc, Mutex};
 /// Represents the uuid for a bluetooth service
 #[derive(Debug, PartialEq)]
 pub enum Uuid {
+    /// Android auto
+    AndroidAuto,
     /// Serial port protocol
     SPP,
     /// a2dp source
@@ -68,6 +70,7 @@ impl Uuid {
             Uuid::NetworkingNap => "00001116-0000-1000-8000-00805f9b34fb",
             Uuid::HspHs => "00001108-0000-1000-8000-00805f9b34fb",
             Uuid::HspAg => "00001112-0000-1000-8000-00805f9b34fb",
+            Uuid::AndroidAuto => "4de17a00-52cb-11e6-bdf4-0800200c9a66",
             Uuid::Unknown(s) => s,
         }
     }
@@ -91,6 +94,7 @@ impl Uuid {
             "00001116-0000-1000-8000-00805f9b34fb" => Uuid::NetworkingNap,
             "00001108-0000-1000-8000-00805f9b34fb" => Uuid::HspHs,
             "00001112-0000-1000-8000-00805f9b34fb" => Uuid::HspAg,
+            "4de17a00-52cb-11e6-bdf4-0800200c9a66" => Uuid::AndroidAuto,
             _ => Uuid::Unknown(s.to_string()),
         }
     }

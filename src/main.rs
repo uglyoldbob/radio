@@ -117,7 +117,23 @@ impl eframe::App for MyEguiApp {
             self.common.radio.disconnect();
         }
         self.common.radio.get_cameras();
+        self.common.radio.try_get_bluetooth();
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
+            uobradio_comms::MessageToApp::BluetoothMessage(m) => {
+                log::info!("Bluetooth message {:?}", m);
+                match m {
+                    uobradio_comms::ActualMessageToBluetoothHost::DisplayPasskey(passkey) => {
+                        log::info!("Need to display the passkey {}", passkey);
+                    }
+                    uobradio_comms::ActualMessageToBluetoothHost::CancelDisplayPasskey => {
+                        log::info!("Need to stop displaying the passkey");
+                    }
+                    uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val) => {
+                        log::info!("Bluetooth discovery is now {}", val);
+                    }
+                }
+            }
+            uobradio_comms::MessageToApp::BluetoothHandlerResult(_) => {}
             uobradio_comms::MessageToApp::CamerasBtreeMap(map) => {
                 log::error!("Got camera btreemap: with {} items", map.len());
             }

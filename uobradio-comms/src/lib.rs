@@ -30,6 +30,8 @@ pub struct UobRadio {
     ping_time: std::time::Instant,
     cameras: Option<BTreeMap<u8, video::SendableVideoSource>>,
     waiting_for_camera_options: bool,
+    #[cfg(feature = "bluetooth")]
+    bluetooth_handler: bool,
 }
 
 impl UobRadio {
@@ -44,6 +46,8 @@ impl UobRadio {
             ping_time: std::time::Instant::now() + timeout / 3,
             cameras: None,
             waiting_for_camera_options: false,
+            #[cfg(feature = "bluetooth")]
+            bluetooth_handler: false,
         }
     }
 
@@ -99,6 +103,33 @@ pub enum MessageFromApp {
     CameraSettingControl(u8, u8, video::ControlValue),
     NewSettings(NonvolatileSettings),
     RequestSettings,
+    /// Request to the the app user that handles bluetooth pairing stuff
+    RequestBluetoothControl,
+    /// Enable or disable bluetooth discoverable
+    SetBluetoothDiscovery(bool),
+}
+
+use bluetooth_rust::MessageToBluetoothHost;
+
+impl From<MessageToBluetoothHost> for ActualMessageToBluetoothHost {
+    fn from(value: MessageToBluetoothHost) -> Self {
+        match value {
+            MessageToBluetoothHost::DisplayPasskey(passkey, _) => ActualMessageToBluetoothHost::DisplayPasskey(passkey),
+            MessageToBluetoothHost::CancelDisplayPasskey => ActualMessageToBluetoothHost::CancelDisplayPasskey,
+        }
+    }
+}
+
+#[cfg(feature = "bluetooth")]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+/// Messages that can be sent specifically to the app user hosting the bluetooth controls
+pub enum ActualMessageToBluetoothHost {
+    /// The passkey used for pairing devices
+    DisplayPasskey(u32),
+    /// Cancal the passkey display
+    CancelDisplayPasskey,
+    /// The status of bluetooth discovery
+    BluetoothEnabled(bool),
 }
 
 pub struct MessageFromAppWithAddr {
@@ -116,6 +147,10 @@ pub enum MessageToApp {
     CamerasBtreeMap(BTreeMap<u8, video::SendableVideoSource>),
     /// The new settings for the radio
     NewSettings(NonvolatileSettings),
+    /// Tell the app if they were accepted as a bluetooth handler
+    BluetoothHandlerResult(bool),
+    /// A bluetooth message from the bluetooth stuff
+    BluetoothMessage(ActualMessageToBluetoothHost),
 }
 
 impl MessageFromApp {
@@ -219,6 +254,9 @@ impl UobRadio {
                                         MessageToApp::CamerasBtreeMap(map) => {
                                             self.cameras.replace(map.to_owned());
                                         }
+                                        MessageToApp::BluetoothHandlerResult(result) => {
+                                            self.bluetooth_handler = *result;
+                                        }
                                         _ => {}
                                     }
                                     closure(&packet);
@@ -303,9 +341,19 @@ impl UobRadio {
         }
     }
 
+    pub fn try_get_bluetooth(&mut self) {
+        if !self.bluetooth_handler {
+            self.send_packet(MessageFromApp::RequestBluetoothControl);
+        }
+    }
+
     pub fn disconnect(&mut self) {
         self.comms.take();
         self.status = RadioReceiveStatus::Disconnected;
+        #[cfg(feature = "bluetooth")]
+        {
+            self.bluetooth_handler = false;
+        }
         self.waiting_until = None;
     }
 

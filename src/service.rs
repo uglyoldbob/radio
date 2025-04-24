@@ -51,9 +51,16 @@ pub struct AppUserCommon {
     wifi: wifi_rs::WiFi,
     #[cfg(feature = "wifi")]
     hotspot: Option<wifi_rs::prelude::WifiHotspot>,
-    video: Arc<Mutex<Vec<VideoSource>>>,
-    old_settings: Arc<Mutex<NonvolatileSettings>>,
-    settings: Arc<Mutex<NonvolatileSettings>>,
+    #[cfg(feature = "bluetooth")]
+    bluetooth: bluetooth_rust::BluetoothHandler,
+    #[cfg(feature = "bluetooth")]
+    blue_recv: tokio::sync::mpsc::Receiver<bluetooth_rust::MessageToBluetoothHost>,
+    #[cfg(feature = "bluetooth")]
+    /// Determines who deals with the bluetooth stuff
+    blue_addr: Option<std::net::SocketAddr>,
+    video: Vec<VideoSource>,
+    old_settings: NonvolatileSettings,
+    settings: NonvolatileSettings,
 }
 
 #[cfg(feature = "wifi")]
@@ -76,12 +83,15 @@ fn create_hotspot(
 pub async fn process_app(
     mut stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
-    common: Arc<Mutex<AppUserCommon>>,
+    common: Arc<tokio::sync::Mutex<AppUserCommon>>,
 ) -> Result<(), String> {
     use std::collections::BTreeMap;
     use tokio::io::AsyncReadExt;
+    use uobradio_comms::MessageToApp;
 
     println!("Processing an app at {:?}", addr);
+
+    let mut send_passkey_response = None;
 
     loop {
         let length = stream.read_u32().await.map_err(|e| e.to_string())?;
@@ -93,108 +103,110 @@ pub async fn process_app(
         let packet: Result<(uobradio_comms::MessageFromApp, usize), bincode::error::DecodeError> =
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
-            match packet {
-                uobradio_comms::MessageFromApp::RequestSettings => {
-                    let packet = if let Ok(common) = common.lock() {
-                        if let Ok(c) = common.settings.lock() {
-                            Some(uobradio_comms::MessageToApp::NewSettings(c.clone()))
-                        } else {
-                            None
+            println!("Got packet from {:?}", addr);
+            {
+                let mut common2 = common.lock().await;
+                if Some(addr) == common2.blue_addr {
+                    while let Ok(m) = common2.blue_recv.try_recv() {
+                        match &m {
+                            bluetooth_rust::MessageToBluetoothHost::DisplayPasskey(_, sender) => {
+                                send_passkey_response = Some(sender);
+                            }
+                            bluetooth_rust::MessageToBluetoothHost::CancelDisplayPasskey => {
+                                println!("Cancel display passkey");
+                            }
                         }
-                    } else {
-                        None
-                    };
-                    if let Some(packet) = packet {
+                        let packet = MessageToApp::BluetoothMessage(m.into());
+                        packet.send_to_stream(&mut stream).await?;
+                        println!("Sent bluetooth message to bluetooth master");
+                    }
+                }
+            }
+            match packet {
+                uobradio_comms::MessageFromApp::SetBluetoothDiscovery(val) => {
+                    let mut common2 = common.lock().await;
+                    if Some(addr) == common2.blue_addr {
+                        common2.bluetooth.set_discoverable(val).await;
+                        let a = uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val);
+                        let packet = uobradio_comms::MessageToApp::BluetoothMessage(a);
                         packet.send_to_stream(&mut stream).await?;
                     }
                 }
+                uobradio_comms::MessageFromApp::RequestBluetoothControl => {
+                    let mut common = common.lock().await;
+                    let r = if common.blue_addr.is_none() {
+                        println!("Setting {:?} as bluetooth master", addr);
+                        common.blue_addr = Some(addr);
+                        true
+                    } else {
+                        false
+                    };
+                    let packet = uobradio_comms::MessageToApp::BluetoothHandlerResult(r);
+                    packet.send_to_stream(&mut stream).await?;
+                }
+                uobradio_comms::MessageFromApp::RequestSettings => {
+                    let common2 = common.lock().await;
+                    let packet =
+                        uobradio_comms::MessageToApp::NewSettings(common2.settings.clone());
+                    packet.send_to_stream(&mut stream).await?;
+                }
                 uobradio_comms::MessageFromApp::NewSettings(s) => {
-                    if let Ok(mut common) = common.lock() {
-                        #[cfg(feature = "wifi")]
-                        let mut change_hotspot = false;
-                        if let Ok(mut settings) = common.settings.lock() {
-                            *settings = s;
-                            settings.save();
-                            #[cfg(feature = "wifi")]
-                            if let Ok(mut oldsettings) = common.old_settings.lock() {
-                                if oldsettings.hotspot_enabled != settings.hotspot_enabled {
-                                    oldsettings.hotspot_enabled = settings.hotspot_enabled.clone();
-                                    change_hotspot = true;
-                                }
-                            }
+                    let mut common2 = common.lock().await;
+                    #[cfg(feature = "wifi")]
+                    let mut change_hotspot = false;
+                    common2.settings = s;
+                    common2.settings.save();
+                    #[cfg(feature = "wifi")]
+                    if common2.old_settings.hotspot_enabled != common2.settings.hotspot_enabled {
+                        common2.old_settings.hotspot_enabled =
+                            common2.settings.hotspot_enabled.clone();
+                        change_hotspot = true;
+                    }
+                    #[cfg(feature = "wifi")]
+                    if change_hotspot {
+                        let hotspot = common2.settings.hotspot_enabled.clone();
+                        if let Some((n, p)) = hotspot {
+                            common2.hotspot = create_hotspot(&mut common2.wifi, &n, &p);
+                        } else {
+                            common2.hotspot = None;
                         }
-                        #[cfg(feature = "wifi")]
-                        if change_hotspot {
-                            let hotspot = if let Ok(settings) = common.settings.lock() {
-                                settings.hotspot_enabled.clone()
-                            } else {
-                                None
-                            };
-                            if let Some((n, p)) = hotspot {
-                                common.hotspot = create_hotspot(&mut common.wifi, &n, &p);
-                            } else {
-                                common.hotspot = None;
-                            }
-                            if let Some(hotspot) = &mut common.hotspot {
-                                let _ = hotspot.start_hotspot();
-                            }
+                        if let Some(hotspot) = &mut common2.hotspot {
+                            let _ = hotspot.start_hotspot();
                         }
                     }
                 }
                 uobradio_comms::MessageFromApp::CameraSettingControl(id, control, data) => {
                     let a: uobradio_comms::v4l::control::Value = data.into();
-                    if let Ok(common) = common.lock() {
-                        let mut vid = common.video.lock().unwrap();
-                        if let Some(vid) = vid.get_mut(id as usize) {
-                            let _ = vid.send_update(control as usize, &a);
-                            vid.controls[control as usize].value = a;
-                        }
+                    let mut common2 = common.lock().await;
+                    if let Some(vid) = common2.video.get_mut(id as usize) {
+                        let _ = vid.send_update(control as usize, &a);
+                        vid.controls[control as usize].value = a;
                     }
                 }
                 uobradio_comms::MessageFromApp::RequestCameras => {
-                    let packet = if let Ok(common) = common.lock() {
-                        if let Ok(cams) = common.video.lock() {
-                            let mut map = BTreeMap::new();
-                            for (i, cam) in cams.iter().enumerate() {
-                                if let Some(c) = cam.sendable() {
-                                    map.insert(i as u8, c);
-                                }
-                            }
-                            Some(uobradio_comms::MessageToApp::CamerasBtreeMap(map))
-                        } else {
-                            None
+                    let common2 = common.lock().await;
+                    let mut map = BTreeMap::new();
+                    for (i, cam) in common2.video.iter().enumerate() {
+                        if let Some(c) = cam.sendable() {
+                            map.insert(i as u8, c);
                         }
-                    } else {
-                        None
-                    };
-                    if let Some(packet) = packet {
-                        packet.send_to_stream(&mut stream).await?;
                     }
+                    let packet = uobradio_comms::MessageToApp::CamerasBtreeMap(map);
+                    packet.send_to_stream(&mut stream).await?;
                 }
                 uobradio_comms::MessageFromApp::Ping(id) => {
                     let packet = uobradio_comms::MessageToApp::PingReply(id);
                     packet.send_to_stream(&mut stream).await?;
                 }
                 uobradio_comms::MessageFromApp::RequestCamera(index) => {
-                    let packet = if let Ok(common) = common.lock() {
-                        if let Ok(video) = common.video.lock() {
-                            if let Some(v) = video.get(index as usize) {
-                                let frame = v.image.lock().unwrap();
-                                let jpeg = frame.get_jpeg();
-                                let response =
-                                    uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg);
-                                Some(response)
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    if let Some(packet) = packet {
-                        packet.send_to_stream(&mut stream).await?;
+                    let common2 = common.lock().await;
+                    if let Some(v) = common2.video.get(index as usize) {
+                        let jpeg = {
+                            let frame = v.image.lock().unwrap();
+                            frame.get_jpeg()
+                        };
+                        let response = uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg);
+                        response.send_to_stream(&mut stream).await?;
                     }
                 }
                 uobradio_comms::MessageFromApp::GpioControl(gpio) => match gpio {
@@ -222,7 +234,7 @@ pub async fn process_app(
     }
 }
 
-async fn udp_listener(_common: Arc<Mutex<AppUserCommon>>) -> Result<(), String> {
+async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:13456").await.unwrap();
     println!("Starting radio listener");
     let mut response = vec![0; 1500];
@@ -254,7 +266,7 @@ async fn udp_listener(_common: Arc<Mutex<AppUserCommon>>) -> Result<(), String> 
     }
 }
 
-async fn tcp_listener(common: Arc<Mutex<AppUserCommon>>) -> Result<(), String> {
+async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
     if let Ok(tcp) = tcp {
         loop {
@@ -262,7 +274,12 @@ async fn tcp_listener(common: Arc<Mutex<AppUserCommon>>) -> Result<(), String> {
             if let Ok((stream, addr)) = tcp.accept().await {
                 let common2 = common.clone();
                 let _ = tokio::task::spawn(async move {
-                    let r = process_app(stream, addr, common2).await;
+                    let r = process_app(stream, addr, common2.clone()).await;
+                    let mut common3 = common2.lock().await;
+                    if Some(addr) == common3.blue_addr {
+                        println!("Setting {:?} as no longer the bluetooth master", addr);
+                        common3.blue_addr.take();
+                    }
                     println!("Completed handling user {:?}", r);
                     r
                 });
@@ -308,7 +325,9 @@ async fn smain() {
     }
     let s = NonvolatileSettings::load();
     let sys = SystemSettings::load();
-    let common = Arc::new(Mutex::new(AppUserCommon {
+    #[cfg(feature = "bluetooth")]
+    let bluechan = tokio::sync::mpsc::channel(5);
+    let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
             interface: Some(&sys.wifi_name),
@@ -316,20 +335,25 @@ async fn smain() {
         system: sys,
         #[cfg(feature = "wifi")]
         hotspot: None,
-        video: Arc::new(Mutex::new(vs)),
-        old_settings: Arc::new(Mutex::new(s.clone())),
-        settings: Arc::new(Mutex::new(s.clone())),
+        #[cfg(feature = "bluetooth")]
+        bluetooth: bluetooth_rust::BluetoothHandler::new(bluechan.0)
+            .await
+            .expect("Could not open bluetooth"),
+        #[cfg(feature = "bluetooth")]
+        blue_recv: bluechan.1,
+        #[cfg(feature = "bluetooth")]
+        blue_addr: None,
+        video: vs,
+        old_settings: s.clone(),
+        settings: s.clone(),
     }));
 
-    if let Ok(mut common) = common.lock() {
-        let hotspot = if let Ok(settings) = common.settings.lock() {
-            settings.hotspot_enabled.clone()
-        } else {
-            None
-        };
+    {
+        let mut common2 = common.lock().await;
+        let hotspot = common2.settings.hotspot_enabled.clone();
         if let Some((n, p)) = hotspot {
-            common.hotspot = create_hotspot(&mut common.wifi, &n, &p);
-            if let Some(hotspot) = &mut common.hotspot {
+            common2.hotspot = create_hotspot(&mut common2.wifi, &n, &p);
+            if let Some(hotspot) = &mut common2.hotspot {
                 let _ = hotspot.start_hotspot();
             }
         }

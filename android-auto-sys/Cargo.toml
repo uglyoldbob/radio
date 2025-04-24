@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+cxx = {version = "1.0.158", optional = true }
 
-[build-dependencies.cmake]
-version = "^0.1.47"
+[build-dependencies]
+cmake = "^0.1.47"
+cxx-build = "1.0.158"
+git2 = "0.20.1"
+
+[features]
+default = ["cxx"]
+cxx = ["dep:cxx"]
+native = []

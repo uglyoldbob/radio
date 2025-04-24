@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 bincode = {version = "2.0.1", features = ["serde"]}
-bluetooth-rust = { path = "./bluetooth"}
+bluetooth-rust = { path = "./bluetooth", optional = true}
 eframe = { version = "0.31.1" }
 egui_extras = { version = "0.31.1", features = ["all_loaders"] }
 enum_dispatch = "0.3.13"
@@ -34,5 +34,6 @@ name = "radio_gui"
 path = "src/main.rs"
 
 [features]
-default = ["wifi"]
+default = ["wifi", "bluetooth"]
 wifi = ["dep:qrcode", "dep:wifi-rs"]
+bluetooth = ["dep:bluetooth-rust"]

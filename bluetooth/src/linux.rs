@@ -1,6 +1,6 @@
 //! Linux specific bluetooth code
 
-use std::{collections::{HashMap, HashSet}, str::FromStr, time::Duration};
+use std::collections::{HashMap, HashSet};
 
 use bluer::{AdapterEvent, DeviceProperty};
 use futures::StreamExt;
@@ -10,33 +10,85 @@ use futures::FutureExt;
 pub struct BluetoothHandler {
     session: bluer::Session,
     adapters: Vec<bluer::Adapter>,
-    blue_agent_handle: bluer::agent::AgentHandle,
+    _blue_agent_handle: bluer::agent::AgentHandle,
 }
 
 impl BluetoothHandler {
     /// Construct a new self
-    pub async fn new() -> Option<Self> {
+    pub async fn new(s: tokio::sync::mpsc::Sender<super::MessageToBluetoothHost>) -> Option<Self> {
         let session = bluer::Session::new().await.ok()?;
-        let blue_agent = Self::build_agent();
+
+        let adapter_names = session.adapter_names().await.unwrap();
+        let adapters: Vec<bluer::Adapter> = adapter_names
+            .iter()
+            .filter_map(|n| session.adapter(n).ok())
+            .collect();
+
+        let blue_agent = Self::build_agent(s);
         let blue_agent_handle = session.register_agent(blue_agent).await;
         println!("Registered a bluetooth agent {}", blue_agent_handle.is_ok());
         Some(Self {
             session,
-            adapters: Vec::new(),
-            blue_agent_handle: blue_agent_handle.ok()?,
+            adapters,
+            _blue_agent_handle: blue_agent_handle.ok()?,
         })
     }
 
-    fn build_agent() -> bluer::agent::Agent {
+    async fn enable(&mut self) {
+        for adapter in &self.adapters {
+            adapter.set_powered(true).await.unwrap();
+            adapter.set_pairable(true).await.unwrap();
+        }
+    }
+
+    async fn disable(&mut self) {
+        self.set_discoverable(false);
+        for adapter in &self.adapters {
+            adapter.set_powered(false).await.unwrap();
+            adapter.set_pairable(false).await.unwrap();
+        }
+    }
+
+    /// Enable or disable the discoverable of all bluetooth adapters
+    pub async fn set_discoverable(&mut self, d: bool) {
+        for adapter in &self.adapters {
+            adapter.set_discoverable(d).await.unwrap();
+        }
+    }
+
+    /// Register a profile with the bluetooth session
+    pub async fn register_rfcomm_profile(&mut self, profile: bluer::rfcomm::Profile) -> Result<bluer::rfcomm::ProfileHandle, bluer::Error> {
+        self.session.register_profile(profile).await
+    }
+
+    fn build_agent(s: tokio::sync::mpsc::Sender<super::MessageToBluetoothHost>) -> bluer::agent::Agent {
         let mut blue_agent = bluer::agent::Agent::default();
         blue_agent.request_default = true;
         blue_agent.request_pin_code = None;
         blue_agent.request_passkey = None;
-        blue_agent.display_passkey = Some(Box::new(|a| {
+        let s2 = s.clone();
+        blue_agent.display_passkey = Some(Box::new(move |a| {
+            println!("Running process for display_passkey: {:?}", a);
+            let s3 = s2.clone();
             async move {
-                println!("Need to display passkey {:?}", a);
+                let mut chan = tokio::sync::mpsc::channel(5);
+                let s3 = s3.clone();
+                let _ = s3.clone().send(super::MessageToBluetoothHost::DisplayPasskey(a.passkey, chan.0)).await;
+                match chan.1.recv().await {
+                    Some(m) => {
+                        let _ = s3.clone().send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                        match m {
+                            super::ResponseToPasskey::Yes => return Ok(()),
+                            super::ResponseToPasskey::No => return Err(bluer::agent::ReqError::Rejected),
+                            super::ResponseToPasskey::Cancel => return Err(bluer::agent::ReqError::Canceled),
+                        }
+                    }
+                    None => {
+                        return Err(bluer::agent::ReqError::Canceled);
+                    }
+                }
                 a.cancel.await.unwrap();
-                Ok(())
+                Err(bluer::agent::ReqError::Canceled)
             }
             .boxed()
         }));
@@ -48,15 +100,45 @@ impl BluetoothHandler {
             }
             .boxed()
         }));
-        blue_agent.request_confirmation = Some(Box::new(|a| {
+        let s2 = s.clone();
+        blue_agent.request_confirmation = Some(Box::new(move |a| {
+            println!("Need to confirm {:?}", a);
+            let s3 = s2.clone();
             async move {
-                println!("Need to confirm {:?}", a);
+                let mut chan = tokio::sync::mpsc::channel(5);
+                let s3 = s3.clone();
+                let a = s3.clone().send(super::MessageToBluetoothHost::DisplayPasskey(a.passkey, chan.0)).await;
+                println!("Sent message to user: {:?}", a);
+                match chan.1.recv().await {
+                    Some(m) => {
+                        let _ = s3.clone().send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                        match m {
+                            super::ResponseToPasskey::Yes => return Ok(()),
+                            super::ResponseToPasskey::No => return Err(bluer::agent::ReqError::Rejected),
+                            super::ResponseToPasskey::Cancel => return Err(bluer::agent::ReqError::Canceled),
+                        }
+                    }
+                    None => {
+                        return Err(bluer::agent::ReqError::Canceled);
+                    }
+                }
+            }
+            .boxed()
+        }));
+        blue_agent.request_authorization = Some(Box::new(|a| {
+            async move {
+                println!("Need to authorize {:?}", a);
                 Ok(())
             }
             .boxed()
         }));
-        blue_agent.request_authorization = None;
-        blue_agent.authorize_service = None;
+        blue_agent.authorize_service = Some(Box::new(|a| {
+            async move {
+                println!("Need to authorize service {:?}", a);
+                Ok(())
+            }
+            .boxed()
+        }));
         blue_agent
     }
 
@@ -67,6 +149,44 @@ impl BluetoothHandler {
                 Some(super::BluetoothResponse::Adapters(0))
             }
             _ => None,
+        }
+    }
+
+    /// run a scan on all the bluetooth adapters
+    pub async fn scan<'a>(&'a mut self, bluetooth_devices: &mut HashMap<bluer::Address, (&'a bluer::Adapter, Option<bluer::Device>)>) {
+        let mut adapter_scanner = Vec::new();
+        for a in &self.adapters {
+            let da = a.discover_devices_with_changes().await.unwrap();
+            adapter_scanner.push((a, da));
+        }
+
+        for (adapt, da) in &mut adapter_scanner {
+            if let Some(e) = da.next().await {
+                match e {
+                    AdapterEvent::DeviceAdded(addr) => {
+                        println!("Device added {:?}", addr);
+                        bluetooth_devices.insert(addr, (adapt, None));
+                    }
+                    AdapterEvent::DeviceRemoved(addr) => {
+                        println!("Device removed {:?}", addr);
+                        bluetooth_devices.remove_entry(&addr);
+                    }
+                    AdapterEvent::PropertyChanged(prop) => {
+                        println!("Property changed {:?}", prop);
+                    }
+                }
+            }
+        }
+        for (addr, (adapter, dev)) in bluetooth_devices {
+            if dev.is_none() {
+                if let Ok(d) = adapter.device(*addr) {
+                    if let Ok(ps) = d.all_properties().await {
+                        for p in ps {
+                        }
+                    }
+                    *dev = Some(d);
+                }
+            }
         }
     }
 }
@@ -124,122 +244,6 @@ async fn query_adapter(adapter: &bluer::Adapter) -> bluer::Result<()> {
     );
 
     Ok(())
-}
-
-/// Dummy function
-pub async fn bluetooth(
-) {
-    println!("Starting bluetooth code");
-    let bluetooth = bluer::Session::new().await.unwrap();
-    println!("Got a bluetooth session");
-
-    let profile = bluer::rfcomm::Profile {
-        uuid: bluer::Uuid::from_str(crate::uuid::Uuid::HfpHs.as_str()).unwrap(),
-        name: Some("Car audio".to_string()),
-        service: None,
-        role: None,
-        channel: None,
-        psm: None,
-        require_authentication: Some(true),
-        require_authorization: Some(true),
-        auto_connect: Some(true),
-        service_record: None,
-        version: None,
-        features: Some(1),
-        ..Default::default()
-    };
-
-    let mut bluetooth_devices: HashMap<bluer::Address, (&bluer::Adapter, Option<bluer::Device>)> =
-        HashMap::new();
-    let adapter_names = bluetooth.adapter_names().await.unwrap();
-    let adapters: Vec<bluer::Adapter> = adapter_names
-        .iter()
-        .filter_map(|n| bluetooth.adapter(n).ok())
-        .collect();
-
-    println!("Enabling bluetooth stuff now");
-    for adapter in &adapters {
-        adapter.set_powered(true).await.unwrap();
-        adapter.set_discoverable(true).await.unwrap();
-        adapter.set_pairable(true).await.unwrap();
-    }
-    println!("Done enabling bluetooth stuff");
-
-    for adapter in &adapters {
-        println!("there is an adapter");
-        query_adapter(adapter).await;
-    }
-    println!("Registering a profile");
-
-    let mut h = bluetooth.register_profile(profile).await;
-    let profile = tokio::task::spawn(async move {
-        if let Ok(h) = &mut h {
-            println!("Got a connection to car audio?");
-        }
-    });
-
-    for adapter in &adapters {
-        query_adapter(adapter).await;
-    }
-
-    let mut adapter_scanner = Vec::new();
-    for a in &adapters {
-        let da = a.discover_devices_with_changes().await.unwrap();
-        adapter_scanner.push((a, da));
-    }
-
-    let mut quit = false;
-    let mut scan = false;
-    while !quit {
-        if scan {
-            for (adapt, da) in &mut adapter_scanner {
-                if let Some(e) = da.next().await {
-                    match e {
-                        AdapterEvent::DeviceAdded(addr) => {
-                            println!("Device added {:?}", addr);
-                            bluetooth_devices.insert(addr, (adapt, None));
-                        }
-                        AdapterEvent::DeviceRemoved(addr) => {
-                            println!("Device removed {:?}", addr);
-                            bluetooth_devices.remove_entry(&addr);
-                        }
-                        AdapterEvent::PropertyChanged(prop) => {
-                            println!("Property changed {:?}", prop);
-                        }
-                    }
-                }
-            }
-        }
-        for (addr, (adapter, dev)) in &mut bluetooth_devices {
-            if dev.is_none() {
-                if let Ok(d) = adapter.device(*addr) {
-                    if let Ok(ps) = d.all_properties().await {
-                        for p in ps {
-                        }
-                    }
-                    *dev = Some(d);
-                }
-            }
-        }
-        tokio::time::sleep(Duration::from_millis(1)).await;
-    }
-    profile.await.unwrap();
-}
-
-/// Dummy struct
-pub struct BluetoothData {
-    scanning: bool,
-    devices: HashMap<bluer::Address, BluetoothDeviceInfo>,
-}
-
-impl BluetoothData {
-    /// construct a new self
-    pub fn new() -> Self {
-        Self {
-            scanning: false,
-            devices: HashMap::new(),
-        }
-    }
 }
 
 /// Holds the known informatio for a bluetooth device

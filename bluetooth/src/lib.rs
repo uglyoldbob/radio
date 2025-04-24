@@ -20,7 +20,7 @@ use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-use linux::BluetoothData;
+pub use linux::*;
 
 mod uuid;
 pub use uuid::Uuid;
@@ -32,6 +32,24 @@ pub enum BluetoothCommand {
     DetectAdapters,
     /// Find out how many bluetooth adapters are detected
     QueryNumAdapters,
+}
+
+/// Messages that can be sent specifically to the app user hosting the bluetooth controls
+pub enum MessageToBluetoothHost {
+    /// The passkey used for pairing devices
+    DisplayPasskey(u32, tokio::sync::mpsc::Sender<ResponseToPasskey>),
+    /// Cancal the passkey display
+    CancelDisplayPasskey,
+}
+
+/// The user response to a bluetooth passkey
+pub enum ResponseToPasskey {
+    /// The passkey is accepted
+    Yes,
+    /// The passkey is not accepted
+    No,
+    /// The process is canceled by the user
+    Cancel,
 }
 
 /// Responses issued by the library

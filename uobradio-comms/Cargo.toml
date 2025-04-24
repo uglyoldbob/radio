@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 android-auto = { path = "../android-auto" }
 bincode = {version = "2.0.1", features = ["serde"]}
+bluetooth-rust = { path = "../bluetooth", optional = true}
 egui = { version = "0.31.1" }
 ffimage = "0.10.0"
 ffimage_yuv = "0.10.0"
@@ -18,5 +19,6 @@ tokio = { version = "1.40.0", features = ["full"] }
 v4l = { version = "0.14.0", features = ["v4l2"] }
 
 [features]
-default = ["wifi"]
+default = ["wifi", "bluetooth"]
 wifi = []
+bluetooth = ["dep:bluetooth-rust"]
