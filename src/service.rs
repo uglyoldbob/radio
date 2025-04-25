@@ -85,6 +85,7 @@ pub async fn process_app(
     addr: std::net::SocketAddr,
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
 ) -> Result<(), String> {
+    use bluetooth_rust::MessageFromBluetoothHost;
     use std::collections::BTreeMap;
     use tokio::io::AsyncReadExt;
     use uobradio_comms::MessageToApp;
@@ -103,17 +104,20 @@ pub async fn process_app(
         let packet: Result<(uobradio_comms::MessageFromApp, usize), bincode::error::DecodeError> =
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
-            println!("Got packet from {:?}", addr);
             {
                 let mut common2 = common.lock().await;
                 if Some(addr) == common2.blue_addr {
                     while let Ok(m) = common2.blue_recv.try_recv() {
                         match &m {
                             bluetooth_rust::MessageToBluetoothHost::DisplayPasskey(_, sender) => {
-                                send_passkey_response = Some(sender);
+                                send_passkey_response = Some(sender.clone());
+                            }
+                            bluetooth_rust::MessageToBluetoothHost::ConfirmPasskey(_, sender) => {
+                                send_passkey_response = Some(sender.clone());
                             }
                             bluetooth_rust::MessageToBluetoothHost::CancelDisplayPasskey => {
                                 println!("Cancel display passkey");
+                                send_passkey_response.take();
                             }
                         }
                         let packet = MessageToApp::BluetoothMessage(m.into());
@@ -123,6 +127,20 @@ pub async fn process_app(
                 }
             }
             match packet {
+                uobradio_comms::MessageFromApp::BluetoothMessage(m) => {
+                    let common2 = common.lock().await;
+                    if Some(addr) == common2.blue_addr {
+                        if let MessageFromBluetoothHost::PasskeyMessage(m) = m {
+                            if let Some(sender) = &send_passkey_response {
+                                if sender.send(m).await.is_err() {
+                                    let m = uobradio_comms::ActualMessageToBluetoothHost::CancelDisplayPasskey;
+                                    let packet = MessageToApp::BluetoothMessage(m);
+                                    packet.send_to_stream(&mut stream).await?;
+                                }
+                            }
+                        }
+                    }
+                }
                 uobradio_comms::MessageFromApp::SetBluetoothDiscovery(val) => {
                     let mut common2 = common.lock().await;
                     if Some(addr) == common2.blue_addr {

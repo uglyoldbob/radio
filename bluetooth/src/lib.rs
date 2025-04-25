@@ -38,10 +38,20 @@ pub enum BluetoothCommand {
 pub enum MessageToBluetoothHost {
     /// The passkey used for pairing devices
     DisplayPasskey(u32, tokio::sync::mpsc::Sender<ResponseToPasskey>),
+    /// The passkey to confirm for pairing
+    ConfirmPasskey(u32, tokio::sync::mpsc::Sender<ResponseToPasskey>),
     /// Cancal the passkey display
     CancelDisplayPasskey,
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// Messages that are send directly from the bluetooth host
+pub enum MessageFromBluetoothHost {
+    /// A response about the active pairing passkey
+    PasskeyMessage(ResponseToPasskey),
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 /// The user response to a bluetooth passkey
 pub enum ResponseToPasskey {
     /// The passkey is accepted
@@ -50,6 +60,8 @@ pub enum ResponseToPasskey {
     No,
     /// The process is canceled by the user
     Cancel,
+    /// Waiting on the user to decide
+    Waiting,
 }
 
 /// Responses issued by the library

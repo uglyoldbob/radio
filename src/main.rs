@@ -5,7 +5,10 @@ mod video;
 #[cfg(feature = "wifi")]
 mod wifi;
 
-use eframe::egui::{self, Vec2};
+use eframe::{
+    egui::{self, Vec2},
+    glow::PACK_IMAGE_HEIGHT,
+};
 
 #[enum_dispatch::enum_dispatch]
 trait SubwindowTrait {
@@ -119,27 +122,10 @@ impl eframe::App for MyEguiApp {
         self.common.radio.get_cameras();
         self.common.radio.try_get_bluetooth();
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
-            uobradio_comms::MessageToApp::BluetoothMessage(m) => {
-                log::info!("Bluetooth message {:?}", m);
-                match m {
-                    uobradio_comms::ActualMessageToBluetoothHost::DisplayPasskey(passkey) => {
-                        log::info!("Need to display the passkey {}", passkey);
-                    }
-                    uobradio_comms::ActualMessageToBluetoothHost::CancelDisplayPasskey => {
-                        log::info!("Need to stop displaying the passkey");
-                    }
-                    uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val) => {
-                        log::info!("Bluetooth discovery is now {}", val);
-                    }
-                }
-            }
+            uobradio_comms::MessageToApp::BluetoothMessage(_) => {}
             uobradio_comms::MessageToApp::BluetoothHandlerResult(_) => {}
-            uobradio_comms::MessageToApp::CamerasBtreeMap(map) => {
-                log::error!("Got camera btreemap: with {} items", map.len());
-            }
-            uobradio_comms::MessageToApp::PingReply(port) => {
-                log::error!("got ping packet in update method port {}", port);
-            }
+            uobradio_comms::MessageToApp::CamerasBtreeMap(_) => {}
+            uobradio_comms::MessageToApp::PingReply(_) => {}
             uobradio_comms::MessageToApp::CameraDataJpeg(_index, _jpeg) => {}
             uobradio_comms::MessageToApp::NewSettings(s) => {
                 self.common.settings = s.clone();
@@ -149,6 +135,66 @@ impl eframe::App for MyEguiApp {
             self.common.radio.disconnect();
         }
         egui_extras::install_image_loaders(ctx);
+
+        if let Some(pass) = &self.common.radio.display_passkey {
+            let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
+            let builder = egui::ViewportBuilder::default()
+                .with_title("Bluetooth passkey")
+                .with_always_on_top()
+                .with_max_inner_size(ctx.screen_rect().size() / 2.0);
+            ctx.show_viewport_immediate(id, builder, |ctx, _class| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.label(&format!("Passkey: {:06}", 1));
+                    ui.label(&format!("Passkey: {:06}", pass));
+                });
+            });
+        } else if let Some(pass) = self.common.radio.confirm_passkey.clone() {
+            let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
+            let builder = egui::ViewportBuilder::default()
+                .with_title("Bluetooth passkey")
+                .with_always_on_top()
+                .with_max_inner_size(ctx.screen_rect().size() / 2.0);
+            ctx.show_viewport_immediate(id, builder, |ctx, _class| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        let t = egui::RichText::new(format!("Passkey: {}", pass)).heading();
+                        ui.label(t);
+                        let min_size = CommonWindowProperties::min_size(ui);
+                        if ui
+                            .add(egui::Button::new("Confirm").min_size(min_size))
+                            .clicked()
+                        {
+                            let r = bluetooth_rust::ResponseToPasskey::Yes;
+                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                            self.common.radio.send_packet(packet);
+                            log::info!("Got confirm request from user for bluetooth passkey");
+                        }
+                        if ui
+                            .add(egui::Button::new("Reject").min_size(min_size))
+                            .clicked()
+                        {
+                            let r = bluetooth_rust::ResponseToPasskey::No;
+                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                            self.common.radio.send_packet(packet);
+                            log::info!("Got reject request from user for bluetooth passkey");
+                        }
+                        if ui
+                            .add(egui::Button::new("Cancel").min_size(min_size))
+                            .clicked()
+                        {
+                            let r = bluetooth_rust::ResponseToPasskey::Cancel;
+                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                            self.common.radio.send_packet(packet);
+                            log::info!("Got cancel request from user for bluetooth passkey");
+                        }
+                    })
+                });
+            });
+        }
+
         egui::TopBottomPanel::bottom("Bottom Icons")
             .min_height(74.0)
             .max_height(74.0)

@@ -67,28 +67,47 @@ impl BluetoothHandler {
         blue_agent.request_pin_code = None;
         blue_agent.request_passkey = None;
         let s2 = s.clone();
-        blue_agent.display_passkey = Some(Box::new(move |a| {
+        blue_agent.display_passkey = Some(Box::new(move |mut a| {
             println!("Running process for display_passkey: {:?}", a);
             let s3 = s2.clone();
             async move {
                 let mut chan = tokio::sync::mpsc::channel(5);
-                let s3 = s3.clone();
-                let _ = s3.clone().send(super::MessageToBluetoothHost::DisplayPasskey(a.passkey, chan.0)).await;
-                match chan.1.recv().await {
-                    Some(m) => {
-                        let _ = s3.clone().send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
-                        match m {
-                            super::ResponseToPasskey::Yes => return Ok(()),
-                            super::ResponseToPasskey::No => return Err(bluer::agent::ReqError::Rejected),
-                            super::ResponseToPasskey::Cancel => return Err(bluer::agent::ReqError::Canceled),
+                let _ = s3.send(super::MessageToBluetoothHost::DisplayPasskey(a.passkey, chan.0)).await;
+                loop {
+                    let f = tokio::time::timeout(std::time::Duration::from_secs(5), chan.1.recv());
+                    tokio::select! {
+                        asdf = f => {
+                            match asdf {
+                                Ok(Some(m)) => {
+                                    match m {
+                                        super::ResponseToPasskey::Yes => {
+                                            let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                                            return Ok(());
+                                        }
+                                        super::ResponseToPasskey::No => {
+                                            let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                                            return Err(bluer::agent::ReqError::Rejected);
+                                        }
+                                        super::ResponseToPasskey::Cancel => {
+                                            let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                                            return Err(bluer::agent::ReqError::Canceled);
+                                        }
+                                        super::ResponseToPasskey::Waiting => {}
+                                    }
+                                }
+                                Ok(None) => {}
+                                _ => {
+                                    let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                                    return Err(bluer::agent::ReqError::Canceled);
+                                }
+                            }
+                        }
+                        _ = &mut a.cancel => {
+                            let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                            break Err(bluer::agent::ReqError::Canceled);
                         }
                     }
-                    None => {
-                        return Err(bluer::agent::ReqError::Canceled);
-                    }
                 }
-                a.cancel.await.unwrap();
-                Err(bluer::agent::ReqError::Canceled)
             }
             .boxed()
         }));
@@ -106,20 +125,33 @@ impl BluetoothHandler {
             let s3 = s2.clone();
             async move {
                 let mut chan = tokio::sync::mpsc::channel(5);
-                let s3 = s3.clone();
-                let a = s3.clone().send(super::MessageToBluetoothHost::DisplayPasskey(a.passkey, chan.0)).await;
-                println!("Sent message to user: {:?}", a);
-                match chan.1.recv().await {
-                    Some(m) => {
-                        let _ = s3.clone().send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
-                        match m {
-                            super::ResponseToPasskey::Yes => return Ok(()),
-                            super::ResponseToPasskey::No => return Err(bluer::agent::ReqError::Rejected),
-                            super::ResponseToPasskey::Cancel => return Err(bluer::agent::ReqError::Canceled),
+                let _ = s3.send(super::MessageToBluetoothHost::ConfirmPasskey(a.passkey, chan.0)).await;
+                loop {
+                    let f = tokio::time::timeout(std::time::Duration::from_secs(5), chan.1.recv());
+                    let asdf = f.await;
+                    match asdf {
+                        Ok(Some(m)) => {
+                            match m {
+                                super::ResponseToPasskey::Yes => {
+                                    let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                                    return Ok(());
+                                }
+                                super::ResponseToPasskey::No => {
+                                    let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                                    return Err(bluer::agent::ReqError::Rejected);
+                                }
+                                super::ResponseToPasskey::Cancel => {
+                                    let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                                    return Err(bluer::agent::ReqError::Canceled);
+                                }
+                                super::ResponseToPasskey::Waiting => {}
+                            }
                         }
-                    }
-                    None => {
-                        return Err(bluer::agent::ReqError::Canceled);
+                        Ok(None) => {}
+                        _ => {
+                            let _ = s3.send(super::MessageToBluetoothHost::CancelDisplayPasskey).await;
+                            return Err(bluer::agent::ReqError::Canceled);
+                        }
                     }
                 }
             }

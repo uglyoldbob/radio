@@ -32,6 +32,10 @@ pub struct UobRadio {
     waiting_for_camera_options: bool,
     #[cfg(feature = "bluetooth")]
     bluetooth_handler: bool,
+    #[cfg(feature = "bluetooth")]
+    pub display_passkey: Option<u32>,
+    #[cfg(feature = "bluetooth")]
+    pub confirm_passkey: Option<u32>,
 }
 
 impl UobRadio {
@@ -48,6 +52,10 @@ impl UobRadio {
             waiting_for_camera_options: false,
             #[cfg(feature = "bluetooth")]
             bluetooth_handler: false,
+            #[cfg(feature = "bluetooth")]
+            display_passkey: None,
+            #[cfg(feature = "bluetooth")]
+            confirm_passkey: None,
         }
     }
 
@@ -107,14 +115,17 @@ pub enum MessageFromApp {
     RequestBluetoothControl,
     /// Enable or disable bluetooth discoverable
     SetBluetoothDiscovery(bool),
+    /// A generic bluetooth command
+    BluetoothMessage(bluetooth_rust::MessageFromBluetoothHost),
 }
 
-use bluetooth_rust::MessageToBluetoothHost;
+use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};
 
 impl From<MessageToBluetoothHost> for ActualMessageToBluetoothHost {
     fn from(value: MessageToBluetoothHost) -> Self {
         match value {
             MessageToBluetoothHost::DisplayPasskey(passkey, _) => ActualMessageToBluetoothHost::DisplayPasskey(passkey),
+            MessageToBluetoothHost::ConfirmPasskey(passkey, _) => ActualMessageToBluetoothHost::ConfirmPasskey(passkey),
             MessageToBluetoothHost::CancelDisplayPasskey => ActualMessageToBluetoothHost::CancelDisplayPasskey,
         }
     }
@@ -126,6 +137,8 @@ impl From<MessageToBluetoothHost> for ActualMessageToBluetoothHost {
 pub enum ActualMessageToBluetoothHost {
     /// The passkey used for pairing devices
     DisplayPasskey(u32),
+    /// The passkey to display and confirm
+    ConfirmPasskey(u32),
     /// Cancal the passkey display
     CancelDisplayPasskey,
     /// The status of bluetooth discovery
@@ -240,6 +253,23 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::PingReply(_) => {}
+                                        MessageToApp::NewSettings(_) => {}
+                                        MessageToApp::BluetoothMessage(m) => {
+                                            match m {
+                                                ActualMessageToBluetoothHost::DisplayPasskey(pass) => {
+                                                    self.display_passkey.replace(*pass);
+                                                }
+                                                ActualMessageToBluetoothHost::ConfirmPasskey(pass) => {
+                                                    self.confirm_passkey.replace(*pass);
+                                                }
+                                                ActualMessageToBluetoothHost::CancelDisplayPasskey => {
+                                                    self.display_passkey.take();
+                                                    self.confirm_passkey.take();
+                                                }
+                                                ActualMessageToBluetoothHost::BluetoothEnabled(_) => {}
+                                            }
+                                        }
                                         MessageToApp::CameraDataJpeg(id, data) => {
                                             self.waiting_until = None;
                                             if let Some(cameras) = &mut self.cameras {
@@ -257,7 +287,6 @@ impl UobRadio {
                                         MessageToApp::BluetoothHandlerResult(result) => {
                                             self.bluetooth_handler = *result;
                                         }
-                                        _ => {}
                                     }
                                     closure(&packet);
                                 }
@@ -303,10 +332,15 @@ impl UobRadio {
     pub fn ping(&mut self) -> Result<(), String> {
         self.connect();
         let time = self.check_ping_time();
+        let blue_waiting = self.confirm_passkey.is_some() || self.display_passkey.is_some();
         if let Some(comms) = &mut self.comms {
             if time {
                 let packet = MessageFromApp::Ping(1);
                 packet.send_to_stream(comms)?;
+                if blue_waiting {
+                    let packet = MessageFromApp::BluetoothMessage(MessageFromBluetoothHost::PasskeyMessage(bluetooth_rust::ResponseToPasskey::Waiting));
+                    packet.send_to_stream(comms)?;
+                }
                 self.update_ping_time();
             }
             Ok(())
