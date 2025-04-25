@@ -387,7 +387,20 @@ async fn smain() {
     tasks.spawn(async move { udp_listener(common2).await });
     let common2 = common.clone();
     tasks.spawn(async move { tcp_listener(common2).await });
-    tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen().await });
+
+    {
+        let common2 = common.lock().await;
+        if let Some(a) = &common2.settings.hotspot_enabled {
+            let network = android_auto::NetworkInformation {
+                ssid: a.0.clone(),
+                psk: a.1.clone(),
+                mac_addr: "00:11:22:33:44:55".to_string(),
+                security_mode: android_auto::NetworkInfo::SecurityMode::WPA2_PERSONAL,
+                ap_type: android_auto::NetworkInfo::AccessPointType::STATIC,
+            };
+            let asdf = tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(network).await });
+        }
+    }
     tasks.spawn(android_auto::AndriodAutoBluettothServer::wifi_listen() );
     tokio::select! {
         r = tasks.join_next() => {

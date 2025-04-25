@@ -11,17 +11,33 @@ struct AndroidAutoMessage {
     message: Vec<u8>,
 }
 
+#[derive(Clone)]
+pub struct NetworkInformation {
+    pub ssid: String,
+    pub psk: String,
+    pub mac_addr: String,
+    pub security_mode: NetworkInfo::SecurityMode,
+    pub ap_type: NetworkInfo::AccessPointType,
+}
+
 enum AndroidAutoBluetoothMessage {
     SocketInfoRequest(SocketInfoRequest::SocketInfoRequest),
+    NetworkInfoMessage(NetworkInfo::NetworkInfo), 
 }
 
 impl AndroidAutoBluetoothMessage {
     fn as_message(&self) -> AndroidAutoMessage {
+        use protobuf::Message;
         match self {
             AndroidAutoBluetoothMessage::SocketInfoRequest(m) => {
-                use protobuf::Message;
                 AndroidAutoMessage {
                     t: 1,
+                    message: m.write_to_bytes().unwrap(),
+                }
+            }
+            AndroidAutoBluetoothMessage::NetworkInfoMessage(m) => {
+                AndroidAutoMessage {
+                    t: 3,
                     message: m.write_to_bytes().unwrap(),
                 }
             }
@@ -71,12 +87,13 @@ impl AndriodAutoBluettothServer {
     }
 
     #[cfg(feature = "wireless")]
-    pub async fn bluetooth_listen(&mut self) -> Result<(), String> {
+    pub async fn bluetooth_listen(&mut self, network: NetworkInformation) -> Result<(), String> {
         use futures::StreamExt;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         println!("Listening for connections on android auto profile");
         loop {
             if let Some(cr) = self.blue.next().await {
+                let network2 = network.clone();
                 tokio::task::spawn(async move {
                     println!("Got a connection to android auto profile on {:?}", cr);
                     let stream = cr.accept().unwrap();
@@ -109,6 +126,17 @@ impl AndriodAutoBluettothServer {
                             }
                             2 => {
                                 println!("Got a request for network info {:x?}", message);
+                                let mut response = NetworkInfo::NetworkInfo::new();
+                                response.set_ssid(network2.ssid.clone());
+                                response.set_psk(network2.psk.clone());
+                                response.set_mac_addr(network2.mac_addr.clone());
+                                response.set_security_mode(network2.security_mode.clone());
+                                response.set_ap_type(network2.ap_type.clone());
+                                let response = AndroidAutoBluetoothMessage::NetworkInfoMessage(response);
+                                let m : AndroidAutoMessage = response.as_message();
+                                let mdata: Vec<u8> = m.into();
+                                println!("Sending packet {:x?}", mdata);
+                                let r1 = write.write_all(&mdata).await;
                             }
                             7 => {
                                 println!("Got socket info response {:x?}", message);
