@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+android-auto = { path = "./android-auto", optional = true }
 bincode = {version = "2.0.1", features = ["serde"]}
 bluetooth-rust = { path = "./bluetooth", optional = true}
 eframe = { version = "0.31.1" }
@@ -34,6 +35,7 @@ name = "radio_gui"
 path = "src/main.rs"
 
 [features]
-default = ["wifi", "bluetooth"]
-wifi = ["dep:qrcode", "dep:wifi-rs"]
-bluetooth = ["dep:bluetooth-rust"]
+default = ["wifi", "bluetooth", "androidauto"]
+wifi = ["dep:qrcode", "dep:wifi-rs", "uobradio-comms/wifi"]
+bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]
+androidauto = ["dep:android-auto", "uobradio-comms/androidauto"]

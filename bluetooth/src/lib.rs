@@ -22,8 +22,26 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::*;
 
-mod uuid;
-pub use uuid::Uuid;
+#[cfg(target_os = "linux")]
+pub use bluer::rfcomm::Profile as RfcommProfile;
+
+#[cfg(target_os = "linux")]
+pub use bluer::Uuid;
+
+#[cfg(target_os = "linux")]
+pub use bluer::rfcomm::ProfileHandle as RfcommProfileHandle;
+
+#[cfg(target_os = "linux")]
+pub use bluer::rfcomm::Listener as RfcommListener;
+
+#[cfg(target_os = "linux")]
+pub use bluer::rfcomm::SocketAddr as RfcommSocketAddr;
+
+#[cfg(target_os = "linux")]
+pub use bluer::Address as BluetoothAddress;
+
+mod bluetooth_uuid;
+pub use bluetooth_uuid::BluetoothUuid;
 
 /// Commands issued to the library
 #[derive(Debug, serde::Deserialize, serde::Serialize)]

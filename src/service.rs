@@ -345,6 +345,13 @@ async fn smain() {
     let sys = SystemSettings::load();
     #[cfg(feature = "bluetooth")]
     let bluechan = tokio::sync::mpsc::channel(5);
+    let mut bluetooth = bluetooth_rust::BluetoothHandler::new(bluechan.0)
+        .await
+        .expect("Could not open bluetooth");
+
+    #[cfg(all(feature = "bluetooth", feature = "androidauto"))]
+    let mut android_auto_bluetooth_server = android_auto::AndriodAutoBluettothServer::new(&mut bluetooth).await;
+
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
@@ -354,9 +361,7 @@ async fn smain() {
         #[cfg(feature = "wifi")]
         hotspot: None,
         #[cfg(feature = "bluetooth")]
-        bluetooth: bluetooth_rust::BluetoothHandler::new(bluechan.0)
-            .await
-            .expect("Could not open bluetooth"),
+        bluetooth,
         #[cfg(feature = "bluetooth")]
         blue_recv: bluechan.1,
         #[cfg(feature = "bluetooth")]
@@ -382,6 +387,8 @@ async fn smain() {
     tasks.spawn(async move { udp_listener(common2).await });
     let common2 = common.clone();
     tasks.spawn(async move { tcp_listener(common2).await });
+    tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen().await });
+    tasks.spawn(android_auto::AndriodAutoBluettothServer::wifi_listen() );
     tokio::select! {
         r = tasks.join_next() => {
             service::log::error!("A task exited {:?}, closing server in 5 seconds", r);
