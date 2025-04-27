@@ -90,12 +90,12 @@ impl AndriodAutoBluettothServer {
     pub async fn bluetooth_listen(&mut self, network: NetworkInformation) -> Result<(), String> {
         use futures::StreamExt;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        println!("Listening for connections on android auto profile");
+        log::info!("Listening for connections on android auto profile");
         loop {
             if let Some(cr) = self.blue.next().await {
                 let network2 = network.clone();
                 tokio::task::spawn(async move {
-                    println!("Got a connection to android auto profile on {:?}", cr);
+                    log::info!("Got a connection to android auto profile on {:?}", cr);
                     let stream = cr.accept().unwrap();
                     let (mut read, mut write) = stream.into_split();
                     let mut s = SocketInfoRequest::SocketInfoRequest::new();
@@ -104,28 +104,22 @@ impl AndriodAutoBluettothServer {
                     let m1 = AndroidAutoBluetoothMessage::SocketInfoRequest(s);
                     let m : AndroidAutoMessage = m1.as_message();
                     let mdata: Vec<u8> = m.into();
-                    println!("Sending packet {:x?}", mdata);
                     let r1 = write.write_all(&mdata).await;
-                    println!("Result of sending first packet is {:?}", r1);
                     loop {
                         let mut ty = [0u8;2];
                         let mut len = [0u8;2];
                         let r2 = read.read_exact(&mut len).await;
-                        println!("Results of read packet are {:?}", r2);
                         let r3 = read.read_exact(&mut ty).await;
-                        println!("Results of read packet are {:?} {:?}", r2, r3);
-                        println!("I think the length is {:?} type {:?}", len, ty);
                         let len = u16::from_be_bytes(len);
                         let ty = u16::from_be_bytes(ty);
                         let mut message = vec![0; len as usize];
                         read.read_exact(&mut message).await.map_err(|e| e.to_string())?;
-                        println!("Got a packet type {} len {}", ty, len);
                         match ty {
                             1 => {
-                                println!("Got a socket info request {:x?}", message);
+                                log::error!("Got a socket info request {:x?}", message);
+                                break;
                             }
                             2 => {
-                                println!("Got a request for network info {:x?}", message);
                                 let mut response = NetworkInfo::NetworkInfo::new();
                                 response.set_ssid(network2.ssid.clone());
                                 response.set_psk(network2.psk.clone());
@@ -135,14 +129,14 @@ impl AndriodAutoBluettothServer {
                                 let response = AndroidAutoBluetoothMessage::NetworkInfoMessage(response);
                                 let m : AndroidAutoMessage = response.as_message();
                                 let mdata: Vec<u8> = m.into();
-                                println!("Sending packet {:x?}", mdata);
                                 let r1 = write.write_all(&mdata).await;
                             }
                             7 => {
-                                println!("Got socket info response {:x?}", message);
+                                log::error!("Got socket info response {:x?}", message);
+                                break;
                             }
                             _ => {
-                                println!("Unknown packet {}", ty);
+                                log::error!("Unknown packet {}", ty);
                                 break;
                             }
                         }
@@ -156,12 +150,12 @@ impl AndriodAutoBluettothServer {
 
     #[cfg(feature = "wireless")]
     pub async fn wifi_listen() -> Result<(), String> {
-        println!("Listening on port 5277 for android auto stuff");
+        log::info!("Listening on port 5277 for android auto stuff");
         if let Ok(a) = tokio::net::TcpListener::bind("0.0.0.0:5277").await {
             loop {
                 if let Ok((stream, addr)) = a.accept().await {
                     tokio::task::spawn(async move {
-                        println!("Got a connection on port 5000 from {:?}", addr);
+                        log::info!("Got a connection on port 5000 from {:?}", addr);
                     });
                 }
             }

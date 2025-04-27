@@ -12,7 +12,8 @@ use std::{
 use tokio::io::AsyncReadExt;
 use uobradio_comms::NonvolatileSettings;
 use video_service::VideoSource;
-use wifi_rs::prelude::WifiHotspotTrait;
+use wifi_rs::prelude::WifiHotspot;
+use wifi_rs::prelude::ManagedWifiHotspotTrait;
 
 mod video_service;
 
@@ -30,15 +31,23 @@ struct SystemSettings {
 
 impl SystemSettings {
     pub fn load() -> Self {
-        let f = std::fs::File::open("./settings.toml");
+        let p = std::path::Path::new("./settings.toml");
+        let f = std::fs::File::open(&p);
         if let Ok(mut f) = f {
             let mut a = String::new();
             if f.read_to_string(&mut a).is_ok() {
-                toml::from_str(&a).unwrap_or_default()
+                match toml::from_str(&a) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        log::error!("Config file {:?} is invalid: {:?}", p.display(), e);
+                        Default::default()
+                    }
+                }
             } else {
                 Self::default()
             }
         } else {
+            log::error!("Config file {:?} not found", p.display());
             Self::default()
         }
     }
@@ -50,7 +59,7 @@ pub struct AppUserCommon {
     #[cfg(feature = "wifi")]
     wifi: wifi_rs::WiFi,
     #[cfg(feature = "wifi")]
-    hotspot: Option<wifi_rs::prelude::WifiHotspot>,
+    hotspot: Option<wifi_rs::prelude::ManagedWifiHotspot>,
     #[cfg(feature = "bluetooth")]
     bluetooth: bluetooth_rust::BluetoothHandler,
     #[cfg(feature = "bluetooth")]
@@ -68,12 +77,12 @@ fn create_hotspot(
     wifi: &mut wifi_rs::WiFi,
     name: &String,
     password: &String,
-) -> Option<wifi_rs::prelude::WifiHotspot> {
-    use wifi_rs::prelude::WifiHotspotCreator;
+) -> Option<wifi_rs::prelude::ManagedWifiHotspot> {
+    use wifi_rs::prelude::ManagedWifiHotspotTrait;
     let configuration = wifi_rs::prelude::HotspotConfig::new(None, None);
     log::info!("Attempting to create hotspot {:?} {:?}", name, password);
     let a = wifi
-        .create_hotspot(name, password, Some(&configuration))
+        .create_managed_hotspot(name, password, Some(&configuration))
         .ok();
     a
 }
