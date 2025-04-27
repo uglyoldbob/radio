@@ -6,6 +6,7 @@ fn main() {
         .protoc()
         .includes(&["protobuf"])
         .input("protobuf/SocketInfoRequest.proto")
+        .input("protobuf/SocketInfoResponse.proto")
         .input("protobuf/NetworkInfo.proto")
         .cargo_out_dir("protobuf")
         .run_from_script();

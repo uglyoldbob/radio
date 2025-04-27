@@ -89,6 +89,7 @@ impl AndriodAutoBluettothServer {
     #[cfg(feature = "wireless")]
     pub async fn bluetooth_listen(&mut self, network: NetworkInformation) -> Result<(), String> {
         use futures::StreamExt;
+        use protobuf::Message;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         log::info!("Listening for connections on android auto profile");
         loop {
@@ -132,8 +133,8 @@ impl AndriodAutoBluettothServer {
                                 let r1 = write.write_all(&mdata).await;
                             }
                             7 => {
-                                log::error!("Got socket info response {:x?}", message);
-                                break;
+                                let message = SocketInfoResponse::SocketInfoResponse::parse_from_bytes(&message);
+                                log::info!("Message is now {:?}", message);
                             }
                             _ => {
                                 log::error!("Unknown packet {}", ty);

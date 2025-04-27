@@ -27,6 +27,8 @@ struct MainConfiguration {
 struct SystemSettings {
     #[cfg(feature = "wifi")]
     wifi_name: String,
+    #[cfg(feature = "wifi")]
+    wifi_mac: String,
 }
 
 impl SystemSettings {
@@ -403,7 +405,7 @@ async fn smain() {
             let network = android_auto::NetworkInformation {
                 ssid: a.0.clone(),
                 psk: a.1.clone(),
-                mac_addr: "00:11:22:33:44:55".to_string(),
+                mac_addr: common2.system.wifi_mac.clone(),
                 security_mode: android_auto::NetworkInfo::SecurityMode::WPA2_PERSONAL,
                 ap_type: android_auto::NetworkInfo::AccessPointType::STATIC,
             };
