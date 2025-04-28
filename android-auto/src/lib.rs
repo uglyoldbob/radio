@@ -16,6 +16,7 @@ pub struct NetworkInformation {
     pub ssid: String,
     pub psk: String,
     pub mac_addr: String,
+    pub port: u16,
     pub security_mode: NetworkInfo::SecurityMode,
     pub ap_type: NetworkInfo::AccessPointType,
 }
@@ -101,6 +102,7 @@ impl AndriodAutoBluettothServer {
                     let (mut read, mut write) = stream.into_split();
                     let mut s = SocketInfoRequest::SocketInfoRequest::new();
                     s.set_ip_address("10.42.0.1".to_string());
+                    s.set_port(network.port as u32);
 
                     let m1 = AndroidAutoBluetoothMessage::SocketInfoRequest(s);
                     let m : AndroidAutoMessage = m1.as_message();
@@ -150,19 +152,19 @@ impl AndriodAutoBluettothServer {
     }
 
     #[cfg(feature = "wireless")]
-    pub async fn wifi_listen() -> Result<(), String> {
-        log::info!("Listening on port 5277 for android auto stuff");
-        if let Ok(a) = tokio::net::TcpListener::bind("0.0.0.0:5277").await {
+    pub async fn wifi_listen(network: NetworkInformation) -> Result<(), String> {
+        log::info!("Listening on port {} for android auto stuff", network.port);
+        if let Ok(a) = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", network.port)).await {
             loop {
                 if let Ok((stream, addr)) = a.accept().await {
                     tokio::task::spawn(async move {
-                        log::info!("Got a connection on port 5000 from {:?}", addr);
+                        log::info!("Got a connection on port {} from {:?}", network.port, addr);
                     });
                 }
             }
         }
         else {
-            Err("Failed to listen on port 5000 tcp".to_string())
+            Err(format!("Failed to listen on port {} tcp", network.port))
         }
     }
 

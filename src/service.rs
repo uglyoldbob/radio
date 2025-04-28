@@ -399,20 +399,29 @@ async fn smain() {
     let common2 = common.clone();
     tasks.spawn(async move { tcp_listener(common2).await });
 
-    {
+    let network = {
         let common2 = common.lock().await;
         if let Some(a) = &common2.settings.hotspot_enabled {
-            let network = android_auto::NetworkInformation {
-                ssid: a.0.clone(),
-                psk: a.1.clone(),
-                mac_addr: common2.system.wifi_mac.clone(),
-                security_mode: android_auto::NetworkInfo::SecurityMode::WPA2_PERSONAL,
-                ap_type: android_auto::NetworkInfo::AccessPointType::STATIC,
-            };
-            let asdf = tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(network).await });
+            Some(android_auto::NetworkInformation {
+            ssid: a.0.clone(),
+            psk: a.1.clone(),
+            mac_addr: common2.system.wifi_mac.clone(),
+            port: 5277,
+            security_mode: android_auto::NetworkInfo::SecurityMode::WPA2_PERSONAL,
+            ap_type: android_auto::NetworkInfo::AccessPointType::STATIC,
+        })
+        } else {
+            None
+        }
+    };
+
+    {
+        if let Some(network) = network {
+            let net2 = network.clone();
+            tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
+            tasks.spawn(android_auto::AndriodAutoBluettothServer::wifi_listen(network.clone()) );
         }
     }
-    tasks.spawn(android_auto::AndriodAutoBluettothServer::wifi_listen() );
     tokio::select! {
         r = tasks.join_next() => {
             service::log::error!("A task exited {:?}, closing server in 5 seconds", r);
