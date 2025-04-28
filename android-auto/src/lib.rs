@@ -1,3 +1,6 @@
+use futures::SinkExt;
+use tokio::io::AsyncReadExt;
+
 pub struct AndriodAutoBluettothServer {
     #[cfg(feature = "wireless")]
     blue: bluetooth_rust::RfcommProfileHandle,
@@ -18,32 +21,15 @@ pub struct NetworkInformation {
     pub ssid: String,
     pub psk: String,
     pub mac_addr: String,
+    pub ip: String,
     pub port: u16,
     pub security_mode: Bluetooth::SecurityMode,
     pub ap_type: Bluetooth::AccessPointType,
 }
 
-#[derive(Copy, Clone)]
-enum FrameHeaderType {
-    First = 1,
-    Middle = 0,
-    Last = 2,
-    Single = 3,
-}
-
-#[derive(Copy, Clone)]
-enum EncryptionType {
-    Unencrypted = 0,
-    Encrypted = 8,
-}
-
-#[derive(Copy, Clone)]
-enum MessageType {
-    Specific = 0,
-    Control = 4,
-}
-
-#[derive(Copy, Clone)]
+/// The channel identifier for a frame
+#[derive(Copy, Clone, Debug)]
+#[repr(u8)]
 enum ChannelId {
     CONTROL,
     INPUT,
@@ -59,21 +45,111 @@ enum ChannelId {
     NONE = 255,
 }
 
+impl TryFrom<u8> for ChannelId {
+    type Error = ();
+    fn try_from(val: u8) -> Result<Self, Self::Error> {
+        if val == ChannelId::CONTROL as u8 {
+            Ok(ChannelId::CONTROL)
+        } else if val == ChannelId::INPUT as u8 {
+            Ok(ChannelId::INPUT)
+        } else if val == ChannelId::SENSOR as u8 {
+            Ok(ChannelId::SENSOR)
+        } else if val == ChannelId::VIDEO as u8 {
+            Ok(ChannelId::VIDEO)
+        } else if val == ChannelId::MEDIA_AUDIO as u8 {
+            Ok(ChannelId::MEDIA_AUDIO)
+        } else if val == ChannelId::SPEECH_AUDIO as u8 {
+            Ok(ChannelId::SPEECH_AUDIO)
+        } else if val == ChannelId::SYSTEM_AUDIO as u8 {
+            Ok(ChannelId::SYSTEM_AUDIO)
+        } else if val == ChannelId::AV_INPUT as u8 {
+            Ok(ChannelId::AV_INPUT)
+        } else if val == ChannelId::BLUETOOTH as u8 {
+            Ok(ChannelId::BLUETOOTH)
+        } else if val == ChannelId::NAVIGATION as u8 {
+            Ok(ChannelId::NAVIGATION)
+        } else if val == ChannelId::MEDIA_STATUS as u8 {
+            Ok(ChannelId::MEDIA_STATUS)
+        } else if val == ChannelId::NONE as u8 {
+            Ok(ChannelId::NONE)
+        } else {
+            Err(())
+        }
+    }
+}
+
+bitfield::bitfield!{
+    pub struct FrameHeaderType(u8);
+    impl Debug;
+    impl new;
+    u8;
+    get_encryption, set_encryption: 3;
+    /// First = 1,
+    /// Middle = 0,
+    /// Last = 2,
+    /// Single = 3,
+    get_frame_type, set_frame_type: 2, 0;
+    get_control, set_control: 4;
+}
+
+/// Represents the header of a frame sent to the android auto client
+#[derive(Debug)]
 struct FrameHeader {
     channel_id: ChannelId,
-    encryption: EncryptionType,
     frame: FrameHeaderType,
-    message: MessageType,
+}
+
+impl Clone for FrameHeader {
+    fn clone(&self) -> Self {
+        let mut a = FrameHeaderType::new(false, 0, false);
+        a.0 = self.frame.0;
+        Self {
+            channel_id: self.channel_id.clone(),
+            frame: a,
+        }
+    }
 }
 
 impl FrameHeader {
     /// Add self to the given buffer to build part of a complete frame
     pub fn add_to(&self, buf: &mut Vec<u8>) {
         buf.push(self.channel_id as u8);
-        buf.push(self.encryption as u8 | self.frame as u8 | self.message as u8);
+        buf.push(self.frame.0);
     }
 }
 
+struct FrameHeaderReceiver {
+    channel_id: Option<ChannelId>,
+}
+
+impl FrameHeaderReceiver {
+    pub fn new() -> Self {
+        Self {
+            channel_id: None,
+        }
+    }
+    pub async fn read(&mut self, stream: &mut tokio::net::TcpStream) -> Result<Option<FrameHeader>, String> {
+        if self.channel_id.is_none() {
+            let mut b = [0u8];
+            stream.read_exact(&mut b).await.map_err(|e| e.to_string())?;
+            self.channel_id = ChannelId::try_from(b[0]).ok();
+        }
+        if let Some(channel_id) = &self.channel_id {
+            let mut b = [0u8];
+            stream.read_exact(&mut b).await.map_err(|e| e.to_string())?;
+            let mut a = FrameHeaderType::new(false, 0, false);
+            a.0 = b[0];
+            let fh = FrameHeader {
+                channel_id: *channel_id,
+                frame: a,
+            };
+            return Ok(Some(fh))
+        }
+        Ok(None)
+    }
+}
+
+#[derive(Debug)]
 enum AndroidAutoFrame {
     CompoundFrame { header: FrameHeader, data: Vec<u8> },
 }
@@ -93,9 +169,62 @@ impl Into<Vec<u8>> for AndroidAutoFrame {
     }
 }
 
+struct AndroidAutoFrameReceiver {
+    len: Option<u16>,
+    data: Vec<u8>,
+}
+
+impl AndroidAutoFrameReceiver {
+    fn new() -> Self {
+        Self {
+            len: None,
+            data: Vec::new(),
+        }
+    }
+
+    async fn read(&mut self, header: &FrameHeader, stream: &mut tokio::net::TcpStream) -> Result<Option<AndroidAutoFrame>, String> {
+        if self.len.is_none() {
+            let mut p = [0u8; 2];
+            stream.read_exact(&mut p).await.map_err(|e| e.to_string())?;
+            let len = u16::from_be_bytes(p);
+            self.data = vec![0; len as usize];
+            self.len.replace(len);
+        }
+        if let Some(len) = &self.len {
+            stream.read_exact(&mut self.data[0..*len as usize]).await.map_err(|e| e.to_string())?;
+            let f = AndroidAutoFrame::CompoundFrame { header: header.clone(), data: self.data.clone(), };
+            let f = Some(f);
+            return Ok(f);
+        }
+        Ok(None)
+    }
+}
+
 #[cfg(feature = "wireless")]
+#[derive(Debug)]
 enum AndroidAutoWifiMessage {
     VersionRequest,
+    VersionResponse,
+}
+
+#[cfg(feature = "wireless")]
+impl TryFrom<AndroidAutoFrame> for AndroidAutoWifiMessage {
+    type Error = String;
+    fn try_from(value: AndroidAutoFrame) -> Result<Self, Self::Error> {
+        match value {
+            AndroidAutoFrame::CompoundFrame { header: _, data } => {
+                let mut ty = [0u8; 2];
+                ty.copy_from_slice(&data[0..2]);
+                let ty = u16::from_be_bytes(ty);
+                if ty == Wifi::ControlMessageType::MESSAGE_VERSION_RESPONSE as u16 {
+                    Ok(AndroidAutoWifiMessage::VersionResponse)
+                }
+                else {
+                    Err(format!("Unknown packet type 0x{:x}", ty))
+                }
+            }
+        }
+    }
 }
 
 #[cfg(feature = "wireless")]
@@ -117,12 +246,13 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
                 AndroidAutoFrame::CompoundFrame {
                     header: FrameHeader {
                         channel_id: ChannelId::CONTROL,
-                        encryption: EncryptionType::Unencrypted,
-                        frame: FrameHeaderType::Single,
-                        message: MessageType::Specific,
+                        frame: FrameHeaderType::new(false, 3, true),
                     },
                     data: m,
                 }
+            }
+            AndroidAutoWifiMessage::VersionResponse => {
+                unimplemented!();
             }
         }
     }
@@ -208,8 +338,8 @@ impl AndriodAutoBluettothServer {
                     let stream = cr.accept().unwrap();
                     let (mut read, mut write) = stream.into_split();
                     let mut s = Bluetooth::SocketInfoRequest::new();
-                    s.set_ip_address("10.42.0.1".to_string());
-                    s.set_port(network.port as u32);
+                    s.set_ip_address(network2.ip.clone());
+                    s.set_port(network2.port as u32);
 
                     let m1 = AndroidAutoBluetoothMessage::SocketInfoRequest(s);
                     let m: AndroidAutoMessage = m1.as_message();
@@ -268,25 +398,35 @@ impl AndriodAutoBluettothServer {
 
     #[cfg(feature = "wireless")]
     pub async fn wifi_listen(network: NetworkInformation) -> Result<(), String> {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::io::AsyncWriteExt;
 
         log::info!("Listening on port {} for android auto stuff", network.port);
         if let Ok(a) = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", network.port)).await {
             loop {
                 if let Ok((mut stream, addr)) = a.accept().await {
                     tokio::task::spawn(async move {
-                        log::info!("Got a connection on port {} from {:?}", network.port, addr);
+                        log::debug!("Got a connection on port {} from {:?}", network.port, addr);
                         let m = AndroidAutoWifiMessage::VersionRequest;
                         let d: AndroidAutoFrame = m.into();
                         let d2: Vec<u8> = d.into();
                         let a = stream.write_all(&d2).await;
-                        log::info!("Sent packet {:x?} to wifi user: {:?}", d2, a);
-                        let mut buf = Vec::new();
-                        let mut p = [0u8];
-                        while let Ok(a) = stream.read(&mut p).await {
-                            buf.push(p);
-                        }
-                        log::info!("Received {} {:x?}", buf.len(), buf);
+                        log::debug!("Sent packet {:x?} to wifi user: {:?}", d2, a);
+                        let mut fr = FrameHeaderReceiver::new();
+                        let f = loop {
+                            if let Ok(Some(f)) = fr.read(&mut stream).await {
+                                break f;
+                            }
+                        };
+                        log::debug!("Received frame header {:x?}", f);
+                        let mut fr2 = AndroidAutoFrameReceiver::new();
+                        let f2 = loop {
+                            if let Ok(Some(f2)) = fr2.read(&f, &mut stream).await {
+                                break f2;
+                            }
+                        };
+                        log::info!("Received a full frame {:x?}", f2);
+                        let message : Result<AndroidAutoWifiMessage, String> = f2.try_into();
+                        log::info!("Message is {:?}", message);
                         log::info!("Disconnecting");
                     });
                 }

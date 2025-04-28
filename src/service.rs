@@ -407,6 +407,7 @@ async fn smain() {
                 ssid: a.0.clone(),
                 psk: a.1.clone(),
                 mac_addr: common2.system.wifi_mac.clone(),
+                ip: "10.42.0.1".to_string(),
                 port: 5277,
                 security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
                 ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
