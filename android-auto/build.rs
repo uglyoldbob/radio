@@ -5,9 +5,8 @@ fn main() {
         .out_dir(out_dir)
         .protoc()
         .includes(&["protobuf"])
-        .input("protobuf/SocketInfoRequest.proto")
-        .input("protobuf/SocketInfoResponse.proto")
-        .input("protobuf/NetworkInfo.proto")
+        .input("protobuf/Bluetooth.proto")
+        .input("protobuf/Wifi.proto")
         .cargo_out_dir("protobuf")
         .run_from_script();
 }

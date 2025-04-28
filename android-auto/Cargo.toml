@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-android-auto-sys = { path = "../android-auto-sys", optional = true }
 bluetooth-rust = { path = "../bluetooth", optional = true }
 futures = "0.3.30"
 log = "0.4.27"

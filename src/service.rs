@@ -12,8 +12,8 @@ use std::{
 use tokio::io::AsyncReadExt;
 use uobradio_comms::NonvolatileSettings;
 use video_service::VideoSource;
-use wifi_rs::prelude::WifiHotspot;
 use wifi_rs::prelude::ManagedWifiHotspotTrait;
+use wifi_rs::prelude::WifiHotspot;
 
 mod video_service;
 
@@ -361,7 +361,8 @@ async fn smain() {
         .expect("Could not open bluetooth");
 
     #[cfg(all(feature = "bluetooth", feature = "androidauto"))]
-    let mut android_auto_bluetooth_server = android_auto::AndriodAutoBluettothServer::new(&mut bluetooth).await;
+    let mut android_auto_bluetooth_server =
+        android_auto::AndriodAutoBluettothServer::new(&mut bluetooth).await;
 
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
@@ -403,13 +404,13 @@ async fn smain() {
         let common2 = common.lock().await;
         if let Some(a) = &common2.settings.hotspot_enabled {
             Some(android_auto::NetworkInformation {
-            ssid: a.0.clone(),
-            psk: a.1.clone(),
-            mac_addr: common2.system.wifi_mac.clone(),
-            port: 5277,
-            security_mode: android_auto::NetworkInfo::SecurityMode::WPA2_PERSONAL,
-            ap_type: android_auto::NetworkInfo::AccessPointType::STATIC,
-        })
+                ssid: a.0.clone(),
+                psk: a.1.clone(),
+                mac_addr: common2.system.wifi_mac.clone(),
+                port: 5277,
+                security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
+                ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
+            })
         } else {
             None
         }
@@ -419,7 +420,9 @@ async fn smain() {
         if let Some(network) = network {
             let net2 = network.clone();
             tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
-            tasks.spawn(android_auto::AndriodAutoBluettothServer::wifi_listen(network.clone()) );
+            tasks.spawn(android_auto::AndriodAutoBluettothServer::wifi_listen(
+                network.clone(),
+            ));
         }
     }
     tokio::select! {
