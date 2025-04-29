@@ -421,7 +421,7 @@ async fn smain() {
         if let Some(network) = network {
             let net2 = network.clone();
             tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
-            tasks.spawn(android_auto::AndriodAutoBluettothServer::wifi_listen(
+            std::thread::spawn(move || android_auto::AndriodAutoBluettothServer::wifi_listen(
                 network.clone(),
             ));
         }
