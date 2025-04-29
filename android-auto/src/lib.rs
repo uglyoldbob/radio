@@ -1,5 +1,7 @@
 use tokio::io::AsyncReadExt;
 
+mod cert;
+
 pub struct AndriodAutoBluettothServer {
     #[cfg(feature = "wireless")]
     blue: bluetooth_rust::RfcommProfileHandle,
@@ -257,11 +259,8 @@ impl AndroidAutoFrameReceiver {
 #[derive(Debug)]
 enum AndroidAutoWifiMessage {
     VersionRequest,
-    VersionResponse {
-        major: u16,
-        minor: u16,
-        status: u16,
-    }
+    VersionResponse { major: u16, minor: u16, status: u16 },
+    SslHandshake(Vec<u8>),
 }
 
 #[cfg(feature = "wireless")]
@@ -271,7 +270,7 @@ impl TryFrom<AndroidAutoFrame> for AndroidAutoWifiMessage {
         let mut ty = [0u8; 2];
         ty.copy_from_slice(&value.data[0..2]);
         let ty = u16::from_be_bytes(ty);
-        if ty == Wifi::ControlMessageType::MESSAGE_VERSION_RESPONSE as u16 {
+        if ty == Wifi::ControlMessage::VERSION_RESPONSE as u16 {
             if value.data.len() == 8 {
                 let major = u16::from_be_bytes([value.data[2], value.data[3]]);
                 let minor = u16::from_be_bytes([value.data[4], value.data[5]]);
@@ -281,10 +280,11 @@ impl TryFrom<AndroidAutoFrame> for AndroidAutoWifiMessage {
                     minor,
                     status,
                 })
-            }
-            else {
+            } else {
                 Err("Invalid version response packet".to_string())
             }
+        } else if ty == Wifi::ControlMessage::SSL_HANDSHAKE as u16 {
+            Ok(AndroidAutoWifiMessage::SslHandshake(value.data[2..].to_vec()))
         } else {
             Err(format!("Unknown packet type 0x{:x}", ty))
         }
@@ -297,7 +297,7 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
         match self {
             AndroidAutoWifiMessage::VersionRequest => {
                 let mut m = Vec::with_capacity(4);
-                let t = Wifi::ControlMessageType::MESSAGE_VERSION_REQUEST as u16;
+                let t = Wifi::ControlMessage::VERSION_REQUEST as u16;
                 let t = t.to_be_bytes();
                 let major = VERSION.0.to_be_bytes();
                 let minor = VERSION.1.to_be_bytes();
@@ -315,7 +315,26 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
                     data: m,
                 }
             }
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => {
+            AndroidAutoWifiMessage::SslHandshake(mut data) => {
+                let mut m = Vec::with_capacity(4);
+                let t = Wifi::ControlMessage::SSL_HANDSHAKE as u16;
+                let t = t.to_be_bytes();
+                m.push(t[0]);
+                m.push(t[1]);
+                m.append(&mut data);
+                AndroidAutoFrame {
+                    header: FrameHeader {
+                        channel_id: ChannelId::CONTROL,
+                        frame: FrameHeaderContents::new(false, FrameHeaderType::Single, false),
+                    },
+                    data: m,
+                }
+            }
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => {
                 unimplemented!();
             }
         }
@@ -460,58 +479,126 @@ impl AndriodAutoBluettothServer {
         }
     }
 
+    async fn handle_client(stream: &mut tokio::net::TcpStream, addr: std::net::SocketAddr, network: NetworkInformation) -> Result<(), String> {
+        use std::sync::Arc;
+        use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
+        use tokio::io::AsyncWriteExt;
+
+        let mut root_store = rustls::RootCertStore::from_iter(
+            webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+        );
+        
+        let aautocertder = {
+            let mut br = std::io::Cursor::new(cert::AAUTO_CERT.to_string().as_bytes().to_vec());
+            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto server").expect("Invalid pem sert vor aauto server");
+            CertificateDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
+        };
+        log::debug!("AAuto cert: {:?}", aautocertder);
+        root_store.add(aautocertder).expect("Failed to load android auto server cert");
+        let ssl_client_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        let config = Arc::new(ssl_client_config);
+        let server = "idontknow.com".try_into().unwrap();
+        let mut ssl_client = rustls::ClientConnection::new(config, server).expect("Failed to build ssl client");
+        log::error!("SSL WANTS RX {} TX {}", ssl_client.wants_read(), ssl_client.wants_write());
+        log::debug!("Got a connection on port {} from {:?}", network.port, addr);
+        let m = AndroidAutoWifiMessage::VersionRequest;
+        let d: AndroidAutoFrame = m.into();
+        let d2: Vec<u8> = d.into();
+        stream.write_all(&d2).await;
+        loop {
+            let mut fr = FrameHeaderReceiver::new();
+            let f = loop {
+                if let Ok(Some(f)) = fr.read(&mut stream).await {
+                    break f;
+                }
+            };
+            let mut fr2 = AndroidAutoFrameReceiver::new();
+            let f2 = loop {
+                if let Ok(Some(f2)) = fr2.read(&f, &mut stream).await {
+                    break f2;
+                }
+            };
+            let message: Result<AndroidAutoWifiMessage, String> = f2.try_into();
+            match message {
+                Err(e) => {
+                    log::error!("Error receiving packet: {}", e);
+                    break;
+                }
+                Ok(m) => match m {
+                    AndroidAutoWifiMessage::SslHandshake(data) => {
+                        log::info!("SSL Handshake data is {:x?}", data);
+                        log::error!("SSL WANTS RX {} TX {}", ssl_client.wants_read(), ssl_client.wants_write());
+                        if ssl_client.wants_read() {
+                            let mut dc = std::io::Cursor::new(data);
+                            let asdf = ssl_client.read_tls(&mut dc);
+                            log::error!("SSL Client process received handshake is {:?}", asdf);
+                            let asdg = ssl_client.process_new_packets();
+                            log::error!("Process new packets from SSL: {:?}", asdg);
+                        }
+                        log::error!("SSL WANTS RX {} TX {}", ssl_client.wants_read(), ssl_client.wants_write());
+                        log::error!("ssl handshaking {}", ssl_client.is_handshaking());
+                        if ssl_client.wants_write() {
+                            let mut s = Vec::new();
+                            let l = ssl_client.write_tls(&mut s);
+                            if let Ok(l) = l {
+                                log::debug!("Got buffer length {} to send for ssl stuff {:x?}", l, s);
+                                let m = AndroidAutoWifiMessage::SslHandshake(s);
+                                let d: AndroidAutoFrame = m.into();
+                                let d2: Vec<u8> = d.into();
+                                stream.write_all(&d2).await;
+                            }
+                        }
+                    }
+                    AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionResponse {
+                        major,
+                        minor,
+                        status,
+                    } => {
+                        if status == 0xFFFF {
+                            log::error!("Version mismatch");
+                            break;
+                        }
+                        log::info!(
+                            "Android auto client version: {}.{}",
+                            major,
+                            minor
+                        );
+                        let mut s = Vec::new();
+                        if ssl_client.wants_write() {
+                            let l = ssl_client.write_tls(&mut s);
+                            if let Ok(l) = l {
+                                log::debug!("Got buffer length {} to send for ssl stuff {:x?}", l, s);
+                                let m = AndroidAutoWifiMessage::SslHandshake(s);
+                                let d: AndroidAutoFrame = m.into();
+                                let d2: Vec<u8> = d.into();
+                                let a = stream.write_all(&d2).await;
+                            }
+                        }
+                    }
+                },
+            }
+        }
+        log::info!("Disconnecting normally");
+        Ok(())
+    }
+
     #[cfg(feature = "wireless")]
     pub async fn wifi_listen(network: NetworkInformation) -> Result<(), String> {
-        use tokio::io::AsyncWriteExt;
+        let cp = rustls::crypto::ring::default_provider();
+        cp.install_default().expect("Failed to set ssl provider");
 
         log::info!("Listening on port {} for android auto stuff", network.port);
         if let Ok(a) = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", network.port)).await {
             loop {
                 if let Ok((mut stream, addr)) = a.accept().await {
+                    let network2 = network.clone();
                     tokio::task::spawn(async move {
-                        log::debug!("Got a connection on port {} from {:?}", network.port, addr);
-                        let m = AndroidAutoWifiMessage::VersionRequest;
-                        let d: AndroidAutoFrame = m.into();
-                        let d2: Vec<u8> = d.into();
-                        let a = stream.write_all(&d2).await;
-                        log::debug!("Sent packet {:x?} to wifi user: {:?}", d2, a);
-                        loop {
-                            let mut fr = FrameHeaderReceiver::new();
-                            let f = loop {
-                                if let Ok(Some(f)) = fr.read(&mut stream).await {
-                                    break f;
-                                }
-                            };
-                            log::debug!("Received frame header {:x?}", f);
-                            let mut fr2 = AndroidAutoFrameReceiver::new();
-                            let f2 = loop {
-                                if let Ok(Some(f2)) = fr2.read(&f, &mut stream).await {
-                                    break f2;
-                                }
-                            };
-                            log::info!("Received a full frame {:x?}", f2);
-                            let message: Result<AndroidAutoWifiMessage, String> = f2.try_into();
-                            match message {
-                                Err(e) => {
-                                    log::error!("Error receiving packet: {}", e);
-                                    break;
-                                }
-                                Ok(m) => {
-                                    match m {
-                                        AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-                                        AndroidAutoWifiMessage::VersionResponse { major, minor, status } => {
-                                            if status == 0xFFFF {
-                                                log::error!("Version mismatch");
-                                                break;
-                                            }
-                                            log::info!("Android auto client version: {}.{}", major, minor);
-                                            
-                                        }
-                                    }
-                                }
-                            }
+                        if let Err(e) = Self::handle_client(&mut stream, addr, network2).await {
+                            log::error!("Disconnect from client: {:?}", e);
                         }
-                        log::info!("Disconnecting");
                     });
                 }
             }
