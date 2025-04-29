@@ -150,22 +150,19 @@ impl FrameHeaderReceiver {
 }
 
 #[derive(Debug)]
-enum AndroidAutoFrame {
-    CompoundFrame { header: FrameHeader, data: Vec<u8> },
+struct AndroidAutoFrame {
+    header: FrameHeader, 
+    data: Vec<u8>,
 }
 
 impl Into<Vec<u8>> for AndroidAutoFrame {
-    fn into(self) -> Vec<u8> {
-        match self {
-            AndroidAutoFrame::CompoundFrame { header, data } => {
-                let mut buf = Vec::new();
-                header.add_to(&mut buf);
-                let mut p = (data.len() as u16).to_be_bytes().to_vec();
-                buf.append(&mut p);
-                buf.append(&mut data.clone());
-                buf
-            }
-        }
+    fn into(mut self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        self.header.add_to(&mut buf);
+        let mut p = (self.data.len() as u16).to_be_bytes().to_vec();
+        buf.append(&mut p);
+        buf.append(&mut self.data);
+        buf
     }
 }
 
@@ -192,7 +189,7 @@ impl AndroidAutoFrameReceiver {
         }
         if let Some(len) = &self.len {
             stream.read_exact(&mut self.data[0..*len as usize]).await.map_err(|e| e.to_string())?;
-            let f = AndroidAutoFrame::CompoundFrame { header: header.clone(), data: self.data.clone(), };
+            let f = AndroidAutoFrame { header: header.clone(), data: self.data.clone(), };
             let f = Some(f);
             return Ok(f);
         }
@@ -211,18 +208,14 @@ enum AndroidAutoWifiMessage {
 impl TryFrom<AndroidAutoFrame> for AndroidAutoWifiMessage {
     type Error = String;
     fn try_from(value: AndroidAutoFrame) -> Result<Self, Self::Error> {
-        match value {
-            AndroidAutoFrame::CompoundFrame { header: _, data } => {
-                let mut ty = [0u8; 2];
-                ty.copy_from_slice(&data[0..2]);
-                let ty = u16::from_be_bytes(ty);
-                if ty == Wifi::ControlMessageType::MESSAGE_VERSION_RESPONSE as u16 {
-                    Ok(AndroidAutoWifiMessage::VersionResponse)
-                }
-                else {
-                    Err(format!("Unknown packet type 0x{:x}", ty))
-                }
-            }
+        let mut ty = [0u8; 2];
+        ty.copy_from_slice(&value.data[0..2]);
+        let ty = u16::from_be_bytes(ty);
+        if ty == Wifi::ControlMessageType::MESSAGE_VERSION_RESPONSE as u16 {
+            Ok(AndroidAutoWifiMessage::VersionResponse)
+        }
+        else {
+            Err(format!("Unknown packet type 0x{:x}", ty))
         }
     }
 }
@@ -243,7 +236,7 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
                 m.push(major[1]);
                 m.push(minor[0]);
                 m.push(minor[1]);
-                AndroidAutoFrame::CompoundFrame {
+                AndroidAutoFrame {
                     header: FrameHeader {
                         channel_id: ChannelId::CONTROL,
                         frame: FrameHeaderType::new(false, 3, true),
