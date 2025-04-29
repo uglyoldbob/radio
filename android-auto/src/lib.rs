@@ -1,3 +1,4 @@
+use rustls::sign::CertifiedKey;
 use tokio::io::AsyncReadExt;
 
 mod cert;
@@ -490,14 +491,28 @@ impl AndriodAutoBluettothServer {
         
         let aautocertder = {
             let mut br = std::io::Cursor::new(cert::AAUTO_CERT.to_string().as_bytes().to_vec());
-            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto server").expect("Invalid pem sert vor aauto server");
+            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto server").expect("Invalid pem cert for aauto server");
             CertificateDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
         };
+        let cert = {
+            let mut br = std::io::Cursor::new(cert::CERTIFICATE.to_string().as_bytes().to_vec());
+            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto client").expect("Invalid pem cert for aauto client");
+            CertificateDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
+        };
+        let key = {
+            let mut br = std::io::Cursor::new(cert::PRIVATE_KEY.to_string().as_bytes().to_vec());
+            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto client").expect("Invalid pem cert for aauto client");
+            PrivateKeyDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
+        };
+        let cert = vec![cert];
         log::debug!("AAuto cert: {:?}", aautocertder);
+        let ckey = CertifiedKey::from_der(cert, key, rustls::crypto::CryptoProvider::get_default().unwrap()).unwrap();
+        let ckey = Arc::new(ckey);
+        let resolver = Arc::new(rustls::client::AlwaysResolvesClientRawPublicKeys::new(ckey));
         root_store.add(aautocertder).expect("Failed to load android auto server cert");
         let ssl_client_config = rustls::ClientConfig::builder()
             .with_root_certificates(root_store)
-            .with_no_client_auth();
+            .with_client_cert_resolver(resolver);
         let config = Arc::new(ssl_client_config);
         let server = "idontknow.com".try_into().unwrap();
         let mut ssl_client = rustls::ClientConnection::new(config, server).expect("Failed to build ssl client");
@@ -510,13 +525,13 @@ impl AndriodAutoBluettothServer {
         loop {
             let mut fr = FrameHeaderReceiver::new();
             let f = loop {
-                if let Ok(Some(f)) = fr.read(&mut stream).await {
+                if let Ok(Some(f)) = fr.read(stream).await {
                     break f;
                 }
             };
             let mut fr2 = AndroidAutoFrameReceiver::new();
             let f2 = loop {
-                if let Ok(Some(f2)) = fr2.read(&f, &mut stream).await {
+                if let Ok(Some(f2)) = fr2.read(&f, stream).await {
                     break f2;
                 }
             };
