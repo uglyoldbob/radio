@@ -386,12 +386,14 @@ impl Into<Vec<u8>> for AndroidAutoMessage {
 #[derive(Debug)]
 struct OpensslSocket {
     pub plain: std::net::TcpStream,
+    recvd: VecDeque<u8>,
 }
 
 impl OpensslSocket {
     fn new(plain: std::net::TcpStream,) -> Self {
         Self {
             plain,
+            recvd: VecDeque::new(),
         }
     }
 
@@ -415,22 +417,30 @@ impl OpensslSocket {
 impl std::io::Read for OpensslSocket {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         log::info!("Reading from openssl socket, len: {}", buf.len());
-        match self.receive_frame() {
-            Ok(m) => {
-                log::info!("SSL GOT FRAME {:?}", m);
-                match m {
-                    AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-                    AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
-                    AndroidAutoWifiMessage::SslHandshake(mut items) => {
-                        buf.copy_from_slice(&mut items);
-                        Ok(buf.len())
-                    },
+        if self.recvd.len() < buf.len() {
+            match self.receive_frame() {
+                Ok(m) => {
+                    log::info!("SSL GOT FRAME {:?}", m);
+                    match m {
+                        AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
+                        AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+                        AndroidAutoWifiMessage::SslHandshake(items) => {
+                            for i in items {
+                                self.recvd.push_back(i);
+                            }
+                        },
+                    }
+                }
+                Err(e) => {
+                    return Err(std::io::Error::other(e));
                 }
             }
-            Err(e) => {
-                Err(std::io::Error::other(e))
-            }
         }
+        let len = buf.len();
+        for b in buf {
+            *b = self.recvd.pop_front().unwrap();
+        }
+        Ok(len)
     }
 }
 
