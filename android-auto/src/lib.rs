@@ -232,11 +232,7 @@ impl AndroidAutoFrameReceiver {
         }
     }
 
-    fn read(
-        &mut self,
-        header: &FrameHeader,
-        stream: &mut std::net::TcpStream,
-    ) -> Result<Option<AndroidAutoFrame>, String> {
+    fn read_plain(&mut self, header: &FrameHeader, stream: &mut std::net::TcpStream) -> Result<Option<AndroidAutoFrame>, String> {
         use std::io::Read;
         if self.len.is_none() {
             let mut p = [0u8; 2];
@@ -246,12 +242,47 @@ impl AndroidAutoFrameReceiver {
             self.len.replace(len);
         }
         if let Some(len) = &self.len {
-            stream
-                .read_exact(&mut self.data[0..*len as usize])
+            stream.read_exact(&mut self.data[0..*len as usize])
                 .map_err(|e| e.to_string())?;
+            log::info!("Got {} bytes of frame data", len - 2);
             let f = AndroidAutoFrame {
                 header: header.clone(),
                 data: self.data.clone(),
+            };
+            let f = Some(f);
+            return Ok(f);
+        }
+        Ok(None)
+    }
+
+    fn read(
+        &mut self,
+        header: &FrameHeader,
+        stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+    ) -> Result<Option<AndroidAutoFrame>, String> {
+        use std::io::Read;
+        if self.len.is_none() {
+            let mut p = [0u8; 2];
+            stream.get_mut().plain.read_exact(&mut p).map_err(|e| e.to_string())?;
+            let len = u16::from_be_bytes(p);
+            self.data = vec![0; len as usize];
+            self.len.replace(len);
+        }
+        if let Some(len) = &self.len {
+            stream.get_mut().plain
+                .read_exact(&mut self.data[0..*len as usize])
+                .map_err(|e| e.to_string())?;
+            let data = if header.frame.get_encryption() {
+                stream.get_mut().relay_data(&self.data);
+                let mut data = vec![0; *len as usize];
+                stream.ssl_read(&mut data);
+                data
+            } else {
+                self.data.clone()
+            };
+            let f = AndroidAutoFrame {
+                header: header.clone(),
+                data,
             };
             let f = Some(f);
             return Ok(f);
@@ -267,6 +298,7 @@ enum AndroidAutoWifiMessage {
     VersionResponse { major: u16, minor: u16, status: u16 },
     SslHandshake(Vec<u8>),
     SslAuthComplete(bool),
+    ServiceDiscoveryRequest(Wifi::ServiceDiscoveryRequest),
 }
 
 #[cfg(feature = "wireless")]
@@ -291,6 +323,18 @@ impl TryFrom<AndroidAutoFrame> for AndroidAutoWifiMessage {
             }
         } else if ty == Wifi::ControlMessage::SSL_HANDSHAKE as u16 {
             Ok(AndroidAutoWifiMessage::SslHandshake(value.data[2..].to_vec()))
+        } else if ty == Wifi::ControlMessage::SERVICE_DISCOVERY_REQUEST as u16 {
+            let mut bytes = value.data.clone()
+                .into_iter()
+                .rev()
+                .skip_while(|&byte| byte == 0)
+                .collect::<Vec<_>>();
+            bytes.reverse();
+            let m = Wifi::ServiceDiscoveryRequest::parse_from_bytes(&bytes[2..]);
+            match m {
+                Ok(m) => Ok(AndroidAutoWifiMessage::ServiceDiscoveryRequest(m)),
+                Err(e) => Err(format!("Invalid service discovery request: {}", e.to_string()))
+            }
         } else {
             Err(format!("Unknown packet type 0x{:x}", ty))
         }
@@ -355,6 +399,7 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
                     data: m,
                 }
             }
+            AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionResponse {
                 major: _,
                 minor: _,
@@ -418,6 +463,12 @@ impl OpensslSocket {
         }
     }
 
+    fn relay_data(&mut self, d: &[u8]) {
+        for b in d {
+            self.recvd.push_back(*b);
+        }
+    }
+
     fn receive_frame(&mut self) -> Result<AndroidAutoWifiMessage, String> {
         let mut fr = FrameHeaderReceiver::new();
         let f = loop {
@@ -427,7 +478,7 @@ impl OpensslSocket {
         };
         let mut fr2 = AndroidAutoFrameReceiver::new();
         let f2 = loop {
-            if let Ok(Some(f2)) = fr2.read(&f, &mut self.plain) {
+            if let Ok(Some(f2)) = fr2.read_plain(&f, &mut self.plain) {
                 break f2;
             }
         };
@@ -443,6 +494,7 @@ impl std::io::Read for OpensslSocket {
                 Ok(m) => {
                     log::info!("SSL GOT FRAME {:?}", m);
                     match m {
+                        AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
                         AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
                         AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
                         AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
@@ -609,7 +661,7 @@ impl AndriodAutoBluettothServer {
             };
             let mut fr2 = AndroidAutoFrameReceiver::new();
             let f2 = loop {
-                if let Ok(Some(f2)) = fr2.read(&f, &mut openssl_stream.get_mut().plain) {
+                if let Ok(Some(f2)) = fr2.read(&f, &mut openssl_stream) {
                     break f2;
                 }
             };
@@ -620,6 +672,10 @@ impl AndriodAutoBluettothServer {
                     break;
                 }
                 Ok(m) => match m {
+                    AndroidAutoWifiMessage::ServiceDiscoveryRequest(m) => {
+                        log::error!("Got service discovery request: {:?}", m);
+                        break;
+                    }
                     AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
                     AndroidAutoWifiMessage::SslHandshake(data) => {
                         log::info!("SSL Handshake data is {:x?}", data);
