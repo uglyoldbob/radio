@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 
 use openssl::ssl::SslVerifyMode;
-use tokio::io::AsyncReadExt;
 
 mod cert;
+
+use protobuf::Message;
 
 pub struct AndriodAutoBluettothServer {
     #[cfg(feature = "wireless")]
@@ -265,6 +266,7 @@ enum AndroidAutoWifiMessage {
     VersionRequest,
     VersionResponse { major: u16, minor: u16, status: u16 },
     SslHandshake(Vec<u8>),
+    SslAuthComplete(bool),
 }
 
 #[cfg(feature = "wireless")]
@@ -323,6 +325,25 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
                 let mut m = Vec::with_capacity(4);
                 let t = Wifi::ControlMessage::SSL_HANDSHAKE as u16;
                 let t = t.to_be_bytes();
+                m.push(t[0]);
+                m.push(t[1]);
+                m.append(&mut data);
+                AndroidAutoFrame {
+                    header: FrameHeader {
+                        channel_id: ChannelId::CONTROL,
+                        frame: FrameHeaderContents::new(false, FrameHeaderType::Single, false),
+                    },
+                    data: m,
+                }
+            }
+            AndroidAutoWifiMessage::SslAuthComplete(status) => {
+                let mut m = Wifi::AuthCompleteIndication::new();
+                let status = if status { Wifi::AuthCompleteIndicationStatus::OK } else { Wifi::AuthCompleteIndicationStatus::FAIL };
+                m.set_status(status);
+                let mut data = m.write_to_bytes().unwrap();
+                let t = Wifi::ControlMessage::AUTH_COMPLETE as u16;
+                let t = t.to_be_bytes();
+                let mut m = Vec::new();
                 m.push(t[0]);
                 m.push(t[1]);
                 m.append(&mut data);
@@ -422,6 +443,7 @@ impl std::io::Read for OpensslSocket {
                 Ok(m) => {
                     log::info!("SSL GOT FRAME {:?}", m);
                     match m {
+                        AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
                         AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
                         AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
                         AndroidAutoWifiMessage::SslHandshake(items) => {
@@ -598,6 +620,7 @@ impl AndriodAutoBluettothServer {
                     break;
                 }
                 Ok(m) => match m {
+                    AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
                     AndroidAutoWifiMessage::SslHandshake(data) => {
                         log::info!("SSL Handshake data is {:x?}", data);
                         todo!();
@@ -619,6 +642,10 @@ impl AndriodAutoBluettothServer {
                         );
                         openssl_stream.do_handshake().map_err(|e| e.to_string()).expect("Failed to ssl connect?");
                         log::error!("Stuff after trying to connect: {:x?}", openssl_stream.get_ref());
+                        let m = AndroidAutoWifiMessage::SslAuthComplete(true);
+                        let d: AndroidAutoFrame = m.into();
+                        let d2: Vec<u8> = d.into();
+                        openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
                     }
                 },
             }

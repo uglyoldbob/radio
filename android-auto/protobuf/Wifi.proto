@@ -28,3 +28,14 @@ enum MessageType {
     SPECIFIC = 0;
     CONTROL = 4;
 }
+
+enum AuthCompleteIndicationStatus
+{
+    OK = 0;
+    FAIL = 1;
+}
+
+message AuthCompleteIndication
+{
+    required AuthCompleteIndicationStatus status = 1;
+}
