@@ -229,13 +229,30 @@ impl AndroidAutoFrame {
         m
     }
 
-    fn build_vec(&self) -> Vec<u8> {
-        let mut data = self.data.clone();
+    fn build_vec(&self, stream: Option<&mut openssl::ssl::SslStream<OpensslSocket>>) -> Vec<u8> {
         let mut buf = Vec::new();
         self.header.add_to(&mut buf);
-        let mut p = (self.data.len() as u16).to_be_bytes().to_vec();
-        buf.append(&mut p);
-        buf.append(&mut data);
+        if self.header.frame.get_encryption() {
+            if let Some(stream) = stream {
+                log::error!("Pre-encryption data: {} {:x?}", self.data.len(), self.data);
+                stream.ssl_write(&self.data).unwrap();
+                let mut data = Vec::with_capacity(self.data.len());
+                stream.get_mut().get_tx_data(&mut data);
+                log::error!("Post-encryption data: {} {:x?}", data.len(), data);
+                let mut p = (data.len() as u16).to_be_bytes().to_vec();
+                buf.append(&mut p);
+                buf.append(&mut data);
+            }
+            else {
+                panic!("No ssl object when encryption was required");
+            }
+        }
+        else {
+            let mut data = self.data.clone();
+            let mut p = (data.len() as u16).to_be_bytes().to_vec();
+            buf.append(&mut p);
+            buf.append(&mut data);
+        }
         buf
     }
 }
@@ -296,7 +313,7 @@ impl AndroidAutoFrameReceiver {
             let data = if header.frame.get_encryption() {
                 stream.get_mut().relay_data(&self.data);
                 let mut data = vec![0; *len as usize];
-                stream.ssl_read(&mut data);
+                stream.ssl_read(&mut data).map_err(|e| e.to_string())?;
                 data
             } else {
                 self.data.clone()
@@ -491,19 +508,29 @@ impl Into<Vec<u8>> for AndroidAutoMessage {
 struct OpensslSocket {
     pub plain: std::net::TcpStream,
     recvd: VecDeque<u8>,
+    send: VecDeque<u8>,
+    handshake: bool,
 }
 
 impl OpensslSocket {
     fn new(plain: std::net::TcpStream,) -> Self {
         Self {
             plain,
+            handshake: true,
             recvd: VecDeque::new(),
+            send: VecDeque::new(),
         }
     }
 
     fn relay_data(&mut self, d: &[u8]) {
         for b in d {
             self.recvd.push_back(*b);
+        }
+    }
+
+    fn get_tx_data(&mut self, d: &mut Vec<u8>) {
+        while let Some(b) = self.send.pop_front() {
+            d.push(b);
         }
     }
 
@@ -559,11 +586,19 @@ impl std::io::Read for OpensslSocket {
 
 impl std::io::Write for OpensslSocket {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let m = AndroidAutoWifiMessage::SslHandshake(buf.to_vec());
-        let d: AndroidAutoFrame = m.into();
-        let d2: Vec<u8> = d.build_vec();
-        log::info!("Writing to openssl socket: {:x?}", d2);
-        self.plain.write_all(&d2)?;
+        if self.handshake {
+            let m = AndroidAutoWifiMessage::SslHandshake(buf.to_vec());
+            let d: AndroidAutoFrame = m.into();
+            let d2: Vec<u8> = d.build_vec(None);
+            log::info!("Writing to openssl socket: {:x?}", d2);
+            self.plain.write_all(&d2)?;
+        }
+        else {
+            log::info!("Writing {} bytes to ssl buffer", buf.len());
+            for b in buf {
+                self.send.push_back(*b);
+            }
+        }
         Ok(buf.len())
     }
 
@@ -693,7 +728,7 @@ impl AndriodAutoBluettothServer {
         let mut openssl_stream = openssl::ssl::SslStream::new(ssl, openssl_socket).expect("Failed to build openssl stream");
         let m = AndroidAutoWifiMessage::VersionRequest;
         let d: AndroidAutoFrame = m.into();
-        let d2: Vec<u8> = d.build_vec();
+        let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
         openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
         loop {
             let mut fr = FrameHeaderReceiver::new();
@@ -737,7 +772,7 @@ impl AndriodAutoBluettothServer {
                         }
                         let m = AndroidAutoWifiMessage::ServiceDiscoveryResponse(m);
                         let d: AndroidAutoFrame = m.into();
-                        let d2: Vec<u8> = d.build_vec();
+                        let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                         openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
                     }
                     AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
@@ -761,10 +796,11 @@ impl AndriodAutoBluettothServer {
                             minor
                         );
                         openssl_stream.do_handshake().map_err(|e| e.to_string()).expect("Failed to ssl connect?");
+                        openssl_stream.get_mut().handshake = false;
                         log::error!("Stuff after trying to connect: {:x?}", openssl_stream.get_ref());
                         let m = AndroidAutoWifiMessage::SslAuthComplete(true);
                         let d: AndroidAutoFrame = m.into();
-                        let d2: Vec<u8> = d.build_vec();
+                        let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                         openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
                     }
                 },
