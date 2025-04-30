@@ -228,15 +228,14 @@ impl AndroidAutoFrame {
         }
         m
     }
-}
 
-impl Into<Vec<u8>> for AndroidAutoFrame {
-    fn into(mut self) -> Vec<u8> {
+    fn build_vec(&self) -> Vec<u8> {
+        let mut data = self.data.clone();
         let mut buf = Vec::new();
         self.header.add_to(&mut buf);
         let mut p = (self.data.len() as u16).to_be_bytes().to_vec();
         buf.append(&mut p);
-        buf.append(&mut self.data);
+        buf.append(&mut data);
         buf
     }
 }
@@ -562,7 +561,7 @@ impl std::io::Write for OpensslSocket {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let m = AndroidAutoWifiMessage::SslHandshake(buf.to_vec());
         let d: AndroidAutoFrame = m.into();
-        let d2: Vec<u8> = d.into();
+        let d2: Vec<u8> = d.build_vec();
         log::info!("Writing to openssl socket: {:x?}", d2);
         self.plain.write_all(&d2)?;
         Ok(buf.len())
@@ -694,7 +693,7 @@ impl AndriodAutoBluettothServer {
         let mut openssl_stream = openssl::ssl::SslStream::new(ssl, openssl_socket).expect("Failed to build openssl stream");
         let m = AndroidAutoWifiMessage::VersionRequest;
         let d: AndroidAutoFrame = m.into();
-        let d2: Vec<u8> = d.into();
+        let d2: Vec<u8> = d.build_vec();
         openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
         loop {
             let mut fr = FrameHeaderReceiver::new();
@@ -738,7 +737,7 @@ impl AndriodAutoBluettothServer {
                         }
                         let m = AndroidAutoWifiMessage::ServiceDiscoveryResponse(m);
                         let d: AndroidAutoFrame = m.into();
-                        let d2: Vec<u8> = d.into();
+                        let d2: Vec<u8> = d.build_vec();
                         openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
                     }
                     AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
@@ -765,7 +764,7 @@ impl AndriodAutoBluettothServer {
                         log::error!("Stuff after trying to connect: {:x?}", openssl_stream.get_ref());
                         let m = AndroidAutoWifiMessage::SslAuthComplete(true);
                         let d: AndroidAutoFrame = m.into();
-                        let d2: Vec<u8> = d.into();
+                        let d2: Vec<u8> = d.build_vec();
                         openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
                     }
                 },
