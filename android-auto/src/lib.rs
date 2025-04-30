@@ -5,6 +5,7 @@ use openssl::ssl::SslVerifyMode;
 mod cert;
 
 use protobuf::Message;
+use Wifi::ChannelDescriptor;
 
 pub struct AndriodAutoBluettothServer {
     #[cfg(feature = "wireless")]
@@ -30,6 +31,27 @@ pub struct NetworkInformation {
     pub port: u16,
     pub security_mode: Bluetooth::SecurityMode,
     pub ap_type: Bluetooth::AccessPointType,
+}
+
+#[derive(Clone)]
+pub struct HeadUnitInfo {
+    pub name: String,
+    pub car_model: String,
+    pub car_year: String,
+    pub car_serial: String,
+    pub left_hand: bool,
+    pub head_manufacturer: String,
+    pub head_model: String,
+    pub sw_build: String,
+    pub sw_version: String,
+    pub native_media: bool,
+    pub hide_clock: Option<bool>,
+}
+
+#[derive(Clone)]
+pub struct AndroidAutoConfiguration {
+    pub network: NetworkInformation,
+    pub unit: HeadUnitInfo,
 }
 
 /// The channel identifier for a frame
@@ -299,6 +321,7 @@ enum AndroidAutoWifiMessage {
     SslHandshake(Vec<u8>),
     SslAuthComplete(bool),
     ServiceDiscoveryRequest(Wifi::ServiceDiscoveryRequest),
+    ServiceDiscoveryResponse(Wifi::ServiceDiscoveryResponse),
 }
 
 #[cfg(feature = "wireless")]
@@ -345,6 +368,22 @@ impl TryFrom<AndroidAutoFrame> for AndroidAutoWifiMessage {
 impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
     fn into(self) -> AndroidAutoFrame {
         match self {
+            AndroidAutoWifiMessage::ServiceDiscoveryResponse(m) => {
+                let mut data = m.write_to_bytes().unwrap();
+                let t = Wifi::ControlMessage::SERVICE_DISCOVERY_RESPONSE as u16;
+                let t = t.to_be_bytes();
+                let mut m = Vec::new();
+                m.push(t[0]);
+                m.push(t[1]);
+                m.append(&mut data);
+                AndroidAutoFrame {
+                    header: FrameHeader {
+                        channel_id: ChannelId::CONTROL,
+                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, false),
+                    },
+                    data: m,
+                }
+            }
             AndroidAutoWifiMessage::VersionRequest => {
                 let mut m = Vec::with_capacity(4);
                 let t = Wifi::ControlMessage::VERSION_REQUEST as u16;
@@ -494,6 +533,7 @@ impl std::io::Read for OpensslSocket {
                 Ok(m) => {
                     log::info!("SSL GOT FRAME {:?}", m);
                     match m {
+                        AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
                         AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
                         AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
                         AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
@@ -531,6 +571,10 @@ impl std::io::Write for OpensslSocket {
     fn flush(&mut self) -> std::io::Result<()> {
         self.plain.flush()
     }
+}
+
+fn channels() -> Vec<ChannelDescriptor> {
+    Vec::new()
 }
 
 impl AndriodAutoBluettothServer {
@@ -585,8 +629,8 @@ impl AndriodAutoBluettothServer {
                     loop {
                         let mut ty = [0u8; 2];
                         let mut len = [0u8; 2];
-                        let r2 = read.read_exact(&mut len).await;
-                        let r3 = read.read_exact(&mut ty).await;
+                        read.read_exact(&mut len).await.map_err(|e| e.to_string())?;
+                        read.read_exact(&mut ty).await.map_err(|e| e.to_string())?;
                         let len = u16::from_be_bytes(len);
                         let ty = u16::from_be_bytes(ty);
                         let mut message = vec![0; len as usize];
@@ -633,10 +677,10 @@ impl AndriodAutoBluettothServer {
         }
     }
 
-    fn handle_client(mut stream: std::net::TcpStream, addr: std::net::SocketAddr, network: NetworkInformation) -> Result<(), String> {
+    fn handle_client(mut stream: std::net::TcpStream, addr: std::net::SocketAddr, config: AndroidAutoConfiguration) -> Result<(), String> {
         use std::io::Write;
 
-        log::debug!("Got a connection on port {} from {:?}", network.port, addr);
+        log::debug!("Got a connection on port {} from {:?}", config.network.port, addr);
         let openssl_socket = OpensslSocket::new(stream);
         let client_cert = openssl::x509::X509::from_pem(cert::CERTIFICATE.as_bytes()).expect("Failed to load client ssl certificate");
         let client_key = openssl::pkey::PKey::private_key_from_pem(cert::PRIVATE_KEY.as_bytes()).unwrap();
@@ -672,9 +716,30 @@ impl AndriodAutoBluettothServer {
                     break;
                 }
                 Ok(m) => match m {
+                    AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
                     AndroidAutoWifiMessage::ServiceDiscoveryRequest(m) => {
                         log::error!("Got service discovery request: {:?}", m);
-                        break;
+                        let mut m = Wifi::ServiceDiscoveryResponse::new();
+                        m.set_car_model(config.unit.car_model.clone());
+                        m.set_can_play_native_media_during_vr(config.unit.native_media);
+                        m.set_car_serial(config.unit.car_serial.clone());
+                        m.set_car_year(config.unit.car_year.clone());
+                        m.set_head_unit_name(config.unit.name.clone());
+                        m.set_headunit_manufacturer(config.unit.head_manufacturer.clone());
+                        m.set_headunit_model(config.unit.head_model.clone());
+                        if let Some(hide) = config.unit.hide_clock {
+                            m.set_hide_clock(hide);
+                        }
+                        m.set_left_hand_drive_vehicle(config.unit.left_hand);
+                        m.set_sw_build(config.unit.sw_build.clone());
+                        m.set_sw_version(config.unit.sw_version.clone());
+                        for s in channels() {
+                            m.channels.push(s);
+                        }
+                        let m = AndroidAutoWifiMessage::ServiceDiscoveryResponse(m);
+                        let d: AndroidAutoFrame = m.into();
+                        let d2: Vec<u8> = d.into();
+                        openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
                     }
                     AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
                     AndroidAutoWifiMessage::SslHandshake(data) => {
@@ -711,21 +776,21 @@ impl AndriodAutoBluettothServer {
     }
 
     #[cfg(feature = "wireless")]
-    pub fn wifi_listen(network: NetworkInformation) -> Result<(), String> {
-        log::info!("Listening on port {} for android auto stuff", network.port);
-        if let Ok(a) = std::net::TcpListener::bind(format!("0.0.0.0:{}", network.port)) {
+    pub fn wifi_listen(config: AndroidAutoConfiguration) -> Result<(), String> {
+        log::info!("Listening on port {} for android auto stuff", config.network.port);
+        if let Ok(a) = std::net::TcpListener::bind(format!("0.0.0.0:{}", config.network.port)) {
             loop {
-                if let Ok((mut stream, addr)) = a.accept() {
-                    let network2 = network.clone();
+                if let Ok((stream, addr)) = a.accept() {
+                    let config2 = config.clone();
                     std::thread::spawn(move || {
-                        if let Err(e) = Self::handle_client(stream, addr, network2) {
+                        if let Err(e) = Self::handle_client(stream, addr, config2) {
                             log::error!("Disconnect from client: {:?}", e);
                         }
                     });
                 }
             }
         } else {
-            Err(format!("Failed to listen on port {} tcp", network.port))
+            Err(format!("Failed to listen on port {} tcp", config.network.port))
         }
     }
 

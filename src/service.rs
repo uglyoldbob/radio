@@ -9,6 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use android_auto::HeadUnitInfo;
 use tokio::io::AsyncReadExt;
 use uobradio_comms::NonvolatileSettings;
 use video_service::VideoSource;
@@ -419,10 +420,26 @@ async fn smain() {
 
     {
         if let Some(network) = network {
+            let config = android_auto::AndroidAutoConfiguration {
+                network: network.clone(),
+                unit: HeadUnitInfo {
+                    name: "UobRadio".to_string(),
+                    car_model: "Cherokee".to_string(),
+                    car_year: "1995".to_string(),
+                    car_serial: "42".to_string(),
+                    left_hand: true,
+                    head_manufacturer: "Uob".to_string(),
+                    head_model: "XJ1".to_string(),
+                    sw_build: "0".to_string(),
+                    sw_version: "1".to_string(),
+                    native_media: true,
+                    hide_clock: Some(false),
+                },
+            };
             let net2 = network.clone();
             tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
             std::thread::spawn(move || android_auto::AndriodAutoBluettothServer::wifi_listen(
-                network.clone(),
+                config,
             ));
         }
     }

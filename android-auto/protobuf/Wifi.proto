@@ -4,7 +4,7 @@ package androidauto.wifi;
 
 enum ControlMessage
 {
-    NONE = 0x0000;
+    MESSAGE_NONE = 0x0000;
     VERSION_REQUEST = 0x0001;
     VERSION_RESPONSE = 0x0002;
     SSL_HANDSHAKE = 0x0003;
@@ -44,4 +44,206 @@ message ServiceDiscoveryRequest
 {
     required string device_name = 4;
     required string device_brand = 5;
+}
+
+enum SensorType
+{
+    SENSOR_NONE = 0;
+    LOCATION = 1;
+    COMPASS = 2;
+    CAR_SPEED = 3;
+    RPM = 4;
+    ODOMETER = 5;
+    FUEL_LEVEL = 6;
+    PARKING_BRAKE = 7;
+    GEAR = 8;
+    DIAGNOSTICS = 9;
+    NIGHT_DATA = 10;
+    ENVIRONMENT = 11;
+    HVAC = 12;
+    DRIVING_STATUS = 13;
+    DEAD_RECONING = 14;
+    PASSENGER = 15;
+    DOOR = 16;
+    LIGHT = 17;
+    TIRE = 18;
+    ACCEL = 19;
+    GYRO = 20;
+    GPS = 21;
+}
+
+
+message Sensor
+{
+    required SensorType type = 1;
+}
+
+message SensorChannel
+{
+    repeated Sensor sensors = 1;
+}
+
+enum AVStreamType
+{
+    STREAM_NONE = 0;
+    AUDIO = 1;
+    VIDEO = 3;
+}
+
+enum AudioType
+{
+    AUDIO_NONE = 0;
+    SPEECH = 1;
+    SYSTEM = 2;
+    MEDIA = 3;
+    ALARM = 4;
+}
+
+message AudioConfig
+{
+    required uint32 sample_rate = 1;
+    required uint32 bit_depth = 2;
+    required uint32 channel_count = 3;
+}
+
+enum VideoResolution
+{
+    RESOLUTION_NONE = 0;
+    _480p = 1;
+    _720p = 2;
+    _1080p = 3;
+    _1440p = 4;
+    _720p_p = 5;
+    _1080pp = 6;
+    _108s0p_p = 7;
+}
+
+enum VideoFPS
+{
+    FPS_NONE = 0;
+    _30 = 1;
+    _60 = 2;
+}
+
+message VideoConfig
+{
+    required VideoResolution video_resolution = 1;
+    required VideoFPS video_fps = 2;
+    required uint32 margin_width = 3;
+    required uint32 margin_height = 4;
+    required uint32 dpi = 5;
+    optional uint32 additional_depth = 6;
+}
+
+message AVChannel
+{
+    required AVStreamType stream_type = 1;
+    optional AudioType audio_type = 2;
+    repeated AudioConfig audio_configs = 3;
+    repeated VideoConfig video_configs = 4;
+    optional bool available_while_in_call = 5;
+}
+
+message TouchConfig
+{
+    required uint32 width = 1;
+    required uint32 height = 2;
+}
+
+message InputChannel
+{
+    repeated uint32 supported_keycodes = 1;
+    optional TouchConfig touch_screen_config = 2;
+    optional TouchConfig touch_pad_config = 3;
+}
+
+message AVInputChannel
+{
+    required AVStreamType stream_type = 1;
+    required AudioConfig audio_config = 2;
+    optional bool available_while_in_call = 3;
+}
+
+enum BluetoothPairingMethod
+{
+    PAIRING_NONE = 0;
+    UNK_1 = 1;
+    A2DP = 2;
+    UNK_3 = 3;
+    HFP = 4;
+}
+
+message BluetoothChannel
+{
+    required string adapter_address = 1;
+    repeated BluetoothPairingMethod supported_pairing_methods = 2;
+}
+
+enum NavigationTurnType
+{
+    UNKNOWN = 0;
+    IMAGE = 1;
+    ENUM = 2;
+}
+
+message NavigationImageOptions
+{
+    required int32 width = 1;
+    required int32 height = 2;
+    required int32 colour_depth_bits = 3;
+    required int32 dunno = 4;
+}
+
+message NavigationChannel
+{
+    required uint32 minimum_interval_ms = 1;
+    required NavigationTurnType type = 2;
+    required NavigationImageOptions image_options = 3;
+}
+
+message MediaInfoChannel
+{
+   
+}
+
+message VendorExtensionChannel
+{
+    required string name = 1;
+    repeated string package_white_list = 2;
+    optional bytes data = 3;
+}
+
+message WifiChannel
+{
+    required string ssid = 1;
+}
+
+message ChannelDescriptor
+{
+    required uint32 channel_id = 1;
+    optional SensorChannel sensor_channel = 2;
+    optional AVChannel av_channel = 3;
+    optional InputChannel input_channel = 4;
+    optional AVInputChannel av_input_channel = 5;
+    optional BluetoothChannel bluetooth_channel = 6;
+    optional NavigationChannel navigation_channel = 8;
+    optional MediaInfoChannel media_infoChannel = 9;
+    optional VendorExtensionChannel vendor_extension_channel = 12;
+    optional WifiChannel wifi_channel=16;
+}
+
+message ServiceDiscoveryResponse
+{
+    repeated ChannelDescriptor channels = 1;
+    required string head_unit_name = 2;
+    required string car_model = 3;
+    required string car_year = 4;
+    required string car_serial = 5;
+    required bool left_hand_drive_vehicle = 6;
+    required string headunit_manufacturer = 7;
+    required string headunit_model = 8;
+    required string sw_build = 9;
+    required string sw_version = 10;
+    required bool can_play_native_media_during_vr = 11;
+    optional bool hide_clock = 12;
 }
