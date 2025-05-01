@@ -324,3 +324,13 @@ message ChannelOpenResponse
 {
     required Status.Enum status = 1;
 }
+
+message PingRequest
+{
+    required int64 timestamp = 1;
+}
+
+message PingResponse
+{
+    required int64 timestamp = 1;
+}
