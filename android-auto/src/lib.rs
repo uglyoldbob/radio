@@ -5,7 +5,7 @@ use openssl::ssl::SslVerifyMode;
 mod cert;
 
 use Wifi::ChannelDescriptor;
-use protobuf::{Enum, Message};
+use protobuf::{Enum, EnumOrUnknown, Message};
 
 pub struct AndriodAutoBluettothServer {
     #[cfg(feature = "wireless")]
@@ -952,11 +952,13 @@ fn channels(config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
         c.push(chan);
     }
     //bluetooth channel
-    {
+    if false {
         let mut chan = ChannelDescriptor::new();
         chan.set_channel_id(ChannelId::BLUETOOTH as u8 as u32);
         let mut bchan = Wifi::BluetoothChannel::new();
         bchan.set_adapter_address(config.bluetooth.address.clone());
+        let meth = Wifi::bluetooth_pairing_method::Enum::HFP;
+        bchan.supported_pairing_methods.push(EnumOrUnknown::new(meth));
         chan.bluetooth_channel.0.replace(Box::new(bchan));
         if !chan.is_initialized() {
             panic!("Channel not initialized?");
