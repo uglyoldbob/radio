@@ -447,7 +447,7 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
                 AndroidAutoFrame {
                     header: FrameHeader {
                         channel_id: chan,
-                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, false),
+                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, true),
                     },
                     data: m,
                 }
@@ -737,8 +737,8 @@ fn channels(_config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
         avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
         let mut ac = Wifi::AudioConfig::new();
         ac.set_bit_depth(16);
-        ac.set_channel_count(2);
-        ac.set_sample_rate(48000);
+        ac.set_channel_count(1);
+        ac.set_sample_rate(16000);
         avchan.audio_configs.push(ac);
         chan.av_channel.0.replace(Box::new(avchan));
         if !chan.is_initialized() {
@@ -775,8 +775,8 @@ fn channels(_config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
         avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
         let mut ac = Wifi::AudioConfig::new();
         ac.set_bit_depth(16);
-        ac.set_channel_count(1);
-        ac.set_sample_rate(16000);
+        ac.set_channel_count(2);
+        ac.set_sample_rate(48000);
         avchan.audio_configs.push(ac);
         chan.av_channel.0.replace(Box::new(avchan));
         if !chan.is_initialized() {
@@ -812,20 +812,6 @@ fn channels(_config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
         avchan.set_stream_type(Wifi::avstream_type::Enum::VIDEO);
         avchan.set_available_while_in_call(true);
         avchan.set_audio_type(Wifi::audio_type::Enum::SYSTEM);
-        let mut aconfs = Vec::new();
-        aconfs.push({
-            let mut ac = Wifi::AudioConfig::new();
-            ac.set_bit_depth(32);
-            ac.set_channel_count(2);
-            ac.set_sample_rate(48000);
-            if !ac.is_initialized() {
-                panic!();
-            }
-            ac
-        });
-        for a in aconfs {
-            avchan.audio_configs.push(a);
-        }
         let mut vconfs = Vec::new();
         vconfs.push({
             let mut vc = Wifi::VideoConfig::new();
@@ -884,7 +870,11 @@ fn channels(_config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
     {
         let mut chan = ChannelDescriptor::new();
         chan.set_channel_id(ChannelId::INPUT as u8 as u32);
-        let ichan = Wifi::InputChannel::new();
+        let mut ichan = Wifi::InputChannel::new();
+        let mut tc = Wifi::TouchConfig::new();
+        tc.set_height(480);
+        tc.set_width(800);
+        ichan.touch_screen_config.0.replace(Box::new(tc));
         chan.input_channel.0.replace(Box::new(ichan));
         if !chan.is_initialized() {
             panic!("Channel not initialized?");
@@ -983,7 +973,6 @@ impl AndriodAutoBluettothServer {
                             },
                             _ => {
                                 log::error!("Unknown bluetooth packet {} {:x?}", ty, message);
-                                break;
                             }
                         }
                         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -1048,6 +1037,54 @@ impl AndriodAutoBluettothServer {
                 (_, Err(e)) => {
                     log::error!("Error receiving packet: {}", e);
                     break;
+                }
+                (ChannelId::MEDIA_AUDIO, Ok(m)) => match m {
+                    AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::AudioFocusResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+                    AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
+                    AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
+                        log::info!("Got channel open request for media audio: {:?}", m);
+                        let mut m2 = Wifi::ChannelOpenResponse::new();
+                        m2.set_status(Wifi::status::Enum::OK);
+                        let d: AndroidAutoFrame =
+                            AndroidAutoWifiMessage::ChannelOpenResponse(f.channel_id, m2).into();
+                        let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
+                        openssl_stream
+                            .get_mut()
+                            .plain
+                            .write_all(&d2)
+                            .map_err(|e| e.to_string())?;
+                    }
+                }
+                (ChannelId::SYSTEM_AUDIO, Ok(m)) => match m {
+                    AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::AudioFocusResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+                    AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
+                    AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
+                        log::info!("Got channel open request for system audio: {:?}", m);
+                        let mut m2 = Wifi::ChannelOpenResponse::new();
+                        m2.set_status(Wifi::status::Enum::OK);
+                        let d: AndroidAutoFrame =
+                            AndroidAutoWifiMessage::ChannelOpenResponse(f.channel_id, m2).into();
+                        let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
+                        openssl_stream
+                            .get_mut()
+                            .plain
+                            .write_all(&d2)
+                            .map_err(|e| e.to_string())?;
+                    }
                 }
                 (ChannelId::INPUT, Ok(m)) => match m {
                     AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
