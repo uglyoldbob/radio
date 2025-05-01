@@ -46,36 +46,38 @@ message ServiceDiscoveryRequest
     required string device_brand = 5;
 }
 
-enum SensorType
+message SensorType
 {
-    SENSOR_NONE = 0;
-    LOCATION = 1;
-    COMPASS = 2;
-    CAR_SPEED = 3;
-    RPM = 4;
-    ODOMETER = 5;
-    FUEL_LEVEL = 6;
-    PARKING_BRAKE = 7;
-    GEAR = 8;
-    DIAGNOSTICS = 9;
-    NIGHT_DATA = 10;
-    ENVIRONMENT = 11;
-    HVAC = 12;
-    DRIVING_STATUS = 13;
-    DEAD_RECONING = 14;
-    PASSENGER = 15;
-    DOOR = 16;
-    LIGHT = 17;
-    TIRE = 18;
-    ACCEL = 19;
-    GYRO = 20;
-    GPS = 21;
+    enum Enum
+    {
+        NONE = 0;
+        LOCATION = 1;
+        COMPASS = 2;
+        CAR_SPEED = 3;
+        RPM = 4;
+        ODOMETER = 5;
+        FUEL_LEVEL = 6;
+        PARKING_BRAKE = 7;
+        GEAR = 8;
+        DIAGNOSTICS = 9;
+        NIGHT_DATA = 10;
+        ENVIRONMENT = 11;
+        HVAC = 12;
+        DRIVING_STATUS = 13;
+        DEAD_RECONING = 14;
+        PASSENGER = 15;
+        DOOR = 16;
+        LIGHT = 17;
+        TIRE = 18;
+        ACCEL = 19;
+        GYRO = 20;
+        GPS = 21;
+    }
 }
-
 
 message Sensor
 {
-    required SensorType type = 1;
+    required SensorType.Enum type = 1;
 }
 
 message SensorChannel
@@ -83,20 +85,26 @@ message SensorChannel
     repeated Sensor sensors = 1;
 }
 
-enum AVStreamType
+message AVStreamType
 {
-    STREAM_NONE = 0;
-    AUDIO = 1;
-    VIDEO = 3;
+    enum Enum
+    {
+        NONE = 0;
+        AUDIO = 1;
+        VIDEO = 3;
+    }
 }
 
-enum AudioType
+message AudioType
 {
-    AUDIO_NONE = 0;
-    SPEECH = 1;
-    SYSTEM = 2;
-    MEDIA = 3;
-    ALARM = 4;
+    enum Enum
+    {
+        NONE = 0;
+        SPEECH = 1;
+        SYSTEM = 2;
+        MEDIA = 3;
+        ALARM = 4;
+    }
 }
 
 message AudioConfig
@@ -106,29 +114,35 @@ message AudioConfig
     required uint32 channel_count = 3;
 }
 
-enum VideoResolution
+message VideoResolution
 {
-    RESOLUTION_NONE = 0;
-    _480p = 1;
-    _720p = 2;
-    _1080p = 3;
-    _1440p = 4;
-    _720p_p = 5;
-    _1080pp = 6;
-    _108s0p_p = 7;
+    enum Enum
+    {
+        NONE = 0;
+        _480p = 1;
+        _720p = 2;
+       _1080p = 3;
+       _1440p = 4;
+       _720p_p = 5;
+       _1080pp = 6;
+       _108s0p_p = 7;
+    }
 }
 
-enum VideoFPS
+message VideoFPS
 {
-    FPS_NONE = 0;
-    _30 = 1;
-    _60 = 2;
+    enum Enum
+    {
+        NONE = 0;
+        _30 = 1;
+        _60 = 2;
+    }
 }
 
 message VideoConfig
 {
-    required VideoResolution video_resolution = 1;
-    required VideoFPS video_fps = 2;
+    required VideoResolution.Enum video_resolution = 1;
+    required VideoFPS.Enum video_fps = 2;
     required uint32 margin_width = 3;
     required uint32 margin_height = 4;
     required uint32 dpi = 5;
@@ -137,8 +151,8 @@ message VideoConfig
 
 message AVChannel
 {
-    required AVStreamType stream_type = 1;
-    optional AudioType audio_type = 2;
+    required AVStreamType.Enum stream_type = 1;
+    optional AudioType.Enum audio_type = 2;
     repeated AudioConfig audio_configs = 3;
     repeated VideoConfig video_configs = 4;
     optional bool available_while_in_call = 5;
@@ -159,18 +173,21 @@ message InputChannel
 
 message AVInputChannel
 {
-    required AVStreamType stream_type = 1;
+    required AVStreamType.Enum stream_type = 1;
     required AudioConfig audio_config = 2;
     optional bool available_while_in_call = 3;
 }
 
-enum BluetoothPairingMethod
+message BluetoothPairingMethod
 {
-    PAIRING_NONE = 0;
-    UNK_1 = 1;
-    A2DP = 2;
-    UNK_3 = 3;
-    HFP = 4;
+    enum Enum
+    {
+        NONE = 0;
+        UNK_1 = 1;
+        A2DP = 2;
+        UNK_3 = 3;
+        HFP = 4;
+    }
 }
 
 message BluetoothChannel
@@ -179,11 +196,14 @@ message BluetoothChannel
     repeated BluetoothPairingMethod supported_pairing_methods = 2;
 }
 
-enum NavigationTurnType
+message NavigationTurnType
 {
-    UNKNOWN = 0;
-    IMAGE = 1;
-    ENUM = 2;
+    enum Enum
+    {
+        UNKNOWN = 0;
+        IMAGE = 1;
+        ENUM = 2;
+    }
 }
 
 message NavigationImageOptions
@@ -197,7 +217,7 @@ message NavigationImageOptions
 message NavigationChannel
 {
     required uint32 minimum_interval_ms = 1;
-    required NavigationTurnType type = 2;
+    required NavigationTurnType.Enum type = 2;
     required NavigationImageOptions image_options = 3;
 }
 

@@ -385,6 +385,7 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
     fn into(self) -> AndroidAutoFrame {
         match self {
             AndroidAutoWifiMessage::ServiceDiscoveryResponse(m) => {
+                log::error!("Service discovery response {}", m.is_initialized());
                 let mut data = m.write_to_bytes().unwrap();
                 let t = Wifi::ControlMessage::SERVICE_DISCOVERY_RESPONSE as u16;
                 let t = t.to_be_bytes();
@@ -607,8 +608,131 @@ impl std::io::Write for OpensslSocket {
     }
 }
 
-fn channels() -> Vec<ChannelDescriptor> {
-    Vec::new()
+fn channels(_config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
+    let mut c = Vec::new();
+
+    // system audio channel
+    {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(ChannelId::SYSTEM_AUDIO as u8 as u32);
+        let mut avchan = Wifi::AVChannel::new();
+        avchan.set_audio_type(Wifi::audio_type::Enum::SYSTEM);
+        avchan.set_available_while_in_call(true);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
+        let mut ac = Wifi::AudioConfig::new();
+        ac.set_bit_depth(32);
+        ac.set_channel_count(2);
+        ac.set_sample_rate(48000);
+        avchan.audio_configs.push(ac);
+        chan.av_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        c.push(chan);
+    }
+    // speech audio channel
+    {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(ChannelId::SPEECH_AUDIO as u8 as u32);
+        let mut avchan = Wifi::AVChannel::new();
+        avchan.set_audio_type(Wifi::audio_type::Enum::SPEECH);
+        avchan.set_available_while_in_call(true);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
+        let mut ac = Wifi::AudioConfig::new();
+        ac.set_bit_depth(32);
+        ac.set_channel_count(2);
+        ac.set_sample_rate(48000);
+        avchan.audio_configs.push(ac);
+        chan.av_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        c.push(chan);
+    }
+    // media audio channel
+    {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(ChannelId::MEDIA_AUDIO as u8 as u32);
+        let mut avchan = Wifi::AVChannel::new();
+        avchan.set_audio_type(Wifi::audio_type::Enum::MEDIA);
+        avchan.set_available_while_in_call(true);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
+        let mut ac = Wifi::AudioConfig::new();
+        ac.set_bit_depth(32);
+        ac.set_channel_count(2);
+        ac.set_sample_rate(48000);
+        avchan.audio_configs.push(ac);
+        chan.av_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        c.push(chan);
+    }
+    // sensor channel
+    {
+        let mut chan = ChannelDescriptor::new();
+        let mut sensor = Wifi::SensorChannel::new();
+        let mut sensors = Vec::new();
+        sensors.push({let mut sensor1 = Wifi::Sensor::new();
+            sensor1.set_type(Wifi::sensor_type::Enum::COMPASS);
+            sensor1});
+        for s in sensors {
+            sensor.sensors.push(s);
+        }
+        chan.sensor_channel.0.replace(Box::new(sensor));
+        chan.set_channel_id(ChannelId::SENSOR as u8 as u32);
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        c.push(chan);
+    }
+    // video channel
+    {
+        let mut chan = ChannelDescriptor::new();
+        let mut avchan = Wifi::AVChannel::new();
+        chan.set_channel_id(ChannelId::VIDEO as u8 as u32);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::VIDEO);
+        avchan.set_available_while_in_call(true);
+        avchan.set_audio_type(Wifi::audio_type::Enum::SYSTEM);
+        let mut aconfs = Vec::new();
+        aconfs.push({
+            let mut ac = Wifi::AudioConfig::new();
+            ac.set_bit_depth(32);
+            ac.set_channel_count(2);
+            ac.set_sample_rate(48000);
+            if !ac.is_initialized() {
+                panic!();
+            }
+            ac
+        });
+        for a in aconfs {
+            avchan.audio_configs.push(a);
+        }
+        let mut vconfs = Vec::new();
+        vconfs.push({
+            let mut vc = Wifi::VideoConfig::new();
+            vc.set_video_resolution(Wifi::video_resolution::Enum::_480p);
+            vc.set_video_fps(Wifi::video_fps::Enum::_30);
+            vc.set_dpi(300);
+            vc.set_additional_depth(0);
+            vc.set_margin_height(0);
+            vc.set_margin_width(0);
+            if !vc.is_initialized() {
+                panic!();
+            }
+            vc
+        });
+        for v in vconfs {
+            avchan.video_configs.push(v);
+        }
+
+        chan.av_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        c.push(chan);
+    }
+    c
 }
 
 impl AndriodAutoBluettothServer {
@@ -699,7 +823,7 @@ impl AndriodAutoBluettothServer {
                                 _ => {}
                             },
                             _ => {
-                                log::error!("Unknown packet {} {:x?}", ty, message);
+                                log::error!("Unknown bluetooth packet {} {:x?}", ty, message);
                                 break;
                             }
                         }
@@ -711,7 +835,7 @@ impl AndriodAutoBluettothServer {
         }
     }
 
-    fn handle_client(mut stream: std::net::TcpStream, addr: std::net::SocketAddr, config: AndroidAutoConfiguration) -> Result<(), String> {
+    fn handle_client(stream: std::net::TcpStream, addr: std::net::SocketAddr, config: AndroidAutoConfiguration) -> Result<(), String> {
         use std::io::Write;
 
         log::debug!("Got a connection on port {} from {:?}", config.network.port, addr);
@@ -767,12 +891,14 @@ impl AndriodAutoBluettothServer {
                         m.set_left_hand_drive_vehicle(config.unit.left_hand);
                         m.set_sw_build(config.unit.sw_build.clone());
                         m.set_sw_version(config.unit.sw_version.clone());
-                        for s in channels() {
+                        for s in channels(&config) {
+                            log::error!("Service channel: {:?}", s);
                             m.channels.push(s);
                         }
                         let m = AndroidAutoWifiMessage::ServiceDiscoveryResponse(m);
                         let d: AndroidAutoFrame = m.into();
                         let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
+                        log::error!("Full service discovery response: {:x?}", d2);
                         openssl_stream.get_mut().plain.write_all(&d2).map_err(|e| e.to_string())?;
                     }
                     AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
@@ -812,16 +938,14 @@ impl AndriodAutoBluettothServer {
 
     #[cfg(feature = "wireless")]
     pub fn wifi_listen(config: AndroidAutoConfiguration) -> Result<(), String> {
-        log::info!("Listening on port {} for android auto stuff", config.network.port);
+        log::debug!("Listening on port {} for android auto stuff", config.network.port);
         if let Ok(a) = std::net::TcpListener::bind(format!("0.0.0.0:{}", config.network.port)) {
             loop {
                 if let Ok((stream, addr)) = a.accept() {
                     let config2 = config.clone();
-                    std::thread::spawn(move || {
-                        if let Err(e) = Self::handle_client(stream, addr, config2) {
-                            log::error!("Disconnect from client: {:?}", e);
-                        }
-                    });
+                    if let Err(e) = Self::handle_client(stream, addr, config2) {
+                        log::error!("Disconnect from client: {:?}", e);
+                    }
                 }
             }
         } else {
