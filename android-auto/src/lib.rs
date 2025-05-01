@@ -49,8 +49,14 @@ pub struct HeadUnitInfo {
 }
 
 #[derive(Clone)]
+pub struct BluetoothInformation {
+    pub address: String,
+}
+
+#[derive(Clone)]
 pub struct AndroidAutoConfiguration {
     pub network: NetworkInformation,
+    pub bluetooth: BluetoothInformation,
     pub unit: HeadUnitInfo,
 }
 
@@ -706,7 +712,7 @@ impl std::io::Write for OpensslSocket {
     }
 }
 
-fn channels(_config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
+fn channels(config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
     let mut c = Vec::new();
 
     // av input channel
@@ -766,7 +772,7 @@ fn channels(_config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
         c.push(chan);
     }
     // media audio channel
-    {
+    if false {
         let mut chan = ChannelDescriptor::new();
         chan.set_channel_id(ChannelId::MEDIA_AUDIO as u8 as u32);
         let mut avchan = Wifi::AVChannel::new();
@@ -876,6 +882,18 @@ fn channels(_config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
         tc.set_width(800);
         ichan.touch_screen_config.0.replace(Box::new(tc));
         chan.input_channel.0.replace(Box::new(ichan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        c.push(chan);
+    }
+    //bluetooth channel
+    {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(ChannelId::BLUETOOTH as u8 as u32);
+        let mut bchan = Wifi::BluetoothChannel::new();
+        bchan.set_adapter_address(config.bluetooth.address.clone());
+        chan.bluetooth_channel.0.replace(Box::new(bchan));
         if !chan.is_initialized() {
             panic!("Channel not initialized?");
         }
@@ -1037,6 +1055,30 @@ impl AndriodAutoBluettothServer {
                 (_, Err(e)) => {
                     log::error!("Error receiving packet: {}", e);
                     break;
+                }
+                (ChannelId::BLUETOOTH, Ok(m)) => match m {
+                    AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::AudioFocusResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+                    AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
+                    AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
+                        log::info!("Got channel open request for bluetooth: {:?}", m);
+                        let mut m2 = Wifi::ChannelOpenResponse::new();
+                        m2.set_status(Wifi::status::Enum::OK);
+                        let d: AndroidAutoFrame =
+                            AndroidAutoWifiMessage::ChannelOpenResponse(f.channel_id, m2).into();
+                        let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
+                        openssl_stream
+                            .get_mut()
+                            .plain
+                            .write_all(&d2)
+                            .map_err(|e| e.to_string())?;
+                    }
                 }
                 (ChannelId::MEDIA_AUDIO, Ok(m)) => match m {
                     AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),

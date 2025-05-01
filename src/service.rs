@@ -422,6 +422,7 @@ async fn smain() {
         if let Some(network) = network {
             let config = android_auto::AndroidAutoConfiguration {
                 network: network.clone(),
+                bluetooth: android_auto::BluetoothInformation { address: "00:93:37:EF:B7:57".to_string(), },
                 unit: HeadUnitInfo {
                     name: "UobRadio".to_string(),
                     car_model: "Cherokee".to_string(),
