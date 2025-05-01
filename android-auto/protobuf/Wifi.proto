@@ -304,3 +304,23 @@ message AudioFocusResponse
 {
     required AudioFocusState.Enum audio_focus_state = 1;
 }
+
+message ChannelOpenRequest
+{
+    required int32 priority = 1;
+    required int32 channel_id = 2;
+}
+
+message Status
+{
+    enum Enum
+    {
+        OK = 0;
+        FAIL = 1;
+    }
+}
+
+message ChannelOpenResponse
+{
+    required Status.Enum status = 1;
+}
