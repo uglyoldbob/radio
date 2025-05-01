@@ -267,3 +267,40 @@ message ServiceDiscoveryResponse
     required bool can_play_native_media_during_vr = 11;
     optional bool hide_clock = 12;
 }
+
+message AudioFocusType
+{
+    enum Enum
+    {
+        NONE = 0;
+        GAIN = 1;
+        GAIN_TRANSIENT = 2;
+        GAIN_NAVI = 3;
+        RELEASE = 4;
+    }
+}
+
+message AudioFocusRequest
+{
+    required AudioFocusType.Enum audio_focus_type = 1;
+}
+
+message AudioFocusState
+{
+    enum Enum
+    {
+        NONE = 0;
+        GAIN = 1;
+        GAIN_TRANSIENT = 2;
+        LOSS = 3;
+        LOSS_TRANSIENT_CAN_DUCK = 4;
+        LOSS_TRANSIENT = 5;
+        GAIN_MEDIA_ONLY = 6;
+        GAIN_TRANSIENT_GUIDANCE_ONLY = 7;
+    }
+}
+
+message AudioFocusResponse
+{
+    required AudioFocusState.Enum audio_focus_state = 1;
+}
