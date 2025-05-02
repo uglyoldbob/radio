@@ -145,9 +145,9 @@ bitfield::bitfield! {
     u8;
     /// True indicates the frame is encrypted
     get_encryption, set_encryption: 3;
-    from into FrameHeaderType, get_frame_type, set_frame_type: 2, 0;
+    from into FrameHeaderType, get_frame_type, set_frame_type: 1, 0;
     /// True when frame is for control, false when specific
-    get_control, set_control: 4;
+    get_control, set_control: 2;
 }
 
 /// Represents the header of a frame sent to the android auto client
@@ -238,13 +238,12 @@ impl AndroidAutoFrame {
     fn build_vec(&self, stream: Option<&mut openssl::ssl::SslStream<OpensslSocket>>) -> Vec<u8> {
         let mut buf = Vec::new();
         self.header.add_to(&mut buf);
+        log::error!("Sending frame {:?} {:x?} {:x?}", self.header, buf, self.data);
         if self.header.frame.get_encryption() {
             if let Some(stream) = stream {
-                log::error!("Pre-encryption data: {} {:x?}", self.data.len(), self.data);
                 stream.ssl_write(&self.data).unwrap();
                 let mut data = Vec::with_capacity(self.data.len());
                 stream.get_mut().get_tx_data(&mut data);
-                log::error!("Post-encryption data: {} {:x?}", data.len(), data);
                 let mut p = (data.len() as u16).to_be_bytes().to_vec();
                 buf.append(&mut p);
                 buf.append(&mut data);
@@ -306,15 +305,14 @@ impl AndroidAutoFrameReceiver {
         &mut self,
         header: &FrameHeader,
         stream: &mut openssl::ssl::SslStream<OpensslSocket>,
-    ) -> Result<Option<AndroidAutoFrame>, String> {
+    ) -> Result<Option<AndroidAutoFrame>, std::io::Error> {
         use std::io::Read;
         if self.len.is_none() {
             let mut p = [0u8; 2];
             stream
                 .get_mut()
                 .plain
-                .read_exact(&mut p)
-                .map_err(|e| e.to_string())?;
+                .read_exact(&mut p)?;
             let len = u16::from_be_bytes(p);
             self.data = vec![0; len as usize];
             self.len.replace(len);
@@ -323,12 +321,14 @@ impl AndroidAutoFrameReceiver {
             stream
                 .get_mut()
                 .plain
-                .read_exact(&mut self.data[0..*len as usize])
-                .map_err(|e| e.to_string())?;
+                .read_exact(&mut self.data[0..*len as usize])?;
             let data = if header.frame.get_encryption() {
                 stream.get_mut().relay_data(&self.data);
                 let mut data = vec![0; *len as usize];
-                stream.ssl_read(&mut data).map_err(|e| e.to_string())?;
+                stream.ssl_read(&mut data).map_err(|e| {
+                    let e2 = e.to_string();
+                    std::io::Error::new(std::io::ErrorKind::Other, e2)
+                })?;
                 data
             } else {
                 self.data.clone()
@@ -487,7 +487,6 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
             AndroidAutoWifiMessage::PingRequest => {
                 let mut m = Wifi::PingRequest::new();
                 m.set_timestamp(42);
-                log::error!("Ping request {}", m.is_initialized());
                 let mut data = m.write_to_bytes().unwrap();
                 let t = Wifi::ControlMessage::PING_REQUEST as u16;
                 let t = t.to_be_bytes();
@@ -571,7 +570,7 @@ impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
                 AndroidAutoFrame {
                     header: FrameHeader {
                         channel_id: ChannelId::CONTROL,
-                        frame: FrameHeaderContents::new(false, FrameHeaderType::Single, true),
+                        frame: FrameHeaderContents::new(false, FrameHeaderType::Single, false),
                     },
                     data: m,
                 }
@@ -713,11 +712,9 @@ impl OpensslSocket {
 
 impl std::io::Read for OpensslSocket {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        log::info!("Reading from openssl socket, len: {}", buf.len());
         if self.recvd.len() < buf.len() {
             match self.receive_frame() {
                 Ok(m) => {
-                    log::info!("SSL GOT FRAME {:?}", m);
                     match m {
                         AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
                         AndroidAutoWifiMessage::PingRequest => unimplemented!(),
@@ -760,10 +757,8 @@ impl std::io::Write for OpensslSocket {
             let m = AndroidAutoWifiMessage::SslHandshake(buf.to_vec());
             let d: AndroidAutoFrame = m.into();
             let d2: Vec<u8> = d.build_vec(None);
-            log::info!("Writing to openssl socket: {:x?}", d2);
             self.plain.write_all(&d2)?;
         } else {
-            log::info!("Writing {} bytes to ssl buffer", buf.len());
             for b in buf {
                 self.send.push_back(*b);
             }
@@ -1158,11 +1153,55 @@ impl AndriodAutoBluettothServer {
             };
             let f2 = if let Some(f) = f {
                 log::info!("Channel id for frame is {:?}", f.channel_id);
+                log::info!("Complete frame header is {:x?}", f);
                 let mut fr2 = AndroidAutoFrameReceiver::new();
                 let f2 = loop {
                     match fr2.read(&f, &mut openssl_stream) {
                         Ok(Some(f2)) => break f2,
-                        Err(e) => log::error!("Error reading frame: {}", e),
+                        Err(e) => {
+                            log::error!("Error reading frame header: {} {}", e.kind(), e);
+                            match e.kind() {
+                                std::io::ErrorKind::NotFound => todo!(),
+                                std::io::ErrorKind::PermissionDenied => todo!(),
+                                std::io::ErrorKind::ConnectionRefused => todo!(),
+                                std::io::ErrorKind::ConnectionReset => todo!(),
+                                std::io::ErrorKind::HostUnreachable => todo!(),
+                                std::io::ErrorKind::NetworkUnreachable => todo!(),
+                                std::io::ErrorKind::ConnectionAborted => todo!(),
+                                std::io::ErrorKind::NotConnected => todo!(),
+                                std::io::ErrorKind::AddrInUse => todo!(),
+                                std::io::ErrorKind::AddrNotAvailable => todo!(),
+                                std::io::ErrorKind::NetworkDown => todo!(),
+                                std::io::ErrorKind::BrokenPipe => todo!(),
+                                std::io::ErrorKind::AlreadyExists => todo!(),
+                                std::io::ErrorKind::WouldBlock => {}
+                                std::io::ErrorKind::NotADirectory => todo!(),
+                                std::io::ErrorKind::IsADirectory => todo!(),
+                                std::io::ErrorKind::DirectoryNotEmpty => todo!(),
+                                std::io::ErrorKind::ReadOnlyFilesystem => todo!(),
+                                std::io::ErrorKind::StaleNetworkFileHandle => todo!(),
+                                std::io::ErrorKind::InvalidInput => todo!(),
+                                std::io::ErrorKind::InvalidData => todo!(),
+                                std::io::ErrorKind::TimedOut => todo!(),
+                                std::io::ErrorKind::WriteZero => todo!(),
+                                std::io::ErrorKind::StorageFull => todo!(),
+                                std::io::ErrorKind::NotSeekable => todo!(),
+                                std::io::ErrorKind::QuotaExceeded => todo!(),
+                                std::io::ErrorKind::FileTooLarge => todo!(),
+                                std::io::ErrorKind::ResourceBusy => todo!(),
+                                std::io::ErrorKind::ExecutableFileBusy => todo!(),
+                                std::io::ErrorKind::Deadlock => todo!(),
+                                std::io::ErrorKind::CrossesDevices => todo!(),
+                                std::io::ErrorKind::TooManyLinks => todo!(),
+                                std::io::ErrorKind::ArgumentListTooLong => todo!(),
+                                std::io::ErrorKind::Interrupted => todo!(),
+                                std::io::ErrorKind::Unsupported => todo!(),
+                                std::io::ErrorKind::UnexpectedEof => todo!(),
+                                std::io::ErrorKind::OutOfMemory => todo!(),
+                                std::io::ErrorKind::Other => todo!(),
+                                _ => return Err("Unknown error reading frame header".to_string()),
+                            }
+                        }
                         _ => {}
                     }
                 };
@@ -1172,6 +1211,7 @@ impl AndriodAutoBluettothServer {
             };
             if let Some(f) = f {
                 if let Some(f2) = f2 {
+                    log::info!("First 2 bytes of frame data: {:x?}", &f2.data[0..2]);
                     let message: Result<AndroidAutoWifiMessage, String> = f2.try_into();
                     match (f.channel_id, message) {
                         (_, Err(e)) => {
