@@ -361,6 +361,7 @@ enum AndroidAutoWifiMessage {
     ChannelOpenResponse(ChannelId, Wifi::ChannelOpenResponse),
     PingRequest(Wifi::PingRequest),
     PingResponse(Wifi::PingResponse),
+    SpecificMessage(Vec<u8>),
 }
 
 #[cfg(feature = "wireless")]
@@ -370,119 +371,124 @@ impl TryFrom<AndroidAutoFrame> for (ChannelId, AndroidAutoWifiMessage) {
         let mut ty = [0u8; 2];
         ty.copy_from_slice(&value.data[0..2]);
         let ty = u16::from_be_bytes(ty);
-        let w = Wifi::ControlMessage::from_i32(ty as i32);
-        if let Some(m) = w {
-            let v = match m {
-                Wifi::ControlMessage::VERSION_REQUEST => unimplemented!(),
-                Wifi::ControlMessage::AUTH_COMPLETE => unimplemented!(),
-                Wifi::ControlMessage::MESSAGE_NONE => unimplemented!(),
-                Wifi::ControlMessage::SERVICE_DISCOVERY_RESPONSE => unimplemented!(),
-                Wifi::ControlMessage::CHANNEL_OPEN_RESPONSE => unimplemented!(),
-                Wifi::ControlMessage::PING_REQUEST => {
-                    let mut bytes = value
-                        .data
-                        .clone()
-                        .into_iter()
-                        .rev()
-                        .skip_while(|&byte| byte == 0)
-                        .collect::<Vec<_>>();
-                    bytes.reverse();
-                    let m = Wifi::PingRequest::parse_from_bytes(&bytes[2..]);
-                    match m {
-                        Ok(m) => Ok(AndroidAutoWifiMessage::PingRequest(m)),
-                        Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
+        if value.header.channel_id == ChannelId::CONTROL || value.header.frame.get_control() {
+            let w = Wifi::ControlMessage::from_i32(ty as i32);
+            if let Some(m) = w {
+                let v = match m {
+                    Wifi::ControlMessage::VERSION_REQUEST => unimplemented!(),
+                    Wifi::ControlMessage::AUTH_COMPLETE => unimplemented!(),
+                    Wifi::ControlMessage::MESSAGE_NONE => unimplemented!(),
+                    Wifi::ControlMessage::SERVICE_DISCOVERY_RESPONSE => unimplemented!(),
+                    Wifi::ControlMessage::CHANNEL_OPEN_RESPONSE => unimplemented!(),
+                    Wifi::ControlMessage::PING_REQUEST => {
+                        let mut bytes = value
+                            .data
+                            .clone()
+                            .into_iter()
+                            .rev()
+                            .skip_while(|&byte| byte == 0)
+                            .collect::<Vec<_>>();
+                        bytes.reverse();
+                        let m = Wifi::PingRequest::parse_from_bytes(&bytes[2..]);
+                        match m {
+                            Ok(m) => Ok(AndroidAutoWifiMessage::PingRequest(m)),
+                            Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
+                        }
                     }
-                }
-                Wifi::ControlMessage::NAVIGATION_FOCUS_REQUEST => unimplemented!(),
-                Wifi::ControlMessage::NAVIGATION_FOCUS_RESPONSE => unimplemented!(),
-                Wifi::ControlMessage::SHUTDOWN_REQUEST => unimplemented!(),
-                Wifi::ControlMessage::SHUTDOWN_RESPONSE => unimplemented!(),
-                Wifi::ControlMessage::VOICE_SESSION_REQUEST => unimplemented!(),
-                Wifi::ControlMessage::AUDIO_FOCUS_RESPONSE => unimplemented!(),
-                Wifi::ControlMessage::PING_RESPONSE => {
-                    let mut bytes = value
-                        .data
-                        .clone()
-                        .into_iter()
-                        .rev()
-                        .skip_while(|&byte| byte == 0)
-                        .collect::<Vec<_>>();
-                    bytes.reverse();
-                    let m = Wifi::PingResponse::parse_from_bytes(&bytes[2..]);
-                    match m {
-                        Ok(m) => Ok(AndroidAutoWifiMessage::PingResponse(m)),
-                        Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
+                    Wifi::ControlMessage::NAVIGATION_FOCUS_REQUEST => unimplemented!(),
+                    Wifi::ControlMessage::NAVIGATION_FOCUS_RESPONSE => unimplemented!(),
+                    Wifi::ControlMessage::SHUTDOWN_REQUEST => unimplemented!(),
+                    Wifi::ControlMessage::SHUTDOWN_RESPONSE => unimplemented!(),
+                    Wifi::ControlMessage::VOICE_SESSION_REQUEST => unimplemented!(),
+                    Wifi::ControlMessage::AUDIO_FOCUS_RESPONSE => unimplemented!(),
+                    Wifi::ControlMessage::PING_RESPONSE => {
+                        let mut bytes = value
+                            .data
+                            .clone()
+                            .into_iter()
+                            .rev()
+                            .skip_while(|&byte| byte == 0)
+                            .collect::<Vec<_>>();
+                        bytes.reverse();
+                        let m = Wifi::PingResponse::parse_from_bytes(&bytes[2..]);
+                        match m {
+                            Ok(m) => Ok(AndroidAutoWifiMessage::PingResponse(m)),
+                            Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
+                        }
                     }
-                }
-                Wifi::ControlMessage::AUDIO_FOCUS_REQUEST => {
-                    let mut bytes = value
-                        .data
-                        .clone()
-                        .into_iter()
-                        .rev()
-                        .skip_while(|&byte| byte == 0)
-                        .collect::<Vec<_>>();
-                    bytes.reverse();
-                    let m = Wifi::AudioFocusRequest::parse_from_bytes(&bytes[2..]);
-                    match m {
-                        Ok(m) => Ok(AndroidAutoWifiMessage::AudioFocusRequest(m)),
-                        Err(e) => Err(format!("Invalid audio focus request: {}", e.to_string())),
+                    Wifi::ControlMessage::AUDIO_FOCUS_REQUEST => {
+                        let mut bytes = value
+                            .data
+                            .clone()
+                            .into_iter()
+                            .rev()
+                            .skip_while(|&byte| byte == 0)
+                            .collect::<Vec<_>>();
+                        bytes.reverse();
+                        let m = Wifi::AudioFocusRequest::parse_from_bytes(&bytes[2..]);
+                        match m {
+                            Ok(m) => Ok(AndroidAutoWifiMessage::AudioFocusRequest(m)),
+                            Err(e) => Err(format!("Invalid audio focus request: {}", e.to_string())),
+                        }
                     }
-                }
-                Wifi::ControlMessage::VERSION_RESPONSE => {
-                    if value.data.len() == 8 {
-                        let major = u16::from_be_bytes([value.data[2], value.data[3]]);
-                        let minor = u16::from_be_bytes([value.data[4], value.data[5]]);
-                        let status = u16::from_be_bytes([value.data[6], value.data[7]]);
-                        Ok(AndroidAutoWifiMessage::VersionResponse {
-                            major,
-                            minor,
-                            status,
-                        })
-                    } else {
-                        Err("Invalid version response packet".to_string())
+                    Wifi::ControlMessage::VERSION_RESPONSE => {
+                        if value.data.len() == 8 {
+                            let major = u16::from_be_bytes([value.data[2], value.data[3]]);
+                            let minor = u16::from_be_bytes([value.data[4], value.data[5]]);
+                            let status = u16::from_be_bytes([value.data[6], value.data[7]]);
+                            Ok(AndroidAutoWifiMessage::VersionResponse {
+                                major,
+                                minor,
+                                status,
+                            })
+                        } else {
+                            Err("Invalid version response packet".to_string())
+                        }
                     }
-                }
-                Wifi::ControlMessage::SSL_HANDSHAKE => Ok(AndroidAutoWifiMessage::SslHandshake(
-                    value.data[2..].to_vec(),
-                )),
-                Wifi::ControlMessage::CHANNEL_OPEN_REQUEST => {
-                    let mut bytes = value
-                        .data
-                        .clone()
-                        .into_iter()
-                        .rev()
-                        .skip_while(|&byte| byte == 0)
-                        .collect::<Vec<_>>();
-                    bytes.reverse();
-                    let m = Wifi::ChannelOpenRequest::parse_from_bytes(&bytes[2..]);
-                    match m {
-                        Ok(m) => Ok(AndroidAutoWifiMessage::ChannelOpenRequest(m)),
-                        Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
+                    Wifi::ControlMessage::SSL_HANDSHAKE => Ok(AndroidAutoWifiMessage::SslHandshake(
+                        value.data[2..].to_vec(),
+                    )),
+                    Wifi::ControlMessage::CHANNEL_OPEN_REQUEST => {
+                        let mut bytes = value
+                            .data
+                            .clone()
+                            .into_iter()
+                            .rev()
+                            .skip_while(|&byte| byte == 0)
+                            .collect::<Vec<_>>();
+                        bytes.reverse();
+                        let m = Wifi::ChannelOpenRequest::parse_from_bytes(&bytes[2..]);
+                        match m {
+                            Ok(m) => Ok(AndroidAutoWifiMessage::ChannelOpenRequest(m)),
+                            Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
+                        }
                     }
-                }
-                Wifi::ControlMessage::SERVICE_DISCOVERY_REQUEST => {
-                    let mut bytes = value
-                        .data
-                        .clone()
-                        .into_iter()
-                        .rev()
-                        .skip_while(|&byte| byte == 0)
-                        .collect::<Vec<_>>();
-                    bytes.reverse();
-                    let m = Wifi::ServiceDiscoveryRequest::parse_from_bytes(&bytes[2..]);
-                    match m {
-                        Ok(m) => Ok(AndroidAutoWifiMessage::ServiceDiscoveryRequest(m)),
-                        Err(e) => Err(format!(
-                            "Invalid service discovery request: {}",
-                            e.to_string()
-                        )),
+                    Wifi::ControlMessage::SERVICE_DISCOVERY_REQUEST => {
+                        let mut bytes = value
+                            .data
+                            .clone()
+                            .into_iter()
+                            .rev()
+                            .skip_while(|&byte| byte == 0)
+                            .collect::<Vec<_>>();
+                        bytes.reverse();
+                        let m = Wifi::ServiceDiscoveryRequest::parse_from_bytes(&bytes[2..]);
+                        match m {
+                            Ok(m) => Ok(AndroidAutoWifiMessage::ServiceDiscoveryRequest(m)),
+                            Err(e) => Err(format!(
+                                "Invalid service discovery request: {}",
+                                e.to_string()
+                            )),
+                        }
                     }
-                }
-            };
-            Ok((value.header.channel_id, v?))
-        } else {
-            Err(format!("Unknown packet type 0x{:x}", ty))
+                };
+                Ok((value.header.channel_id, v?))
+            } else {
+                Err(format!("Unknown packet type 0x{:x}", ty))
+            }
+        }
+        else {
+            Err(format!("Unhandled specific message for channel {:?} {:x?}", value.header.channel_id, &value.data[2..]))
         }
     }
 }
@@ -491,6 +497,7 @@ impl TryFrom<AndroidAutoFrame> for (ChannelId, AndroidAutoWifiMessage) {
 impl Into<AndroidAutoFrame> for AndroidAutoWifiMessage {
     fn into(self) -> AndroidAutoFrame {
         match self {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(m) => {
                 let mut data = m.write_to_bytes().unwrap();
@@ -721,6 +728,7 @@ impl std::io::Read for OpensslSocket {
         if self.recvd.len() < buf.len() {
             match self.receive_frame() {
                 Ok((chan, m)) => match m {
+                    AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
                     AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
                     AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
                     AndroidAutoWifiMessage::ChannelOpenRequest(_) => unimplemented!(),
@@ -994,6 +1002,7 @@ impl ChannelHandlerTrait for InputChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1036,6 +1045,7 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1078,6 +1088,7 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1120,6 +1131,7 @@ impl ChannelHandlerTrait for NavigationChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1162,6 +1174,7 @@ impl ChannelHandlerTrait for VideoChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1204,6 +1217,7 @@ impl ChannelHandlerTrait for SensorChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1246,6 +1260,7 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1288,6 +1303,7 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1330,6 +1346,7 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1372,6 +1389,7 @@ impl ChannelHandlerTrait for BluetoothChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => todo!("{:x?}", m),
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
@@ -1413,6 +1431,9 @@ impl ChannelHandlerTrait for ControlChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
+            AndroidAutoWifiMessage::SpecificMessage(m) => {
+                todo!("{:x?}", m);
+            }
             AndroidAutoWifiMessage::PingResponse(_) => {
                 *skip_ping = true;
             }
@@ -1810,6 +1831,8 @@ impl AndriodAutoBluettothServer {
                     } else {
                         panic!("Unknown channel id: {:?}", chan);
                     }
+                } else {
+                    panic!("Error parsing frame: {:?}", thing.err());
                 }
             }
             if !skip_ping && !openssl_stream.get_ref().handshake {
