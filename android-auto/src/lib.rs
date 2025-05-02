@@ -238,7 +238,12 @@ impl AndroidAutoFrame {
     fn build_vec(&self, stream: Option<&mut openssl::ssl::SslStream<OpensslSocket>>) -> Vec<u8> {
         let mut buf = Vec::new();
         self.header.add_to(&mut buf);
-        log::error!("Sending frame {:?} {:x?} {:x?}", self.header, buf, self.data);
+        log::error!(
+            "Sending frame {:?} {:x?} {:x?}",
+            self.header,
+            buf,
+            self.data
+        );
         if self.header.frame.get_encryption() {
             if let Some(stream) = stream {
                 stream.ssl_write(&self.data).unwrap();
@@ -309,10 +314,7 @@ impl AndroidAutoFrameReceiver {
         use std::io::Read;
         if self.len.is_none() {
             let mut p = [0u8; 2];
-            stream
-                .get_mut()
-                .plain
-                .read_exact(&mut p)?;
+            stream.get_mut().plain.read_exact(&mut p)?;
             let len = u16::from_be_bytes(p);
             self.data = vec![0; len as usize];
             self.len.replace(len);
@@ -388,12 +390,9 @@ impl TryFrom<AndroidAutoFrame> for (ChannelId, AndroidAutoWifiMessage) {
                     let m = Wifi::PingRequest::parse_from_bytes(&bytes[2..]);
                     match m {
                         Ok(m) => Ok(AndroidAutoWifiMessage::PingRequest(m)),
-                        Err(e) => Err(format!(
-                            "Invalid channel open request: {}",
-                            e.to_string()
-                        )),
+                        Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
                     }
-                },
+                }
                 Wifi::ControlMessage::NAVIGATION_FOCUS_REQUEST => unimplemented!(),
                 Wifi::ControlMessage::NAVIGATION_FOCUS_RESPONSE => unimplemented!(),
                 Wifi::ControlMessage::SHUTDOWN_REQUEST => unimplemented!(),
@@ -412,10 +411,7 @@ impl TryFrom<AndroidAutoFrame> for (ChannelId, AndroidAutoWifiMessage) {
                     let m = Wifi::PingResponse::parse_from_bytes(&bytes[2..]);
                     match m {
                         Ok(m) => Ok(AndroidAutoWifiMessage::PingResponse(m)),
-                        Err(e) => Err(format!(
-                            "Invalid channel open request: {}",
-                            e.to_string()
-                        )),
+                        Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
                     }
                 }
                 Wifi::ControlMessage::AUDIO_FOCUS_REQUEST => {
@@ -447,11 +443,9 @@ impl TryFrom<AndroidAutoFrame> for (ChannelId, AndroidAutoWifiMessage) {
                         Err("Invalid version response packet".to_string())
                     }
                 }
-                Wifi::ControlMessage::SSL_HANDSHAKE => {
-                    Ok(AndroidAutoWifiMessage::SslHandshake(
-                        value.data[2..].to_vec(),
-                    ))
-                }
+                Wifi::ControlMessage::SSL_HANDSHAKE => Ok(AndroidAutoWifiMessage::SslHandshake(
+                    value.data[2..].to_vec(),
+                )),
                 Wifi::ControlMessage::CHANNEL_OPEN_REQUEST => {
                     let mut bytes = value
                         .data
@@ -464,10 +458,7 @@ impl TryFrom<AndroidAutoFrame> for (ChannelId, AndroidAutoWifiMessage) {
                     let m = Wifi::ChannelOpenRequest::parse_from_bytes(&bytes[2..]);
                     match m {
                         Ok(m) => Ok(AndroidAutoWifiMessage::ChannelOpenRequest(m)),
-                        Err(e) => Err(format!(
-                            "Invalid channel open request: {}",
-                            e.to_string()
-                        )),
+                        Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
                     }
                 }
                 Wifi::ControlMessage::SERVICE_DISCOVERY_REQUEST => {
@@ -490,8 +481,7 @@ impl TryFrom<AndroidAutoFrame> for (ChannelId, AndroidAutoWifiMessage) {
                 }
             };
             Ok((value.header.channel_id, v?))
-        }
-        else {
+        } else {
             Err(format!("Unknown packet type 0x{:x}", ty))
         }
     }
@@ -730,30 +720,28 @@ impl std::io::Read for OpensslSocket {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.recvd.len() < buf.len() {
             match self.receive_frame() {
-                Ok((chan, m)) => {
-                    match m {
-                        AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::ChannelOpenRequest(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
-                        AndroidAutoWifiMessage::AudioFocusResponse(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-                        AndroidAutoWifiMessage::VersionResponse {
-                            major: _,
-                            minor: _,
-                            status: _,
-                        } => unimplemented!(),
-                        AndroidAutoWifiMessage::SslHandshake(items) => {
-                            for i in items {
-                                self.recvd.push_back(i);
-                            }
+                Ok((chan, m)) => match m {
+                    AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ChannelOpenRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
+                    AndroidAutoWifiMessage::AudioFocusResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
+                    AndroidAutoWifiMessage::VersionResponse {
+                        major: _,
+                        minor: _,
+                        status: _,
+                    } => unimplemented!(),
+                    AndroidAutoWifiMessage::SslHandshake(items) => {
+                        for i in items {
+                            self.recvd.push_back(i);
                         }
                     }
-                }
+                },
                 Err(e) => {
                     return Err(std::io::Error::other(e));
                 }
@@ -969,7 +957,9 @@ fn channels(config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
         let mut bchan = Wifi::BluetoothChannel::new();
         bchan.set_adapter_address(config.bluetooth.address.clone());
         let meth = Wifi::bluetooth_pairing_method::Enum::HFP;
-        bchan.supported_pairing_methods.push(EnumOrUnknown::new(meth));
+        bchan
+            .supported_pairing_methods
+            .push(EnumOrUnknown::new(meth));
         chan.bluetooth_channel.0.replace(Box::new(bchan));
         if !chan.is_initialized() {
             panic!("Channel not initialized?");
@@ -981,13 +971,27 @@ fn channels(config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
 
 #[enum_dispatch::enum_dispatch]
 trait ChannelHandlerTrait {
-    fn receive_data(&mut self, channel: ChannelId, msg: &AndroidAutoWifiMessage, openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>, config: &AndroidAutoConfiguration,) -> Result<(), std::io::Error>;
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error>;
 }
 
 struct InputChannelHandler {}
 
 impl ChannelHandlerTrait for InputChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -999,7 +1003,11 @@ impl ChannelHandlerTrait for InputChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for input: {:?}", m);
@@ -1008,10 +1016,7 @@ impl ChannelHandlerTrait for InputChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1021,7 +1026,14 @@ impl ChannelHandlerTrait for InputChannelHandler {
 struct MediaAudioChannelHandler {}
 
 impl ChannelHandlerTrait for MediaAudioChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1033,7 +1045,11 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for media audio: {:?}", m);
@@ -1042,10 +1058,7 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1055,7 +1068,14 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
 struct MediaStatusChannelHandler {}
 
 impl ChannelHandlerTrait for MediaStatusChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1067,7 +1087,11 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for media status: {:?}", m);
@@ -1076,10 +1100,7 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1089,7 +1110,14 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
 struct NavigationChannelHandler {}
 
 impl ChannelHandlerTrait for NavigationChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1101,7 +1129,11 @@ impl ChannelHandlerTrait for NavigationChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for navigation: {:?}", m);
@@ -1110,10 +1142,7 @@ impl ChannelHandlerTrait for NavigationChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1123,7 +1152,14 @@ impl ChannelHandlerTrait for NavigationChannelHandler {
 struct VideoChannelHandler {}
 
 impl ChannelHandlerTrait for VideoChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1135,7 +1171,11 @@ impl ChannelHandlerTrait for VideoChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for video: {:?}", m);
@@ -1144,10 +1184,7 @@ impl ChannelHandlerTrait for VideoChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1157,7 +1194,14 @@ impl ChannelHandlerTrait for VideoChannelHandler {
 struct SensorChannelHandler {}
 
 impl ChannelHandlerTrait for SensorChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1169,7 +1213,11 @@ impl ChannelHandlerTrait for SensorChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for sensor: {:?}", m);
@@ -1178,10 +1226,7 @@ impl ChannelHandlerTrait for SensorChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1191,7 +1236,14 @@ impl ChannelHandlerTrait for SensorChannelHandler {
 struct SpeechAudioChannelHandler {}
 
 impl ChannelHandlerTrait for SpeechAudioChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1203,7 +1255,11 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for speech audio: {:?}", m);
@@ -1212,10 +1268,7 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1225,7 +1278,14 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
 struct SystemAudioChannelHandler {}
 
 impl ChannelHandlerTrait for SystemAudioChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1237,7 +1297,11 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for system audio: {:?}", m);
@@ -1246,10 +1310,7 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1259,7 +1320,14 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
 struct AvInputChannelHandler {}
 
 impl ChannelHandlerTrait for AvInputChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1271,7 +1339,11 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for av input: {:?}", m);
@@ -1280,10 +1352,7 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1292,9 +1361,15 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
 
 struct BluetoothChannelHandler {}
 
-
 impl ChannelHandlerTrait for BluetoothChannelHandler {
-    fn receive_data(&mut self,channel: ChannelId,msg: &AndroidAutoWifiMessage,openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,config:&AndroidAutoConfiguration,) -> Result<(),std::io::Error> {
+    fn receive_data(
+        &mut self,
+        channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        _skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
@@ -1306,7 +1381,11 @@ impl ChannelHandlerTrait for BluetoothChannelHandler {
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(_) => unimplemented!(),
             AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-            AndroidAutoWifiMessage::VersionResponse { major: _, minor: _, status: _ } => unimplemented!(),
+            AndroidAutoWifiMessage::VersionResponse {
+                major: _,
+                minor: _,
+                status: _,
+            } => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenRequest(m) => {
                 log::info!("Got channel open request for bluetooth: {:?}", m);
@@ -1315,23 +1394,27 @@ impl ChannelHandlerTrait for BluetoothChannelHandler {
                 let d: AndroidAutoFrame =
                     AndroidAutoWifiMessage::ChannelOpenResponse(channel, m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
     }
 }
-struct ControlChannelHandler { }
+struct ControlChannelHandler {}
 
 impl ChannelHandlerTrait for ControlChannelHandler {
-    fn receive_data(&mut self, _channel: ChannelId, msg: &AndroidAutoWifiMessage, openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>, config: &AndroidAutoConfiguration,) -> Result<(), std::io::Error> {
+    fn receive_data(
+        &mut self,
+        _channel: ChannelId,
+        msg: &AndroidAutoWifiMessage,
+        skip_ping: &mut bool,
+        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
+        config: &AndroidAutoConfiguration,
+    ) -> Result<(), std::io::Error> {
         use std::io::Write;
         match msg {
             AndroidAutoWifiMessage::PingResponse(_) => {
-                //skip_ping = true;
+                *skip_ping = true;
             }
             AndroidAutoWifiMessage::PingRequest(_) => unimplemented!(),
             AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
@@ -1341,12 +1424,8 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                 let mut m2 = Wifi::AudioFocusResponse::new();
                 let s = if m.has_audio_focus_type() {
                     match m.audio_focus_type() {
-                        Wifi::audio_focus_type::Enum::NONE => {
-                            Wifi::audio_focus_state::Enum::NONE
-                        }
-                        Wifi::audio_focus_type::Enum::GAIN => {
-                            Wifi::audio_focus_state::Enum::GAIN
-                        }
+                        Wifi::audio_focus_type::Enum::NONE => Wifi::audio_focus_state::Enum::NONE,
+                        Wifi::audio_focus_type::Enum::GAIN => Wifi::audio_focus_state::Enum::GAIN,
                         Wifi::audio_focus_type::Enum::GAIN_TRANSIENT => {
                             Wifi::audio_focus_state::Enum::GAIN_TRANSIENT
                         }
@@ -1362,14 +1441,10 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                 };
                 log::error!("Audio focus state is {:?}", s);
                 m2.set_audio_focus_state(s);
-                let d: AndroidAutoFrame =
-                    AndroidAutoWifiMessage::AudioFocusResponse(m2).into();
+                let d: AndroidAutoFrame = AndroidAutoWifiMessage::AudioFocusResponse(m2).into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
                 log::info!("Sending audio focus response {:x?}", d2);
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
             AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
             AndroidAutoWifiMessage::ServiceDiscoveryRequest(m) => {
@@ -1391,16 +1466,35 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                 for s in channels(&config) {
                     m2.channels.push(s);
                 }
-                let m4d = vec![0x0a, 0x0f, 0x08, 0x07, 0x2a, 0x0b, 0x08, 0x01, 0x12, 0x07, 0x08, 0x80, 0x7d, 0x10, 0x10, 0x18, 0x01, 0x0a, 0x14, 0x08, 0x04, 0x1a, 0x10, 0x08, 0x01, 0x10, 0x03, 0x1a, 0x08, 0x08, 0x80, 0xf7, 0x02, 0x10, 0x10, 0x18, 0x02, 0x28, 0x01, 0x0a, 0x13, 0x08, 0x05, 0x1a, 0x0f, 0x08, 0x01, 0x10, 0x01, 0x1a, 0x07, 0x08, 0x80, 0x7d, 0x10, 0x10, 0x18, 0x01, 0x28, 0x01, 0x0a, 0x13, 0x08, 0x06, 0x1a, 0x0f, 0x08, 0x01, 0x10, 0x02, 0x1a, 0x07, 0x08, 0x80, 0x7d, 0x10, 0x10, 0x18, 0x01, 0x28, 0x01, 0x0a, 0x0c, 0x08, 0x02, 0x12, 0x08, 0x0a, 0x02, 0x08, 0x0d, 0x0a, 0x02, 0x08, 0x0a, 0x0a, 0x14, 0x08, 0x03, 0x1a, 0x10, 0x08, 0x03, 0x22, 0x0a, 0x08, 0x01, 0x10, 0x02, 0x18, 0x00, 0x20, 0x00, 0x28, 0x6f, 0x28, 0x01, 0x0a, 0x19, 0x08, 0x08, 0x32, 0x15, 0x0a, 0x11, 0x30, 0x30, 0x3a, 0x39, 0x33, 0x3a, 0x33, 0x37, 0x3a, 0x45, 0x46, 0x3a, 0x42, 0x37, 0x3a, 0x35, 0x37, 0x10, 0x04, 0x0a, 0x16, 0x08, 0x09, 0x42, 0x12, 0x08, 0xe8, 0x07, 0x10, 0x01, 0x1a, 0x0b, 0x08, 0x80, 0x02, 0x10, 0x80, 0x02, 0x18, 0x10, 0x20, 0xff, 0x01, 0x0a, 0x04, 0x08, 0x0a, 0x4a, 0x00, 0x0a, 0x0c, 0x08, 0x01, 0x22, 0x08, 0x12, 0x06, 0x08, 0x80, 0x0f, 0x10, 0xb8, 0x08, 0x12, 0x08, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x75, 0x74, 0x6f, 0x1a, 0x09, 0x55, 0x6e, 0x69, 0x76, 0x65, 0x72, 0x73, 0x61, 0x6c, 0x22, 0x04, 0x32, 0x30, 0x31, 0x38, 0x2a, 0x08, 0x32, 0x30, 0x31, 0x38, 0x30, 0x33, 0x30, 0x31, 0x30, 0x01, 0x3a, 0x03, 0x66, 0x31, 0x78, 0x42, 0x10, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x75, 0x74, 0x6f, 0x20, 0x41, 0x75, 0x74, 0x6f, 0x61, 0x70, 0x70, 0x4a, 0x01, 0x31, 0x52, 0x03, 0x31, 0x2e, 0x30, 0x58, 0x00, 0x60, 0x00];
+                let m4d = vec![
+                    0x0a, 0x0f, 0x08, 0x07, 0x2a, 0x0b, 0x08, 0x01, 0x12, 0x07, 0x08, 0x80, 0x7d,
+                    0x10, 0x10, 0x18, 0x01, 0x0a, 0x14, 0x08, 0x04, 0x1a, 0x10, 0x08, 0x01, 0x10,
+                    0x03, 0x1a, 0x08, 0x08, 0x80, 0xf7, 0x02, 0x10, 0x10, 0x18, 0x02, 0x28, 0x01,
+                    0x0a, 0x13, 0x08, 0x05, 0x1a, 0x0f, 0x08, 0x01, 0x10, 0x01, 0x1a, 0x07, 0x08,
+                    0x80, 0x7d, 0x10, 0x10, 0x18, 0x01, 0x28, 0x01, 0x0a, 0x13, 0x08, 0x06, 0x1a,
+                    0x0f, 0x08, 0x01, 0x10, 0x02, 0x1a, 0x07, 0x08, 0x80, 0x7d, 0x10, 0x10, 0x18,
+                    0x01, 0x28, 0x01, 0x0a, 0x0c, 0x08, 0x02, 0x12, 0x08, 0x0a, 0x02, 0x08, 0x0d,
+                    0x0a, 0x02, 0x08, 0x0a, 0x0a, 0x14, 0x08, 0x03, 0x1a, 0x10, 0x08, 0x03, 0x22,
+                    0x0a, 0x08, 0x01, 0x10, 0x02, 0x18, 0x00, 0x20, 0x00, 0x28, 0x6f, 0x28, 0x01,
+                    0x0a, 0x19, 0x08, 0x08, 0x32, 0x15, 0x0a, 0x11, 0x30, 0x30, 0x3a, 0x39, 0x33,
+                    0x3a, 0x33, 0x37, 0x3a, 0x45, 0x46, 0x3a, 0x42, 0x37, 0x3a, 0x35, 0x37, 0x10,
+                    0x04, 0x0a, 0x16, 0x08, 0x09, 0x42, 0x12, 0x08, 0xe8, 0x07, 0x10, 0x01, 0x1a,
+                    0x0b, 0x08, 0x80, 0x02, 0x10, 0x80, 0x02, 0x18, 0x10, 0x20, 0xff, 0x01, 0x0a,
+                    0x04, 0x08, 0x0a, 0x4a, 0x00, 0x0a, 0x0c, 0x08, 0x01, 0x22, 0x08, 0x12, 0x06,
+                    0x08, 0x80, 0x0f, 0x10, 0xb8, 0x08, 0x12, 0x08, 0x4f, 0x70, 0x65, 0x6e, 0x41,
+                    0x75, 0x74, 0x6f, 0x1a, 0x09, 0x55, 0x6e, 0x69, 0x76, 0x65, 0x72, 0x73, 0x61,
+                    0x6c, 0x22, 0x04, 0x32, 0x30, 0x31, 0x38, 0x2a, 0x08, 0x32, 0x30, 0x31, 0x38,
+                    0x30, 0x33, 0x30, 0x31, 0x30, 0x01, 0x3a, 0x03, 0x66, 0x31, 0x78, 0x42, 0x10,
+                    0x4f, 0x70, 0x65, 0x6e, 0x41, 0x75, 0x74, 0x6f, 0x20, 0x41, 0x75, 0x74, 0x6f,
+                    0x61, 0x70, 0x70, 0x4a, 0x01, 0x31, 0x52, 0x03, 0x31, 0x2e, 0x30, 0x58, 0x00,
+                    0x60, 0x00,
+                ];
                 let m4 = Wifi::ServiceDiscoveryResponse::parse_from_bytes(&m4d);
                 log::error!("Golden response is {:?}", m4);
                 let m3 = AndroidAutoWifiMessage::ServiceDiscoveryResponse(m2);
                 let d: AndroidAutoFrame = m3.into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
             AndroidAutoWifiMessage::SslHandshake(data) => {
@@ -1426,10 +1520,7 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                 let m = AndroidAutoWifiMessage::SslAuthComplete(true);
                 let d: AndroidAutoFrame = m.into();
                 let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                openssl_stream
-                    .get_mut()
-                    .plain
-                    .write_all(&d2)?;
+                openssl_stream.get_mut().plain.write_all(&d2)?;
             }
         }
         Ok(())
@@ -1555,10 +1646,12 @@ impl AndriodAutoBluettothServer {
         addr: std::net::SocketAddr,
         config: AndroidAutoConfiguration,
     ) -> Result<(), String> {
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(1))).map_err(|e| e.to_string())?;
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+            .map_err(|e| e.to_string())?;
         use std::io::Write;
 
-        let mut channel_handlers : BTreeMap<ChannelId, ChannelHandler> = BTreeMap::new();
+        let mut channel_handlers: BTreeMap<ChannelId, ChannelHandler> = BTreeMap::new();
         channel_handlers.insert(ChannelId::BLUETOOTH, BluetoothChannelHandler {}.into());
         channel_handlers.insert(ChannelId::CONTROL, ControlChannelHandler {}.into());
         channel_handlers.insert(ChannelId::AV_INPUT, AvInputChannelHandler {}.into());
@@ -1652,8 +1745,6 @@ impl AndriodAutoBluettothServer {
                 }
             };
             let f2 = if let Some(f) = f {
-                log::info!("Channel id for frame is {:?}", f.channel_id);
-                log::info!("Complete frame header is {:x?}", f);
                 let mut fr2 = AndroidAutoFrameReceiver::new();
                 let f2 = loop {
                     match fr2.read(&f, &mut openssl_stream) {
@@ -1710,13 +1801,13 @@ impl AndriodAutoBluettothServer {
                 None
             };
             if let Some(f2) = f2 {
-                log::info!("First 2 bytes of frame data: {:x?}", &f2.data[0..2]);
                 let thing: Result<(ChannelId, AndroidAutoWifiMessage), String> = f2.try_into();
                 if let Ok((chan, m)) = thing {
                     if let Some(handler) = channel_handlers.get_mut(&chan) {
-                        handler.receive_data(chan, &m, &mut openssl_stream, &config).map_err(|e| e.to_string())?;
-                    }
-                    else {
+                        handler
+                            .receive_data(chan, &m, &mut skip_ping, &mut openssl_stream, &config)
+                            .map_err(|e| e.to_string())?;
+                    } else {
                         panic!("Unknown channel id: {:?}", chan);
                     }
                 }
