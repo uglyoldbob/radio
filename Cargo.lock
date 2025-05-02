@@ -186,6 +186,7 @@ version = "0.1.0"
 dependencies = [
  "bitfield",
  "bluetooth-rust",
+ "enum_dispatch",
  "futures",
  "log",
  "openssl",
