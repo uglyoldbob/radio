@@ -309,7 +309,6 @@ impl AndroidAutoFrameReceiver {
         header: &FrameHeader,
         stream: &mut BufferedReader,
     ) -> Result<Option<AndroidAutoFrame>, String> {
-        use std::io::Read;
         if self.len.is_none() {
             let mut p = [0u8; 2];
             std::io::Read::read_exact(stream, &mut p).map_err(|e| e.to_string())?;
@@ -336,7 +335,6 @@ impl AndroidAutoFrameReceiver {
         stream: &mut openssl::ssl::SslStream<OpensslSocket>,
     ) -> Result<Option<AndroidAutoFrame>, std::io::Error> {
         if self.len.is_none() {
-            use std::io::Read;
             let mut p = [0u8; 2];
             stream.get_mut().r
                 .read_exact(&mut p).await?;
@@ -719,6 +717,9 @@ impl BufferedReader {
         let len = buf.len();
         while self.recvd.len() < buf.len() {
             let m = self.chan.recv().await.ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Failed to read".to_string()))?;
+            if !m.is_empty() {
+                log::error!("Recieved data in read_exact: {:x?}", m);
+            }
             for b in m {
                 self.recvd.push_back(b);
             }
@@ -759,7 +760,9 @@ impl BufferedSender {
         use tokio::io::AsyncWriteExt;
         log::error!("About to do async write");
         self.sender.write_all(buf).await?;
-        self.sender.flush().await
+        let r = self.sender.flush().await;
+        log::error!("finished doing async write");
+        r
     }
 }
 
@@ -823,45 +826,50 @@ impl std::io::Read for OpensslSocket {
     /// This function reads a frame from the underlying stream, looking for ssl handshake frames
     /// so that it can relay that to the caller.
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if self.openssl_r.len() < buf.len() {
-            log::error!("Waiting for an ssl frame");
-            match self.receive_frame() {
-                Ok(m) => {
-                    log::error!("Received frame {:x?}", m);
-                    match m {
-                        AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::PingRequest => unimplemented!(),
-                        AndroidAutoWifiMessage::ChannelOpenRequest(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
-                        AndroidAutoWifiMessage::AudioFocusResponse(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
-                        AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
-                        AndroidAutoWifiMessage::VersionResponse {
-                            major: _,
-                            minor: _,
-                            status: _,
-                        } => unimplemented!(),
-                        AndroidAutoWifiMessage::SslHandshake(items) => {
-                            for i in items {
-                                self.openssl_r.push_back(i);
+        if self.handshake {
+            if self.openssl_r.len() < buf.len() {
+                log::error!("Waiting for an ssl frame");
+                match self.receive_frame() {
+                    Ok(m) => {
+                        log::error!("Received frame {:x?}", m);
+                        match m {
+                            AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
+                            AndroidAutoWifiMessage::PingRequest => unimplemented!(),
+                            AndroidAutoWifiMessage::ChannelOpenRequest(_) => unimplemented!(),
+                            AndroidAutoWifiMessage::ChannelOpenResponse(_, _) => unimplemented!(),
+                            AndroidAutoWifiMessage::AudioFocusResponse(_) => unimplemented!(),
+                            AndroidAutoWifiMessage::AudioFocusRequest(_) => unimplemented!(),
+                            AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
+                            AndroidAutoWifiMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
+                            AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
+                            AndroidAutoWifiMessage::VersionRequest => unimplemented!(),
+                            AndroidAutoWifiMessage::VersionResponse {
+                                major: _,
+                                minor: _,
+                                status: _,
+                            } => unimplemented!(),
+                            AndroidAutoWifiMessage::SslHandshake(items) => {
+                                for i in items {
+                                    self.openssl_r.push_back(i);
+                                }
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    return Err(std::io::Error::other(e));
+                    Err(e) => {
+                        return Err(std::io::Error::other(e));
+                    }
                 }
             }
+            let len = buf.len();
+            log::error!("Received frame data {:x?}", self.openssl_r);
+            for b in buf {
+                *b = self.openssl_r.pop_front().unwrap();
+            }
+            Ok(len)
         }
-        let len = buf.len();
-        log::error!("Received frame data {:x?}", self.openssl_r);
-        for b in buf {
-            *b = self.openssl_r.pop_front().unwrap();
+        else {
+            self.r.read(buf)
         }
-        Ok(len)
     }
 }
 
@@ -1203,6 +1211,9 @@ impl AndriodAutoBluettothServer {
                 let mut a = vec![0; 512];
                 let l = r.read(&mut a).await.unwrap();
                 let b = a[0..l].to_vec();
+                if !b.is_empty() {
+                    log::error!("received data in special task: {:x?}", b);
+                }
                 channel.0.send(b).await.unwrap();
             }
         });
@@ -1719,6 +1730,7 @@ impl AndriodAutoBluettothServer {
                                         .map_err(|e| e.to_string())
                                         .expect("Failed to ssl connect?");
                                 });
+                                log::info!("Done with handshake");
                                 openssl_stream.get_mut().handshake = false;
                                 let m = AndroidAutoWifiMessage::SslAuthComplete(true);
                                 let d: AndroidAutoFrame = m.into();
@@ -1738,7 +1750,7 @@ impl AndriodAutoBluettothServer {
                     }
                 }
             }
-            if !skip_ping && !openssl_stream.get_ref().handshake {
+            if false & !skip_ping && !openssl_stream.get_ref().handshake {
                 let m = AndroidAutoWifiMessage::PingRequest;
                 let d: AndroidAutoFrame = m.into();
                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
