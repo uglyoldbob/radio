@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 
-use openssl::ssl::SslVerifyMode;
+use openssl::{envelope::Open, ssl::SslVerifyMode};
 
 mod cert;
 
+use tokio::{io::AsyncReadExt, task};
 use Wifi::ChannelDescriptor;
 use protobuf::{Enum, EnumOrUnknown, Message};
 
@@ -173,19 +174,16 @@ impl FrameHeaderReceiver {
     pub fn new() -> Self {
         Self { channel_id: None }
     }
-    pub fn read(
-        &mut self,
-        stream: &mut std::net::TcpStream,
-    ) -> Result<Option<FrameHeader>, std::io::Error> {
-        use std::io::Read;
+
+    pub async fn read_async(&mut self, stream: &mut BufferedReader) -> Result<Option<FrameHeader>, std::io::Error> {
         if self.channel_id.is_none() {
             let mut b = [0u8];
-            stream.read_exact(&mut b)?;
+            stream.read_exact(&mut b).await?;
             self.channel_id = ChannelId::try_from(b[0]).ok();
         }
         if let Some(channel_id) = &self.channel_id {
             let mut b = [0u8];
-            stream.read_exact(&mut b)?;
+            stream.read_exact(&mut b).await?;
             let mut a = FrameHeaderContents::new(false, FrameHeaderType::Single, false);
             a.0 = b[0];
             let fh = FrameHeader {
@@ -193,6 +191,35 @@ impl FrameHeaderReceiver {
                 frame: a,
             };
             return Ok(Some(fh));
+        }
+        Ok(None)
+    }
+
+    pub fn read_buffed(
+        &mut self,
+        stream: &mut BufferedReader,
+    ) -> Result<Option<FrameHeader>, std::io::Error> {
+        if self.channel_id.is_none() {
+            let mut b = [0u8];
+            log::error!("About to read buffed the channel id");
+            let l = std::io::Read::read(stream, &mut b)?;
+            if l == 1 {
+                self.channel_id = ChannelId::try_from(b[0]).ok();
+            }
+        }
+        if let Some(channel_id) = &self.channel_id {
+            let mut b = [0u8];
+            log::error!("About to read buffed the frame config");
+            let l = std::io::Read::read(stream, &mut b)?;
+            if l == 1 {
+                let mut a = FrameHeaderContents::new(false, FrameHeaderType::Single, false);
+                a.0 = b[0];
+                let fh = FrameHeader {
+                    channel_id: *channel_id,
+                    frame: a,
+                };
+                return Ok(Some(fh));
+            }
         }
         Ok(None)
     }
@@ -241,9 +268,12 @@ impl AndroidAutoFrame {
         log::error!("Sending frame {:?} {:x?} {:x?}", self.header, buf, self.data);
         if self.header.frame.get_encryption() {
             if let Some(stream) = stream {
+                log::error!("About to do ssl write with {:x?}", self.data);
                 stream.ssl_write(&self.data).unwrap();
                 let mut data = Vec::with_capacity(self.data.len());
+                log::error!("About to get ssl encrypted data");
                 stream.get_mut().get_tx_data(&mut data);
+                log::error!("Fetched ssl encrypted data {:x?}", data);
                 let mut p = (data.len() as u16).to_be_bytes().to_vec();
                 buf.append(&mut p);
                 buf.append(&mut data);
@@ -251,6 +281,7 @@ impl AndroidAutoFrame {
                 panic!("No ssl object when encryption was required");
             }
         } else {
+            log::error!("Writing data {:x?}", self.data);
             let mut data = self.data.clone();
             let mut p = (data.len() as u16).to_be_bytes().to_vec();
             buf.append(&mut p);
@@ -276,20 +307,18 @@ impl AndroidAutoFrameReceiver {
     fn read_plain(
         &mut self,
         header: &FrameHeader,
-        stream: &mut std::net::TcpStream,
+        stream: &mut BufferedReader,
     ) -> Result<Option<AndroidAutoFrame>, String> {
         use std::io::Read;
         if self.len.is_none() {
             let mut p = [0u8; 2];
-            stream.read_exact(&mut p).map_err(|e| e.to_string())?;
+            std::io::Read::read_exact(stream, &mut p).map_err(|e| e.to_string())?;
             let len = u16::from_be_bytes(p);
             self.data = vec![0; len as usize];
             self.len.replace(len);
         }
         if let Some(len) = &self.len {
-            stream
-                .read_exact(&mut self.data[0..*len as usize])
-                .map_err(|e| e.to_string())?;
+            std::io::Read::read_exact(stream, &mut self.data[0..*len as usize]).map_err(|e| e.to_string())?;
             log::info!("Got {} bytes of frame data", len - 2);
             let f = AndroidAutoFrame {
                 header: header.clone(),
@@ -301,18 +330,16 @@ impl AndroidAutoFrameReceiver {
         Ok(None)
     }
 
-    fn read(
+    async fn read(
         &mut self,
         header: &FrameHeader,
         stream: &mut openssl::ssl::SslStream<OpensslSocket>,
     ) -> Result<Option<AndroidAutoFrame>, std::io::Error> {
-        use std::io::Read;
         if self.len.is_none() {
+            use std::io::Read;
             let mut p = [0u8; 2];
-            stream
-                .get_mut()
-                .plain
-                .read_exact(&mut p)?;
+            stream.get_mut().r
+                .read_exact(&mut p).await?;
             let len = u16::from_be_bytes(p);
             self.data = vec![0; len as usize];
             self.len.replace(len);
@@ -320,8 +347,8 @@ impl AndroidAutoFrameReceiver {
         if let Some(len) = &self.len {
             stream
                 .get_mut()
-                .plain
-                .read_exact(&mut self.data[0..*len as usize])?;
+                .r
+                .read_exact(&mut self.data[0..*len as usize]).await?;
             let data = if header.frame.get_encryption() {
                 stream.get_mut().relay_data(&self.data);
                 let mut data = vec![0; *len as usize];
@@ -663,58 +690,144 @@ impl Into<Vec<u8>> for AndroidAutoMessage {
     }
 }
 
-#[derive(Debug)]
-struct OpensslSocket {
-    pub plain: std::net::TcpStream,
+struct BufferedReader {
+    chan: tokio::sync::mpsc::Receiver<Vec<u8>>,
     recvd: VecDeque<u8>,
-    send: VecDeque<u8>,
+}
+
+impl std::io::Read for BufferedReader {
+    /// This reads raw data from a stream
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        log::error!("Called std::io::read on bufferedreader");
+        let len = buf.len();
+        while self.recvd.len() < buf.len() {
+            let m = self.chan.blocking_recv().ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Failed to read".to_string()))?;
+            for b in m {
+                self.recvd.push_back(b);
+            }
+        }
+        for b in buf {
+            *b = self.recvd.pop_front().unwrap();
+        }
+        Ok(len)
+    }
+}
+
+impl BufferedReader {
+    async fn read_exact(&mut self, buf: &mut [u8]) -> Result<usize, std::io::Error> {
+        log::error!("Called async read_exact on bufferedreader");
+        let len = buf.len();
+        while self.recvd.len() < buf.len() {
+            let m = self.chan.recv().await.ok_or(std::io::Error::new(std::io::ErrorKind::Other, "Failed to read".to_string()))?;
+            for b in m {
+                self.recvd.push_back(b);
+            }
+        }
+        for b in buf {
+            *b = self.recvd.pop_front().unwrap();
+        }
+        Ok(len)
+    }
+}
+
+struct BufferedSender {
+    sender: tokio::net::tcp::OwnedWriteHalf,
+}
+
+impl std::io::Write for BufferedSender {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let len = buf.len();
+        let mut i = 0;
+        while i < buf.len() {
+            match self.sender.try_write(&buf[i..]) {
+                Ok(l) => {
+                    i += l;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(len)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl BufferedSender {
+    async fn write_all(&mut self, buf: &[u8]) -> Result<(), std::io::Error> {
+        use tokio::io::AsyncWriteExt;
+        log::error!("About to do async write");
+        self.sender.write_all(buf).await?;
+        self.sender.flush().await
+    }
+}
+
+struct OpensslSocket {
+    r: BufferedReader,
+    s: BufferedSender,
+    openssl_r: VecDeque<u8>,
+    openssl_s: VecDeque<u8>,
     handshake: bool,
 }
 
 impl OpensslSocket {
-    fn new(plain: std::net::TcpStream) -> Self {
-        Self {
-            plain,
+    fn new(stream: tokio::net::TcpStream, chan: tokio::sync::mpsc::Receiver<Vec<u8>>) -> (Self, tokio::net::tcp::OwnedReadHalf) {
+        let a = stream.into_split();
+        let s = Self {
+            r: BufferedReader { recvd: VecDeque::new(), chan, },
+            s: BufferedSender { sender: a.1, },
+            openssl_r: VecDeque::new(),
+            openssl_s: VecDeque::new(),
             handshake: true,
-            recvd: VecDeque::new(),
-            send: VecDeque::new(),
-        }
-    }
-
-    fn relay_data(&mut self, d: &[u8]) {
-        for b in d {
-            self.recvd.push_back(*b);
-        }
-    }
-
-    fn get_tx_data(&mut self, d: &mut Vec<u8>) {
-        while let Some(b) = self.send.pop_front() {
-            d.push(b);
-        }
+        };
+        (s, a.0)
     }
 
     fn receive_frame(&mut self) -> Result<AndroidAutoWifiMessage, String> {
         let mut fr = FrameHeaderReceiver::new();
+        log::error!("Waiting for frame header ssl");
         let f = loop {
-            if let Ok(Some(f)) = fr.read(&mut self.plain) {
+            let p = fr.read_buffed(&mut self.r);
+            if let Ok(Some(f)) = p {
                 break f;
             }
+            log::error!("Error receiving frame header {:?}", p.err());
+            std::thread::sleep(std::time::Duration::from_millis(500));
         };
+        log::error!("Waiting for frame data ssl");
         let mut fr2 = AndroidAutoFrameReceiver::new();
         let f2 = loop {
-            if let Ok(Some(f2)) = fr2.read_plain(&f, &mut self.plain) {
+            if let Ok(Some(f2)) = fr2.read_plain(&f, &mut self.r) {
                 break f2;
             }
         };
+        log::error!("Converting frame ssl");
         f2.try_into()
+    }
+
+    fn relay_data(&mut self, d: &[u8]) {
+        for b in d {
+            self.r.recvd.push_back(*b);
+        }
+    }
+
+    fn get_tx_data(&mut self, d: &mut Vec<u8>) {
+        for b in &self.openssl_s {
+            d.push(*b);
+        }
     }
 }
 
 impl std::io::Read for OpensslSocket {
+    /// This function reads a frame from the underlying stream, looking for ssl handshake frames
+    /// so that it can relay that to the caller.
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        if self.recvd.len() < buf.len() {
+        if self.openssl_r.len() < buf.len() {
+            log::error!("Waiting for an ssl frame");
             match self.receive_frame() {
                 Ok(m) => {
+                    log::error!("Received frame {:x?}", m);
                     match m {
                         AndroidAutoWifiMessage::PingResponse(_) => unimplemented!(),
                         AndroidAutoWifiMessage::PingRequest => unimplemented!(),
@@ -733,7 +846,7 @@ impl std::io::Read for OpensslSocket {
                         } => unimplemented!(),
                         AndroidAutoWifiMessage::SslHandshake(items) => {
                             for i in items {
-                                self.recvd.push_back(i);
+                                self.openssl_r.push_back(i);
                             }
                         }
                     }
@@ -744,30 +857,41 @@ impl std::io::Read for OpensslSocket {
             }
         }
         let len = buf.len();
+        log::error!("Received frame data {:x?}", self.openssl_r);
         for b in buf {
-            *b = self.recvd.pop_front().unwrap();
+            *b = self.openssl_r.pop_front().unwrap();
         }
         Ok(len)
     }
 }
 
 impl std::io::Write for OpensslSocket {
+    /// This function writes the given encrypted data into a frame to send out to the underlying stream
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.handshake {
             let m = AndroidAutoWifiMessage::SslHandshake(buf.to_vec());
             let d: AndroidAutoFrame = m.into();
             let d2: Vec<u8> = d.build_vec(None);
-            self.plain.write_all(&d2)?;
+            log::error!("About to write ssl frame {:x?}", d2);
+            let mut i = 0;
+            while i < buf.len() {
+                let l = std::io::Write::write(&mut self.s, &d2)?;
+                if l > 0 {
+                    i += l;
+                }
+            }
+            self.s.flush()?;
         } else {
             for b in buf {
-                self.send.push_back(*b);
+                self.openssl_s.push_back(*b);
             }
+            log::error!("Storing encrypted ssl output: {:x?}", buf);
         }
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.plain.flush()
+        Ok(())
     }
 }
 
@@ -1062,20 +1186,26 @@ impl AndriodAutoBluettothServer {
         }
     }
 
-    fn handle_client(
-        stream: std::net::TcpStream,
+    async fn handle_client(
+        stream: tokio::net::TcpStream,
         addr: std::net::SocketAddr,
         config: AndroidAutoConfiguration,
     ) -> Result<(), String> {
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(1))).map_err(|e| e.to_string())?;
-        use std::io::Write;
-
         log::debug!(
             "Got a connection on port {} from {:?}",
             config.network.port,
             addr
         );
-        let openssl_socket = OpensslSocket::new(stream);
+        let channel = tokio::sync::mpsc::channel(10);
+        let (openssl_socket, mut r) = OpensslSocket::new(stream, channel.1);
+        tokio::task::spawn(async move {
+            loop {
+                let mut a = vec![0; 512];
+                let l = r.read(&mut a).await.unwrap();
+                let b = a[0..l].to_vec();
+                channel.0.send(b).await.unwrap();
+            }
+        });
         let client_cert = openssl::x509::X509::from_pem(cert::CERTIFICATE.as_bytes())
             .expect("Failed to load client ssl certificate");
         let client_key =
@@ -1095,17 +1225,18 @@ impl AndriodAutoBluettothServer {
         let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
         openssl_stream
             .get_mut()
-            .plain
+            .s
             .write_all(&d2)
+            .await
             .map_err(|e| e.to_string())?;
+        log::error!("Sent initial packet");
         loop {
             let mut skip_ping = false;
             let mut fr = FrameHeaderReceiver::new();
             let f = loop {
-                match fr.read(&mut openssl_stream.get_mut().plain) {
+                match fr.read_async(&mut openssl_stream.get_mut().r).await {
                     Ok(Some(f)) => break Some(f),
                     Err(e) => {
-                        log::error!("Error reading frame header: {} {}", e.kind(), e);
                         match e.kind() {
                             std::io::ErrorKind::NotFound => todo!(),
                             std::io::ErrorKind::PermissionDenied => todo!(),
@@ -1120,7 +1251,7 @@ impl AndriodAutoBluettothServer {
                             std::io::ErrorKind::NetworkDown => todo!(),
                             std::io::ErrorKind::BrokenPipe => todo!(),
                             std::io::ErrorKind::AlreadyExists => todo!(),
-                            std::io::ErrorKind::WouldBlock => break None,
+                            std::io::ErrorKind::WouldBlock => {},
                             std::io::ErrorKind::NotADirectory => todo!(),
                             std::io::ErrorKind::IsADirectory => todo!(),
                             std::io::ErrorKind::DirectoryNotEmpty => todo!(),
@@ -1156,7 +1287,7 @@ impl AndriodAutoBluettothServer {
                 log::info!("Complete frame header is {:x?}", f);
                 let mut fr2 = AndroidAutoFrameReceiver::new();
                 let f2 = loop {
-                    match fr2.read(&f, &mut openssl_stream) {
+                    match fr2.read(&f, &mut openssl_stream).await {
                         Ok(Some(f2)) => break f2,
                         Err(e) => {
                             log::error!("Error reading frame header: {} {}", e.kind(), e);
@@ -1215,7 +1346,7 @@ impl AndriodAutoBluettothServer {
                     let message: Result<AndroidAutoWifiMessage, String> = f2.try_into();
                     match (f.channel_id, message) {
                         (_, Err(e)) => {
-                            log::error!("Error receiving packet: {}", e);
+                            log::error!("Error receiving frame: {}", e);
                             break;
                         }
                         (ChannelId::BLUETOOTH, Ok(m)) => match m {
@@ -1239,8 +1370,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1265,8 +1397,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1291,8 +1424,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1317,8 +1451,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1343,8 +1478,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1369,8 +1505,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1395,8 +1532,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1421,8 +1559,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1447,8 +1586,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1474,8 +1614,9 @@ impl AndriodAutoBluettothServer {
                                 log::info!("Sending av_input channel open response {:x?}", d2);
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         }
@@ -1518,8 +1659,9 @@ impl AndriodAutoBluettothServer {
                                 log::info!("Sending audio focus response {:x?}", d2);
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                             AndroidAutoWifiMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
@@ -1550,8 +1692,9 @@ impl AndriodAutoBluettothServer {
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                             AndroidAutoWifiMessage::SslAuthComplete(_) => unimplemented!(),
@@ -1570,18 +1713,21 @@ impl AndriodAutoBluettothServer {
                                     break;
                                 }
                                 log::info!("Android auto client version: {}.{}", major, minor);
-                                openssl_stream
-                                    .do_handshake()
-                                    .map_err(|e| e.to_string())
-                                    .expect("Failed to ssl connect?");
+                                task::block_in_place(|| {
+                                    openssl_stream
+                                        .do_handshake()
+                                        .map_err(|e| e.to_string())
+                                        .expect("Failed to ssl connect?");
+                                });
                                 openssl_stream.get_mut().handshake = false;
                                 let m = AndroidAutoWifiMessage::SslAuthComplete(true);
                                 let d: AndroidAutoFrame = m.into();
                                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                                 openssl_stream
                                     .get_mut()
-                                    .plain
+                                    .s
                                     .write_all(&d2)
+                                    .await
                                     .map_err(|e| e.to_string())?;
                             }
                         },
@@ -1598,8 +1744,9 @@ impl AndriodAutoBluettothServer {
                 let d2: Vec<u8> = d.build_vec(Some(&mut openssl_stream));
                 openssl_stream
                     .get_mut()
-                    .plain
+                    .s
                     .write_all(&d2)
+                    .await
                     .map_err(|e| e.to_string())?;
             }
         }
@@ -1608,16 +1755,16 @@ impl AndriodAutoBluettothServer {
     }
 
     #[cfg(feature = "wireless")]
-    pub fn wifi_listen(config: AndroidAutoConfiguration) -> Result<(), String> {
+    pub async fn wifi_listen(config: AndroidAutoConfiguration) -> Result<(), String> {
         log::debug!(
             "Listening on port {} for android auto stuff",
             config.network.port
         );
-        if let Ok(a) = std::net::TcpListener::bind(format!("0.0.0.0:{}", config.network.port)) {
+        if let Ok(a) = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.network.port)).await {
             loop {
-                if let Ok((stream, addr)) = a.accept() {
+                if let Ok((stream, addr)) = a.accept().await {
                     let config2 = config.clone();
-                    if let Err(e) = Self::handle_client(stream, addr, config2) {
+                    if let Err(e) = Self::handle_client(stream, addr, config2).await {
                         log::error!("Disconnect from client: {:?}", e);
                     }
                 }

@@ -42,7 +42,7 @@ impl BluetoothHandler {
     }
 
     async fn disable(&mut self) {
-        self.set_discoverable(false);
+        self.set_discoverable(false).await;
         for adapter in &self.adapters {
             adapter.set_powered(false).await.unwrap();
             adapter.set_pairable(false).await.unwrap();

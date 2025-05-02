@@ -439,9 +439,7 @@ async fn smain() {
             };
             let net2 = network.clone();
             tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
-            std::thread::spawn(move || android_auto::AndriodAutoBluettothServer::wifi_listen(
-                config,
-            ));
+            tasks.spawn(async move { android_auto::AndriodAutoBluettothServer::wifi_listen(config).await });
         }
     }
     tokio::select! {
