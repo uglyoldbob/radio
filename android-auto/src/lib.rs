@@ -1329,6 +1329,7 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
 
 enum SystemAudioMessage {
     Control(AndroidAutoControlMessage),
+    SetupRequest(Wifi::AVChannelSetupRequest),
 }
 
 impl TryFrom<&AndroidAutoFrame> for SystemAudioMessage {
@@ -1342,7 +1343,23 @@ impl TryFrom<&AndroidAutoFrame> for SystemAudioMessage {
             match sys {
                 Wifi::avchannel_message::Enum::AV_MEDIA_WITH_TIMESTAMP_INDICATION => todo!(),
                 Wifi::avchannel_message::Enum::AV_MEDIA_INDICATION => todo!(),
-                Wifi::avchannel_message::Enum::SETUP_REQUEST => todo!(),
+                Wifi::avchannel_message::Enum::SETUP_REQUEST => {
+                    let mut bytes = value
+                        .data
+                        .clone()
+                        .into_iter()
+                        .rev()
+                        .skip_while(|&byte| byte == 0)
+                        .collect::<Vec<_>>();
+                    bytes.reverse();
+                    let m = Wifi::AVChannelSetupRequest::parse_from_bytes(&bytes[2..]);
+                    match m {
+                        Ok(m) => Ok(Self::SetupRequest(m)),
+                        Err(e) => {
+                            Err(format!("Invalid channel open request: {}", e.to_string()))
+                        }
+                    }
+                }
                 Wifi::avchannel_message::Enum::START_INDICATION => todo!(),
                 Wifi::avchannel_message::Enum::STOP_INDICATION => todo!(),
                 Wifi::avchannel_message::Enum::SETUP_RESPONSE => todo!(),
@@ -1376,6 +1393,9 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
         let msg2: Result<SystemAudioMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
             match msg2 {
+                SystemAudioMessage::SetupRequest(index) => {
+                    todo!("{:?}", index);
+                }
                 SystemAudioMessage::Control(m) => match m {
                     AndroidAutoControlMessage::PingResponse(_) => unimplemented!(),
                     AndroidAutoControlMessage::PingRequest(_) => unimplemented!(),

@@ -352,3 +352,8 @@ message PingResponse
 {
     required int64 timestamp = 1;
 }
+
+message AVChannelSetupRequest
+{
+    required uint32 config_index = 1;
+}
