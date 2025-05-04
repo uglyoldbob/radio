@@ -42,6 +42,18 @@ message AVChannelMessage
     }
 }
 
+message InputChannelMessage
+{
+    enum Enum
+    {
+        NONE = 0x0000;
+        INPUT_EVENT_INDICATION = 0x8001;
+        BINDING_REQUEST = 0x8002;
+        BINDING_RESPONSE = 0x8003;
+    }
+}
+
+
 enum MessageType {
     SPECIFIC = 0;
     CONTROL = 4;
@@ -356,4 +368,31 @@ message PingResponse
 message AVChannelSetupRequest
 {
     required uint32 config_index = 1;
+}
+
+message AVChannelSetupStatus
+{
+    enum Enum
+    {
+        NONE = 0;
+        FAIL = 1;
+        OK = 2;
+    }
+}
+
+message AVChannelSetupResponse
+{
+    required AVChannelSetupStatus.Enum media_status = 1;
+    required uint32 max_unacked = 2;
+    repeated uint32 configs = 3;
+}
+
+message BindingRequest
+{
+    repeated int32 scan_codes = 1;
+}
+
+message BindingResponse
+{
+    required Status.Enum status = 1;
 }
