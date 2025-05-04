@@ -370,7 +370,7 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoControlMessage {
         let mut ty = [0u8; 2];
         ty.copy_from_slice(&value.data[0..2]);
         let ty = u16::from_be_bytes(ty);
-        if value.header.channel_id == ChannelId::CONTROL || value.header.frame.get_control() {
+        if value.header.frame.get_control() {
             log::error!("Control id is {:x?}", ty);
             let w = Wifi::ControlMessage::from_i32(ty as i32);
             if let Some(m) = w {
@@ -389,7 +389,11 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoControlMessage {
                             .skip_while(|&byte| byte == 0)
                             .collect::<Vec<_>>();
                         bytes.reverse();
-                        log::error!("Ping request parse {:x?}", value.data);
+                        let mut pr = Wifi::PingRequest::new();
+                        pr.set_timestamp(0x82e992dcb78d3210u64 as i64);
+                        let a = pr.write_to_bytes().unwrap();
+
+                        log::error!("Ping request compare to  {:x?}", a);
                         log::error!("Ping request parse {:x?}", bytes);
                         let m = Wifi::PingRequest::parse_from_bytes(&bytes[2..]);
                         match m {
