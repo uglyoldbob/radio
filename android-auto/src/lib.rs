@@ -928,6 +928,54 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
     }
 }
 
+#[derive(Debug)]
+enum MediaStatusMessage {
+    Playback(ChannelId, Wifi::MediaInfoChannelPlaybackData),
+    Metadata(ChannelId, Wifi::MediaInfoChannelMetadataData),
+    Invalid,
+}
+
+impl Into<AndroidAutoFrame> for MediaStatusMessage {
+    fn into(self) -> AndroidAutoFrame {
+        match self {
+            Self::Playback(_, _) => todo!(),
+            Self::Metadata(_, _) => todo!(),
+            Self::Invalid => unimplemented!(),
+        }
+    }
+}
+
+impl TryFrom<&AndroidAutoFrame> for MediaStatusMessage {
+    type Error = String;
+    fn try_from(value: &AndroidAutoFrame) -> Result<Self, Self::Error> {
+        use protobuf::Enum;
+        let mut ty = [0u8; 2];
+        ty.copy_from_slice(&value.data[0..2]);
+        let ty = u16::from_be_bytes(ty);
+        if let Some(sys) = Wifi::media_info_channel_message::Enum::from_i32(ty as i32) {
+            match sys {
+                Wifi::media_info_channel_message::Enum::PLAYBACK => {
+                    let m = Wifi::MediaInfoChannelPlaybackData::parse_from_bytes(&value.data);
+                    match m {
+                        Ok(m) => Ok(Self::Playback(value.header.channel_id, m)),
+                        Err(e) => Ok(Self::Invalid),
+                    }
+                }
+                Wifi::media_info_channel_message::Enum::METADATA => {
+                    let m = Wifi::MediaInfoChannelMetadataData::parse_from_bytes(&value.data);
+                    match m {
+                        Ok(m) => Ok(Self::Metadata(value.header.channel_id, m)),
+                        Err(e) => Ok(Self::Invalid),
+                    }
+                }
+                Wifi::media_info_channel_message::Enum::NONE => todo!(),
+            }
+        } else {
+            Err(format!("Not converted message: {:x?}", value.data))
+        }
+    }
+}
+
 struct MediaStatusChannelHandler {}
 
 impl ChannelHandlerTrait for MediaStatusChannelHandler {
@@ -940,8 +988,23 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
-        let msg2: Result<AndroidAutoCommonMessage, String> = (&msg).try_into();
+        let msg2: Result<MediaStatusMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
+            match msg2 {
+                MediaStatusMessage::Metadata(_, m) => {
+                    log::info!("Metadata {:?}", m);
+                }
+                MediaStatusMessage::Playback(_, m) => {
+                    log::info!("Playback {:?}", m);
+                }
+                MediaStatusMessage::Invalid => {
+                    log::error!("Received invalid media info frame");
+                }
+            }
+            return Ok(());
+        }
+        let msg3: Result<AndroidAutoCommonMessage, String> = (&msg).try_into();
+        if let Ok(msg2) = msg3 {
             match msg2 {
                 AndroidAutoCommonMessage::ChannelOpenResponse(_, _) => unimplemented!(),
                 AndroidAutoCommonMessage::ChannelOpenRequest(m) => {
@@ -956,8 +1019,8 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
             }
             return Ok(());
         }
-        let msg2: Result<AndroidAutoControlMessage, String> = (&msg).try_into();
-        if let Ok(msg2) = msg2 {
+        let msg4: Result<AndroidAutoControlMessage, String> = (&msg).try_into();
+        if let Ok(msg2) = msg4 {
             match msg2 {
                 AndroidAutoControlMessage::PingResponse(_) => unimplemented!(),
                 AndroidAutoControlMessage::PingRequest(_) => unimplemented!(),
@@ -976,7 +1039,7 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
             }
             return Ok(());
         }
-        todo!();
+        todo!("{:?} {:?} {:?}", msg2, msg3, msg4);
     }
 }
 
