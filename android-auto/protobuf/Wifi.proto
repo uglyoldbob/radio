@@ -127,6 +127,221 @@ message SensorChannel
     repeated Sensor sensors = 1;
 }
 
+message SensorChannelMessage
+{
+    enum Enum
+    {
+        NONE = 0x0000;
+        SENSOR_START_REQUEST = 0x8001;
+        SENSOR_START_RESPONSE = 0x8002;
+        SENSOR_EVENT_INDICATION = 0x8003;
+    }
+}
+
+message SensorStartRequestMessage
+{
+    required SensorType.Enum sensor_type = 1;
+    required int64 refresh_interval = 2;
+}
+
+message SensorStartResponseMessage
+{
+    required Status.Enum status = 1;
+}
+
+message GPSLocation
+{
+    required uint64 timestamp = 1;
+    required int32 latitude = 2;
+    required int32 longitude = 3;
+    required uint32 accuracy = 4;
+    optional int32 altitude = 5;
+    optional int32 speed = 6;
+    optional int32 bearing = 7;
+}
+
+message Compass
+{
+    required int32 bearing =1;
+    required int32 pitch = 2;
+    required int32 roll = 3;
+}
+
+message Speed
+{
+    required int32 speed = 1;
+    optional bool cruise_engaged = 2;
+    optional bool cruise_set_speed = 3;
+}
+
+message RPM
+{
+    required int32 rpm = 1;
+}
+
+message Odometer
+{
+    required int32 total_mileage = 1;
+    required int32 trip_mileage = 2;
+}
+
+message FuelLevel
+{
+    required int32 fuel_level = 1;
+    required int32 range = 2;
+    required bool low_fuel = 3;
+}
+
+message ParkingBrake
+{
+    required bool parking_brake = 1;
+}
+
+message NightMode
+{
+    required bool is_night = 1;
+}
+
+message Environment
+{
+    required int32 temperature =1;
+    required int32 pressure = 2;
+    required int32 rain = 3;
+}
+
+message HVAC
+{
+    required int32 target_temperature = 1;
+    required int32 current_temperature = 2;
+}
+
+enum DrivingStatusEnum
+{
+    UNRESTRICTED = 0;
+    NO_VIDEO = 1;
+    NO_KEYBOARD_INPUT = 2;
+    NO_VOICE_INPUT = 4;
+    NO_CONFIG = 8;
+    LIMIT_MESSAGE_LEN = 16;
+    FULLY_RESTRICTED = 31;
+}
+
+message DrivingStatus
+{
+    required int32 status = 1;
+}
+
+message SteeringWheel
+{
+    required int32 steering_angle = 1;
+    required int32 wheel_speed = 2;
+}
+
+message Passenger
+{
+    required bool passenger_present = 1;
+}
+
+message Door
+{
+    required bool hood_open = 1;
+    required bool boot_open = 2;
+    repeated bool door_open = 3;
+}
+
+message Light
+{
+    required HeadlightStatus.Enum headlight = 1;
+    required IndicatorStatus.Enum indicator = 2;
+    required bool hazard_light_on = 3;
+}
+
+message Accel
+{
+    required int32 acceleration_x = 1;
+    required int32 acceleration_y = 2;
+    required int32 acceleration_z = 3;
+}
+
+message Gyro
+{
+    required int32 rotation_speed_x = 1;
+    required int32 rotation_speed_y = 2;
+    required int32 rotation_speed_z = 3;
+}
+
+message HeadlightStatus
+{
+    enum Enum
+    {
+        STATE_0 = 0;
+        STATE_1 = 1;
+        STATE_2 = 2;
+        STATE_3 = 3;
+    }
+}
+
+message IndicatorStatus
+{
+    enum Enum
+    {
+        STATE_0 = 0;
+        STATE_1 = 1;
+        STATE_2 = 2;
+        STATE_3 = 3;
+    }
+}
+
+message Diagnostics
+{
+    required bytes diagnostics = 1;
+}
+
+message Gear
+{
+    enum Enum
+    {
+        NEUTRAL = 0;
+        FIRST = 1;
+        SECOND = 2;
+        THIRD = 3;
+        FOURTH = 4;
+        FIFTH = 5;
+        SIXTH = 6;
+        SEVENTH = 7;
+        EIGHTH = 8;
+        NINTH = 9;
+        TENTH = 10;
+        DRIVE = 100;
+        PARK = 101;
+        REVERSE = 102;
+    }
+    required Gear.Enum gear = 1;
+}
+
+message SensorEventIndication
+{
+    repeated GPSLocation gps_location = 1;
+    repeated Compass compass = 2;
+    repeated Speed speed = 3;
+    repeated RPM rpm = 4;
+    repeated Odometer odometer = 5;
+    repeated FuelLevel fuel_level = 6;
+    repeated ParkingBrake parking_brake = 7;
+    repeated Gear gear = 8;
+    repeated Diagnostics diagnostics = 9;
+    repeated NightMode night_mode = 10;
+    repeated Environment environment = 11;
+    repeated HVAC hvac = 12;
+    repeated DrivingStatus driving_status = 13;
+    repeated SteeringWheel steering_wheel = 14;
+    repeated Passenger passenger = 15;
+    repeated Door door = 16;
+    repeated Light light = 17;
+    repeated Accel accel = 19;
+    repeated Gyro gyro = 20;
+}
+
 message AVStreamType
 {
     enum Enum
