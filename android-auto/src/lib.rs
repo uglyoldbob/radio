@@ -5,7 +5,7 @@ use openssl::ssl::SslVerifyMode;
 mod cert;
 
 use Wifi::ChannelDescriptor;
-use protobuf::{EnumOrUnknown, Message};
+use protobuf::Message;
 
 mod control;
 use control::*;
@@ -14,6 +14,8 @@ mod nonspecific;
 use common::*;
 mod video;
 use video::*;
+mod bluetooth;
+use bluetooth::*;
 
 pub trait AndroidAutoMainTrait {
     #[inline(always)]
@@ -1420,78 +1422,6 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
     }
 }
 
-struct BluetoothChannelHandler {}
-
-impl ChannelHandlerTrait for BluetoothChannelHandler {
-    fn build_channel(
-        &self,
-        config: &AndroidAutoConfiguration,
-        chanid: ChannelId,
-    ) -> Option<ChannelDescriptor> {
-        let mut chan = ChannelDescriptor::new();
-        chan.set_channel_id(chanid as u8 as u32);
-        let mut bchan = Wifi::BluetoothChannel::new();
-        bchan.set_adapter_address(config.bluetooth.address.clone());
-        let meth = Wifi::bluetooth_pairing_method::Enum::HFP;
-        bchan
-            .supported_pairing_methods
-            .push(EnumOrUnknown::new(meth));
-        chan.bluetooth_channel.0.replace(Box::new(bchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        Some(chan)
-    }
-
-    fn receive_data<T: AndroidAutoMainTrait>(
-        &mut self,
-        msg: AndroidAutoFrame,
-        _skip_ping: &mut bool,
-        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
-        _config: &AndroidAutoConfiguration,
-        main: &mut T,
-    ) -> Result<(), std::io::Error> {
-        use std::io::Write;
-        let channel = msg.header.channel_id;
-        let msg2: Result<AndroidAutoCommonMessage, String> = (&msg).try_into();
-        if let Ok(msg2) = msg2 {
-            match msg2 {
-                AndroidAutoCommonMessage::ChannelOpenResponse(_, _) => unimplemented!(),
-                AndroidAutoCommonMessage::ChannelOpenRequest(m) => {
-                    log::info!("Got channel open request for bluetooth: {:?}", m);
-                    let mut m2 = Wifi::ChannelOpenResponse::new();
-                    m2.set_status(Wifi::status::Enum::OK);
-                    let d: AndroidAutoFrame =
-                        AndroidAutoCommonMessage::ChannelOpenResponse(channel, m2).into();
-                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                    openssl_stream.get_mut().plain.write_all(&d2)?;
-                }
-            }
-            return Ok(());
-        }
-        let msg2: Result<AndroidAutoControlMessage, String> = (&msg).try_into();
-        if let Ok(msg2) = msg2 {
-            match msg2 {
-                AndroidAutoControlMessage::PingResponse(_) => unimplemented!(),
-                AndroidAutoControlMessage::PingRequest(_) => unimplemented!(),
-                AndroidAutoControlMessage::AudioFocusRequest(_) => unimplemented!(),
-                AndroidAutoControlMessage::AudioFocusResponse(_) => unimplemented!(),
-                AndroidAutoControlMessage::ServiceDiscoveryRequest(_) => unimplemented!(),
-                AndroidAutoControlMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
-                AndroidAutoControlMessage::SslAuthComplete(_) => unimplemented!(),
-                AndroidAutoControlMessage::SslHandshake(_) => unimplemented!(),
-                AndroidAutoControlMessage::VersionRequest => unimplemented!(),
-                AndroidAutoControlMessage::VersionResponse {
-                    major: _,
-                    minor: _,
-                    status: _,
-                } => unimplemented!(),
-            }
-            return Ok(());
-        }
-        todo!("{:x?}", msg);
-    }
-}
 struct ControlChannelHandler {
     channels: Vec<ChannelDescriptor>,
 }
@@ -1746,7 +1676,7 @@ impl AndriodAutoBluettothServer {
         use std::io::Write;
 
         let mut channel_handlers: BTreeMap<ChannelId, ChannelHandler> = BTreeMap::new();
-        //channel_handlers.insert(ChannelId::BLUETOOTH, BluetoothChannelHandler {}.into());
+        channel_handlers.insert(ChannelId::BLUETOOTH, BluetoothChannelHandler {}.into());
         channel_handlers.insert(
             ChannelId::CONTROL,
             ControlChannelHandler {

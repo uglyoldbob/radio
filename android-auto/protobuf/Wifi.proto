@@ -495,3 +495,25 @@ message BluetoothChannelMessage
         AUTH_DATA = 0x8003;
     }
 }
+
+message BluetoothPairingRequest
+{
+    required string phone_address = 1;
+    required BluetoothPairingMethod.Enum pairing_method = 2;
+}
+
+message BluetoothPairingStatus
+{
+    enum Enum
+    {
+        NONE = 0;
+        OK = 1;
+        FAIL = 2;
+    }
+}
+
+message BluetoothPairingResponse
+{
+    required bool already_paired = 1;
+    required BluetoothPairingStatus.Enum status = 2;
+}
