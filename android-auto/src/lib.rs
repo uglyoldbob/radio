@@ -5,14 +5,22 @@ use openssl::ssl::SslVerifyMode;
 mod cert;
 
 use Wifi::ChannelDescriptor;
-use protobuf::{Enum, EnumOrUnknown, Message};
+use protobuf::{EnumOrUnknown, Message};
 
 mod control;
 use control::*;
 mod nonspecific;
-use nonspecific::*;
 mod common;
 use common::*;
+
+pub trait AndroidAutoMainTrait {
+    #[inline(always)]
+    fn supports_video(&mut self) -> Option<&mut dyn AndroidAutoVideoChannelTrait> { None }
+}
+
+pub trait AndroidAutoVideoChannelTrait : AndroidAutoMainTrait {
+    fn receive_video(&mut self, data: &[u8]);
+}
 
 pub struct AndriodAutoBluettothServer {
     #[cfg(feature = "wireless")]
@@ -245,12 +253,6 @@ impl AndroidAutoFrame {
     fn build_vec(&self, stream: Option<&mut openssl::ssl::SslStream<OpensslSocket>>) -> Vec<u8> {
         let mut buf = Vec::new();
         self.header.add_to(&mut buf);
-        log::error!(
-            "Sending frame {:?} {:x?} {:x?}",
-            self.header,
-            buf,
-            self.data
-        );
         if self.header.frame.get_encryption() {
             if let Some(stream) = stream {
                 stream.ssl_write(&self.data).unwrap();
@@ -304,7 +306,6 @@ impl AndroidAutoFrameReceiver {
             stream
                 .read_exact(&mut self.data[0..*len as usize])
                 .map_err(|e| e.to_string())?;
-            log::info!("Got {} bytes of frame data", len - 2);
             let f = AndroidAutoFrame {
                 header: header.clone(),
                 data: self.data.clone(),
@@ -329,7 +330,6 @@ impl AndroidAutoFrameReceiver {
             self.len.replace(len);
         }
         if let Some(len) = self.len.take() {
-            log::error!("Reading {} bytes of frame data, {}", len, self.data.len());
             stream
                 .get_mut()
                 .plain
@@ -355,17 +355,7 @@ impl AndroidAutoFrameReceiver {
                     let newlen = stream.ssl_read(&mut data).map_err(|e| {
                         let e2 = e.to_string();
                         std::io::Error::new(std::io::ErrorKind::Other, e2)
-                    });
-                    if newlen.is_err() {
-                        log::error!(
-                            "Error parsing frame {:?} {:?} {:x?}",
-                            header.channel_id,
-                            header.frame,
-                            data
-                        );
-                    }
-                    let newlen = newlen?;
-                    log::error!("openssl read lengths {} {}", len, newlen);
+                    })?;
                     data[0..newlen].to_vec()
                 } else {
                     data.clone()
@@ -530,12 +520,13 @@ impl std::io::Write for OpensslSocket {
 
 #[enum_dispatch::enum_dispatch]
 trait ChannelHandlerTrait {
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error>;
 
     fn build_channel(
@@ -588,15 +579,7 @@ impl TryFrom<&AndroidAutoFrame> for InputMessage {
         if let Some(sys) = Wifi::input_channel_message::Enum::from_i32(ty as i32) {
             match sys {
                 Wifi::input_channel_message::Enum::BINDING_REQUEST => {
-                    let mut bytes = value
-                        .data
-                        .clone()
-                        .into_iter()
-                        .rev()
-                        .skip_while(|&byte| byte == 0)
-                        .collect::<Vec<_>>();
-                    bytes.reverse();
-                    let m = Wifi::BindingRequest::parse_from_bytes(&bytes[2..]);
+                    let m = Wifi::BindingRequest::parse_from_bytes(&value.data[2..]);
                     match m {
                         Ok(m) => Ok(Self::BindingRequest(value.header.channel_id, m)),
                         Err(e) => Err(format!("Invalid input bind request: {}", e.to_string())),
@@ -637,12 +620,13 @@ impl ChannelHandlerTrait for InputChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -727,12 +711,13 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -854,12 +839,13 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -944,12 +930,13 @@ impl ChannelHandlerTrait for NavigationChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -1032,12 +1019,13 @@ impl ChannelHandlerTrait for VideoChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -1061,8 +1049,10 @@ impl ChannelHandlerTrait for VideoChannelHandler {
         if let Ok(msg2) = msg2 {
             match msg2 {
                 AvChannelMessage::Control(m) => unimplemented!(),
-                AvChannelMessage::MediaIndication(_, _, _) => {
-                    log::error!("Received media data for video");
+                AvChannelMessage::MediaIndication(chan, time, data) => {
+                    if let Some(a) = main.supports_video() {
+                        a.receive_video(&data);
+                    }
                 }
                 AvChannelMessage::SetupRequest(chan, m) => {
                     log::info!("Got channel setup request for channel {:?}: {:?}", chan, m);
@@ -1120,12 +1110,13 @@ impl ChannelHandlerTrait for SensorChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -1195,12 +1186,13 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -1397,12 +1389,13 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -1483,12 +1476,13 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -1555,12 +1549,13 @@ impl ChannelHandlerTrait for BluetoothChannelHandler {
         Some(chan)
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         _skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         _config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let channel = msg.header.channel_id;
@@ -1620,12 +1615,13 @@ impl ChannelHandlerTrait for ControlChannelHandler {
         None
     }
 
-    fn receive_data(
+    fn receive_data<T: AndroidAutoMainTrait>(
         &mut self,
         msg: AndroidAutoFrame,
         skip_ping: &mut bool,
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         config: &AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), std::io::Error> {
         use std::io::Write;
         let msg2: Result<AndroidAutoControlMessage, String> = (&msg).try_into();
@@ -1666,17 +1662,14 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                     } else {
                         Wifi::audio_focus_state::Enum::NONE
                     };
-                    log::error!("Audio focus state is {:?}", s);
                     m2.set_audio_focus_state(s);
                     let d: AndroidAutoFrame =
                         AndroidAutoControlMessage::AudioFocusResponse(m2).into();
                     let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                    log::info!("Sending audio focus response {:x?}", d2);
                     openssl_stream.get_mut().plain.write_all(&d2)?;
                 }
                 AndroidAutoControlMessage::ServiceDiscoveryResponse(_) => unimplemented!(),
                 AndroidAutoControlMessage::ServiceDiscoveryRequest(m) => {
-                    log::error!("Got service discovery request: {:?}", m);
                     let mut m2 = Wifi::ServiceDiscoveryResponse::new();
                     m2.set_car_model(config.unit.car_model.clone());
                     m2.set_can_play_native_media_during_vr(config.unit.native_media);
@@ -1694,32 +1687,6 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                     for s in &self.channels {
                         m2.channels.push(s.clone());
                     }
-                    let m4d = vec![
-                        0x0a, 0x0f, 0x08, 0x07, 0x2a, 0x0b, 0x08, 0x01, 0x12, 0x07, 0x08, 0x80,
-                        0x7d, 0x10, 0x10, 0x18, 0x01, 0x0a, 0x14, 0x08, 0x04, 0x1a, 0x10, 0x08,
-                        0x01, 0x10, 0x03, 0x1a, 0x08, 0x08, 0x80, 0xf7, 0x02, 0x10, 0x10, 0x18,
-                        0x02, 0x28, 0x01, 0x0a, 0x13, 0x08, 0x05, 0x1a, 0x0f, 0x08, 0x01, 0x10,
-                        0x01, 0x1a, 0x07, 0x08, 0x80, 0x7d, 0x10, 0x10, 0x18, 0x01, 0x28, 0x01,
-                        0x0a, 0x13, 0x08, 0x06, 0x1a, 0x0f, 0x08, 0x01, 0x10, 0x02, 0x1a, 0x07,
-                        0x08, 0x80, 0x7d, 0x10, 0x10, 0x18, 0x01, 0x28, 0x01, 0x0a, 0x0c, 0x08,
-                        0x02, 0x12, 0x08, 0x0a, 0x02, 0x08, 0x0d, 0x0a, 0x02, 0x08, 0x0a, 0x0a,
-                        0x14, 0x08, 0x03, 0x1a, 0x10, 0x08, 0x03, 0x22, 0x0a, 0x08, 0x01, 0x10,
-                        0x02, 0x18, 0x00, 0x20, 0x00, 0x28, 0x6f, 0x28, 0x01, 0x0a, 0x19, 0x08,
-                        0x08, 0x32, 0x15, 0x0a, 0x11, 0x30, 0x30, 0x3a, 0x39, 0x33, 0x3a, 0x33,
-                        0x37, 0x3a, 0x45, 0x46, 0x3a, 0x42, 0x37, 0x3a, 0x35, 0x37, 0x10, 0x04,
-                        0x0a, 0x16, 0x08, 0x09, 0x42, 0x12, 0x08, 0xe8, 0x07, 0x10, 0x01, 0x1a,
-                        0x0b, 0x08, 0x80, 0x02, 0x10, 0x80, 0x02, 0x18, 0x10, 0x20, 0xff, 0x01,
-                        0x0a, 0x04, 0x08, 0x0a, 0x4a, 0x00, 0x0a, 0x0c, 0x08, 0x01, 0x22, 0x08,
-                        0x12, 0x06, 0x08, 0x80, 0x0f, 0x10, 0xb8, 0x08, 0x12, 0x08, 0x4f, 0x70,
-                        0x65, 0x6e, 0x41, 0x75, 0x74, 0x6f, 0x1a, 0x09, 0x55, 0x6e, 0x69, 0x76,
-                        0x65, 0x72, 0x73, 0x61, 0x6c, 0x22, 0x04, 0x32, 0x30, 0x31, 0x38, 0x2a,
-                        0x08, 0x32, 0x30, 0x31, 0x38, 0x30, 0x33, 0x30, 0x31, 0x30, 0x01, 0x3a,
-                        0x03, 0x66, 0x31, 0x78, 0x42, 0x10, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x75,
-                        0x74, 0x6f, 0x20, 0x41, 0x75, 0x74, 0x6f, 0x61, 0x70, 0x70, 0x4a, 0x01,
-                        0x31, 0x52, 0x03, 0x31, 0x2e, 0x30, 0x58, 0x00, 0x60, 0x00,
-                    ];
-                    let m4 = Wifi::ServiceDiscoveryResponse::parse_from_bytes(&m4d);
-                    log::error!("Golden response is {:?}", m4);
                     let m3 = AndroidAutoControlMessage::ServiceDiscoveryResponse(m2);
                     let d: AndroidAutoFrame = m3.into();
                     let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
@@ -1873,10 +1840,11 @@ impl AndriodAutoBluettothServer {
         }
     }
 
-    fn handle_client(
+    fn handle_client<T: AndroidAutoMainTrait>(
         stream: std::net::TcpStream,
         addr: std::net::SocketAddr,
         config: AndroidAutoConfiguration,
+        main: &mut T,
     ) -> Result<(), String> {
         stream
             .set_read_timeout(Some(std::time::Duration::from_secs(1)))
@@ -1884,7 +1852,7 @@ impl AndriodAutoBluettothServer {
         use std::io::Write;
 
         let mut channel_handlers: BTreeMap<ChannelId, ChannelHandler> = BTreeMap::new();
-        channel_handlers.insert(ChannelId::BLUETOOTH, BluetoothChannelHandler {}.into());
+        //channel_handlers.insert(ChannelId::BLUETOOTH, BluetoothChannelHandler {}.into());
         channel_handlers.insert(
             ChannelId::CONTROL,
             ControlChannelHandler {
@@ -1896,7 +1864,9 @@ impl AndriodAutoBluettothServer {
         channel_handlers.insert(ChannelId::SYSTEM_AUDIO, SystemAudioChannelHandler {}.into());
         channel_handlers.insert(ChannelId::SPEECH_AUDIO, SpeechAudioChannelHandler {}.into());
         channel_handlers.insert(ChannelId::SENSOR, SensorChannelHandler {}.into());
-        channel_handlers.insert(ChannelId::VIDEO, VideoChannelHandler {}.into());
+        if main.supports_video().is_some() {
+            channel_handlers.insert(ChannelId::VIDEO, VideoChannelHandler {}.into());
+        }
         channel_handlers.insert(ChannelId::NAVIGATION, NavigationChannelHandler {}.into());
         channel_handlers.insert(ChannelId::MEDIA_STATUS, MediaStatusChannelHandler {}.into());
         channel_handlers.insert(ChannelId::INPUT, InputChannelHandler {}.into());
@@ -1947,7 +1917,6 @@ impl AndriodAutoBluettothServer {
                 match fr.read(&mut openssl_stream.get_mut().plain) {
                     Ok(Some(f)) => break Some(f),
                     Err(e) => {
-                        log::error!("Error reading frame header: {} {}", e.kind(), e);
                         match e.kind() {
                             std::io::ErrorKind::NotFound => todo!(),
                             std::io::ErrorKind::PermissionDenied => todo!(),
@@ -2002,7 +1971,6 @@ impl AndriodAutoBluettothServer {
                             break None;
                         }
                         Err(e) => {
-                            log::error!("Error reading frame header: {} {}", e.kind(), e);
                             match e.kind() {
                                 std::io::ErrorKind::NotFound => todo!(),
                                 std::io::ErrorKind::PermissionDenied => todo!(),
@@ -2055,7 +2023,7 @@ impl AndriodAutoBluettothServer {
             if let Some(f2) = f2 {
                 if let Some(handler) = channel_handlers.get_mut(&f2.header.channel_id) {
                     handler
-                        .receive_data(f2, &mut skip_ping, &mut openssl_stream, &config)
+                        .receive_data(f2, &mut skip_ping, &mut openssl_stream, &config, main)
                         .map_err(|e| e.to_string())?;
                 } else {
                     panic!("Unknown channel id: {:?}", f2.header.channel_id);
@@ -2079,7 +2047,7 @@ impl AndriodAutoBluettothServer {
     }
 
     #[cfg(feature = "wireless")]
-    pub fn wifi_listen(config: AndroidAutoConfiguration) -> Result<(), String> {
+    pub fn wifi_listen<T: AndroidAutoMainTrait>(config: AndroidAutoConfiguration, mut main: T) -> Result<(), String> {
         log::debug!(
             "Listening on port {} for android auto stuff",
             config.network.port
@@ -2088,7 +2056,7 @@ impl AndriodAutoBluettothServer {
             loop {
                 if let Ok((stream, addr)) = a.accept() {
                     let config2 = config.clone();
-                    if let Err(e) = Self::handle_client(stream, addr, config2) {
+                    if let Err(e) = Self::handle_client(stream, addr, config2, &mut main) {
                         log::error!("Disconnect from client: {:?}", e);
                     }
                 }

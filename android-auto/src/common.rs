@@ -23,15 +23,7 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoCommonMessage {
                 match m {
                     Wifi::CommonMessage::CHANNEL_OPEN_RESPONSE => unimplemented!(),
                     Wifi::CommonMessage::CHANNEL_OPEN_REQUEST => {
-                        let mut bytes = value
-                            .data
-                            .clone()
-                            .into_iter()
-                            .rev()
-                            .skip_while(|&byte| byte == 0)
-                            .collect::<Vec<_>>();
-                        bytes.reverse();
-                        let m = Wifi::ChannelOpenRequest::parse_from_bytes(&bytes[2..]);
+                        let m = Wifi::ChannelOpenRequest::parse_from_bytes(&value.data[2..]);
                         match m {
                             Ok(m) => Ok(AndroidAutoCommonMessage::ChannelOpenRequest(m)),
                             Err(e) => {

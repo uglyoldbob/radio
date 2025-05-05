@@ -26,7 +26,6 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoControlMessage {
         ty.copy_from_slice(&value.data[0..2]);
         let ty = u16::from_be_bytes(ty);
         if !value.header.frame.get_control() {
-            log::error!("Control id is {:x?}", ty);
             let w = Wifi::ControlMessage::from_i32(ty as i32);
             if let Some(m) = w {
                 match m {
@@ -35,23 +34,7 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoControlMessage {
                     Wifi::ControlMessage::MESSAGE_NONE => unimplemented!(),
                     Wifi::ControlMessage::SERVICE_DISCOVERY_RESPONSE => unimplemented!(),
                     Wifi::ControlMessage::PING_REQUEST => {
-                        log::error!("Raw data {:x?}", value.data);
-                        let mut bytes = value
-                            .data
-                            .clone()
-                            .into_iter()
-                            .rev()
-                            .skip_while(|&byte| byte == 0)
-                            .collect::<Vec<_>>();
-                        bytes.reverse();
-                        let mut pr = Wifi::PingRequest::new();
-                        pr.set_timestamp(0x82e992dcb78d3210u64 as i64);
-                        let a = pr.write_to_bytes().unwrap();
-
-                        log::error!("Ping request compare to  {:x?}", a);
-                        log::error!("Ping request parse {:x?}", bytes);
                         let m = Wifi::PingRequest::parse_from_bytes(&value.data[2..]);
-                        log::error!("Ping request parse is {:x?}", m);
                         match m {
                             Ok(m) => Ok(AndroidAutoControlMessage::PingRequest(m)),
                             Err(e) => Err(format!("Invalid ping request: {}", e.to_string())),
@@ -64,30 +47,14 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoControlMessage {
                     Wifi::ControlMessage::VOICE_SESSION_REQUEST => unimplemented!(),
                     Wifi::ControlMessage::AUDIO_FOCUS_RESPONSE => unimplemented!(),
                     Wifi::ControlMessage::PING_RESPONSE => {
-                        let mut bytes = value
-                            .data
-                            .clone()
-                            .into_iter()
-                            .rev()
-                            .skip_while(|&byte| byte == 0)
-                            .collect::<Vec<_>>();
-                        bytes.reverse();
-                        let m = Wifi::PingResponse::parse_from_bytes(&bytes[2..]);
+                        let m = Wifi::PingResponse::parse_from_bytes(&value.data[2..]);
                         match m {
                             Ok(m) => Ok(AndroidAutoControlMessage::PingResponse(m)),
                             Err(e) => Err(format!("Invalid ping response: {}", e.to_string())),
                         }
                     }
                     Wifi::ControlMessage::AUDIO_FOCUS_REQUEST => {
-                        let mut bytes = value
-                            .data
-                            .clone()
-                            .into_iter()
-                            .rev()
-                            .skip_while(|&byte| byte == 0)
-                            .collect::<Vec<_>>();
-                        bytes.reverse();
-                        let m = Wifi::AudioFocusRequest::parse_from_bytes(&bytes[2..]);
+                        let m = Wifi::AudioFocusRequest::parse_from_bytes(&value.data[2..]);
                         match m {
                             Ok(m) => Ok(AndroidAutoControlMessage::AudioFocusRequest(m)),
                             Err(e) => {
@@ -113,15 +80,7 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoControlMessage {
                         AndroidAutoControlMessage::SslHandshake(value.data[2..].to_vec()),
                     ),
                     Wifi::ControlMessage::SERVICE_DISCOVERY_REQUEST => {
-                        let mut bytes = value
-                            .data
-                            .clone()
-                            .into_iter()
-                            .rev()
-                            .skip_while(|&byte| byte == 0)
-                            .collect::<Vec<_>>();
-                        bytes.reverse();
-                        let m = Wifi::ServiceDiscoveryRequest::parse_from_bytes(&bytes[2..]);
+                        let m = Wifi::ServiceDiscoveryRequest::parse_from_bytes(&value.data[2..]);
                         match m {
                             Ok(m) => Ok(AndroidAutoControlMessage::ServiceDiscoveryRequest(m)),
                             Err(e) => Err(format!(
@@ -180,7 +139,6 @@ impl Into<AndroidAutoFrame> for AndroidAutoControlMessage {
                 }
             }
             AndroidAutoControlMessage::AudioFocusResponse(m) => {
-                log::error!("Audio focus response {}", m.is_initialized());
                 let mut data = m.write_to_bytes().unwrap();
                 let t = Wifi::ControlMessage::AUDIO_FOCUS_RESPONSE as u16;
                 let t = t.to_be_bytes();
@@ -198,7 +156,6 @@ impl Into<AndroidAutoFrame> for AndroidAutoControlMessage {
             }
             AndroidAutoControlMessage::AudioFocusRequest(_) => unimplemented!(),
             AndroidAutoControlMessage::ServiceDiscoveryResponse(m) => {
-                log::error!("Service discovery response {}", m.is_initialized());
                 let mut data = m.write_to_bytes().unwrap();
                 let t = Wifi::ControlMessage::SERVICE_DISCOVERY_RESPONSE as u16;
                 let t = t.to_be_bytes();

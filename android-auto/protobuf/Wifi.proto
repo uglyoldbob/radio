@@ -484,3 +484,14 @@ message MediaInfoChannelMetadataData
    required int32 track_length = 6;
    required int32 unknown1 = 7;
 }
+
+message BluetoothChannelMessage
+{
+    enum Enum
+    {
+        NONE = 0x0000;
+        PAIRING_REQUEST = 0x8001;
+        PAIRING_RESPONSE = 0x8002;
+        AUTH_DATA = 0x8003;
+    }
+}

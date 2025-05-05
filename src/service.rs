@@ -320,6 +320,22 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     }
 }
 
+struct AndroidAutoStuff {
+
+}
+
+impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
+    fn supports_video(&mut self) -> Option<&mut dyn android_auto::AndroidAutoVideoChannelTrait> {
+        Some(self)
+    }
+}
+
+impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
+    fn receive_video(&mut self, data: &[u8]) {
+        log::error!("Received {} bytes of video data", data.len());
+    }
+}
+
 /// The main function for the service
 async fn smain() {
     #[cfg(target_family = "windows")]
@@ -441,8 +457,9 @@ async fn smain() {
             };
             let net2 = network.clone();
             tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
+            let main = AndroidAutoStuff {};
             std::thread::spawn(move || {
-                android_auto::AndriodAutoBluettothServer::wifi_listen(config)
+                android_auto::AndriodAutoBluettothServer::wifi_listen(config, main)
             });
         }
     }
