@@ -860,7 +860,7 @@ impl ChannelHandlerTrait for InputChannelHandler {
             }
             return Ok(());
         }
-        Ok(())
+        todo!();
     }
 }
 
@@ -923,9 +923,8 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
                 AvChannelMessage::StartIndication(_, _) => {}
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!("{:x?}", msg);
     }
 }
 
@@ -976,9 +975,8 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
                 } => unimplemented!(),
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!();
     }
 }
 
@@ -1029,9 +1027,8 @@ impl ChannelHandlerTrait for NavigationChannelHandler {
                 } => unimplemented!(),
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!("{:x?}", msg);
     }
 }
 
@@ -1094,9 +1091,8 @@ impl ChannelHandlerTrait for VideoChannelHandler {
                 AvChannelMessage::StartIndication(_, _) => {}
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!("{:x?}", msg);
     }
 }
 
@@ -1147,9 +1143,8 @@ impl ChannelHandlerTrait for SensorChannelHandler {
                 } => unimplemented!(),
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!("{:x?}", msg);
     }
 }
 
@@ -1212,9 +1207,8 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
                 AvChannelMessage::StartIndication(_, _) => {}
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!("{:x?}", msg);
     }
 }
 
@@ -1392,9 +1386,8 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
                 AvChannelMessage::StartIndication(_, _) => {}
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!("{:x?}", msg);
     }
 }
 
@@ -1445,9 +1438,8 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
                 } => unimplemented!(),
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!("{:x?}", msg);
     }
 }
 
@@ -1498,9 +1490,8 @@ impl ChannelHandlerTrait for BluetoothChannelHandler {
                 } => unimplemented!(),
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
         }
+        todo!("{:x?}", msg);
     }
 }
 struct ControlChannelHandler {}
@@ -1866,7 +1857,11 @@ impl AndriodAutoBluettothServer {
             let f2 = if let Some(f) = f {
                 let f2 = loop {
                     match fr2.read(&f, &mut openssl_stream) {
-                        Ok(Some(f2)) => break f2,
+                        Ok(Some(f2)) => break Some(f2),
+                        Ok(None) => {
+                            skip_ping = true;
+                            break None;
+                        }
                         Err(e) => {
                             log::error!("Error reading frame header: {} {}", e.kind(), e);
                             match e.kind() {
@@ -1914,7 +1909,7 @@ impl AndriodAutoBluettothServer {
                         _ => {}
                     }
                 };
-                Some(f2)
+                f2
             } else {
                 None
             };
