@@ -344,8 +344,7 @@ impl AndroidAutoFrameReceiver {
                     let d = self.rx_sofar.clone();
                     self.rx_sofar.clear();
                     Some(d)
-                }
-                else {
+                } else {
                     None
                 }
             };
@@ -358,7 +357,12 @@ impl AndroidAutoFrameReceiver {
                         std::io::Error::new(std::io::ErrorKind::Other, e2)
                     });
                     if newlen.is_err() {
-                        log::error!("Error parsing frame {:?} {:?} {:x?}", header.channel_id, header.frame, data);
+                        log::error!(
+                            "Error parsing frame {:?} {:?} {:x?}",
+                            header.channel_id,
+                            header.frame,
+                            data
+                        );
                     }
                     let newlen = newlen?;
                     log::error!("openssl read lengths {} {}", len, newlen);
@@ -524,200 +528,6 @@ impl std::io::Write for OpensslSocket {
     }
 }
 
-fn channels(config: &AndroidAutoConfiguration) -> Vec<ChannelDescriptor> {
-    let mut c = Vec::new();
-
-    // av input channel
-    {
-        let mut chan = ChannelDescriptor::new();
-        chan.set_channel_id(ChannelId::AV_INPUT as u8 as u32);
-        let mut avchan = Wifi::AVInputChannel::new();
-        avchan.set_available_while_in_call(true);
-        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
-        let mut ac = Wifi::AudioConfig::new();
-        ac.set_bit_depth(16);
-        ac.set_channel_count(1);
-        ac.set_sample_rate(16000);
-        avchan.audio_config.0.replace(Box::new(ac));
-        chan.av_input_channel.0.replace(Box::new(avchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    // system audio channel
-    {
-        let mut chan = ChannelDescriptor::new();
-        chan.set_channel_id(ChannelId::SYSTEM_AUDIO as u8 as u32);
-        let mut avchan = Wifi::AVChannel::new();
-        avchan.set_audio_type(Wifi::audio_type::Enum::SYSTEM);
-        avchan.set_available_while_in_call(true);
-        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
-        let mut ac = Wifi::AudioConfig::new();
-        ac.set_bit_depth(16);
-        ac.set_channel_count(1);
-        ac.set_sample_rate(16000);
-        avchan.audio_configs.push(ac);
-        chan.av_channel.0.replace(Box::new(avchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    // speech audio channel
-    {
-        let mut chan = ChannelDescriptor::new();
-        chan.set_channel_id(ChannelId::SPEECH_AUDIO as u8 as u32);
-        let mut avchan = Wifi::AVChannel::new();
-        avchan.set_audio_type(Wifi::audio_type::Enum::SPEECH);
-        avchan.set_available_while_in_call(true);
-        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
-        let mut ac = Wifi::AudioConfig::new();
-        ac.set_bit_depth(16);
-        ac.set_channel_count(1);
-        ac.set_sample_rate(16000);
-        avchan.audio_configs.push(ac);
-        chan.av_channel.0.replace(Box::new(avchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    // media audio channel
-    if false {
-        let mut chan = ChannelDescriptor::new();
-        chan.set_channel_id(ChannelId::MEDIA_AUDIO as u8 as u32);
-        let mut avchan = Wifi::AVChannel::new();
-        avchan.set_audio_type(Wifi::audio_type::Enum::MEDIA);
-        avchan.set_available_while_in_call(true);
-        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
-        let mut ac = Wifi::AudioConfig::new();
-        ac.set_bit_depth(16);
-        ac.set_channel_count(2);
-        ac.set_sample_rate(48000);
-        avchan.audio_configs.push(ac);
-        chan.av_channel.0.replace(Box::new(avchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    // sensor channel
-    {
-        let mut chan = ChannelDescriptor::new();
-        let mut sensor = Wifi::SensorChannel::new();
-        let mut sensors = Vec::new();
-        sensors.push({
-            let mut sensor1 = Wifi::Sensor::new();
-            sensor1.set_type(Wifi::sensor_type::Enum::COMPASS);
-            sensor1
-        });
-        for s in sensors {
-            sensor.sensors.push(s);
-        }
-        chan.sensor_channel.0.replace(Box::new(sensor));
-        chan.set_channel_id(ChannelId::SENSOR as u8 as u32);
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    // video channel
-    {
-        let mut chan = ChannelDescriptor::new();
-        let mut avchan = Wifi::AVChannel::new();
-        chan.set_channel_id(ChannelId::VIDEO as u8 as u32);
-        avchan.set_stream_type(Wifi::avstream_type::Enum::VIDEO);
-        avchan.set_available_while_in_call(true);
-        avchan.set_audio_type(Wifi::audio_type::Enum::SYSTEM);
-        let mut vconfs = Vec::new();
-        vconfs.push({
-            let mut vc = Wifi::VideoConfig::new();
-            vc.set_video_resolution(Wifi::video_resolution::Enum::_480p);
-            vc.set_video_fps(Wifi::video_fps::Enum::_30);
-            vc.set_dpi(300);
-            vc.set_additional_depth(0);
-            vc.set_margin_height(0);
-            vc.set_margin_width(0);
-            if !vc.is_initialized() {
-                panic!();
-            }
-            vc
-        });
-        for v in vconfs {
-            avchan.video_configs.push(v);
-        }
-
-        chan.av_channel.0.replace(Box::new(avchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    //navigation status channel
-    {
-        let mut chan = ChannelDescriptor::new();
-        let mut navchan = Wifi::NavigationChannel::new();
-        navchan.set_minimum_interval_ms(1000);
-        navchan.set_type(Wifi::navigation_turn_type::Enum::IMAGE);
-        let mut io = Wifi::NavigationImageOptions::new();
-        io.set_colour_depth_bits(16);
-        io.set_dunno(255);
-        io.set_height(256);
-        io.set_width(256);
-        navchan.image_options.0.replace(Box::new(io));
-        chan.set_channel_id(ChannelId::NAVIGATION as u8 as u32);
-        chan.navigation_channel.0.replace(Box::new(navchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    // media status service channel
-    {
-        let mut chan = ChannelDescriptor::new();
-        chan.set_channel_id(ChannelId::MEDIA_STATUS as u8 as u32);
-        let mchan = Wifi::MediaInfoChannel::new();
-        chan.media_infoChannel.0.replace(Box::new(mchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    // input channel
-    {
-        let mut chan = ChannelDescriptor::new();
-        chan.set_channel_id(ChannelId::INPUT as u8 as u32);
-        let mut ichan = Wifi::InputChannel::new();
-        let mut tc = Wifi::TouchConfig::new();
-        tc.set_height(480);
-        tc.set_width(800);
-        ichan.touch_screen_config.0.replace(Box::new(tc));
-        chan.input_channel.0.replace(Box::new(ichan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    //bluetooth channel
-    if false {
-        let mut chan = ChannelDescriptor::new();
-        chan.set_channel_id(ChannelId::BLUETOOTH as u8 as u32);
-        let mut bchan = Wifi::BluetoothChannel::new();
-        bchan.set_adapter_address(config.bluetooth.address.clone());
-        let meth = Wifi::bluetooth_pairing_method::Enum::HFP;
-        bchan
-            .supported_pairing_methods
-            .push(EnumOrUnknown::new(meth));
-        chan.bluetooth_channel.0.replace(Box::new(bchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        c.push(chan);
-    }
-    c
-}
-
 #[enum_dispatch::enum_dispatch]
 trait ChannelHandlerTrait {
     fn receive_data(
@@ -727,6 +537,14 @@ trait ChannelHandlerTrait {
         openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
         config: &AndroidAutoConfiguration,
     ) -> Result<(), std::io::Error>;
+
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor>;
+
+    fn set_channels(&mut self, chans: Vec<ChannelDescriptor>) {}
 }
 
 enum InputMessage {
@@ -800,6 +618,25 @@ impl TryFrom<&AndroidAutoFrame> for InputMessage {
 struct InputChannelHandler {}
 
 impl ChannelHandlerTrait for InputChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(chanid as u8 as u32);
+        let mut ichan = Wifi::InputChannel::new();
+        let mut tc = Wifi::TouchConfig::new();
+        tc.set_height(480);
+        tc.set_width(800);
+        ichan.touch_screen_config.0.replace(Box::new(tc));
+        chan.input_channel.0.replace(Box::new(ichan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -867,6 +704,29 @@ impl ChannelHandlerTrait for InputChannelHandler {
 struct MediaAudioChannelHandler {}
 
 impl ChannelHandlerTrait for MediaAudioChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(chanid as u8 as u32);
+        let mut avchan = Wifi::AVChannel::new();
+        avchan.set_audio_type(Wifi::audio_type::Enum::MEDIA);
+        avchan.set_available_while_in_call(true);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
+        let mut ac = Wifi::AudioConfig::new();
+        ac.set_bit_depth(16);
+        ac.set_channel_count(2);
+        ac.set_sample_rate(48000);
+        avchan.audio_configs.push(ac);
+        chan.av_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -979,6 +839,21 @@ impl TryFrom<&AndroidAutoFrame> for MediaStatusMessage {
 struct MediaStatusChannelHandler {}
 
 impl ChannelHandlerTrait for MediaStatusChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(chanid as u8 as u32);
+        let mchan = Wifi::MediaInfoChannel::new();
+        chan.media_infoChannel.0.replace(Box::new(mchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1046,6 +921,29 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
 struct NavigationChannelHandler {}
 
 impl ChannelHandlerTrait for NavigationChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        let mut navchan = Wifi::NavigationChannel::new();
+        navchan.set_minimum_interval_ms(1000);
+        navchan.set_type(Wifi::navigation_turn_type::Enum::IMAGE);
+        let mut io = Wifi::NavigationImageOptions::new();
+        io.set_colour_depth_bits(16);
+        io.set_dunno(255);
+        io.set_height(256);
+        io.set_width(256);
+        navchan.image_options.0.replace(Box::new(io));
+        chan.set_channel_id(chanid as u8 as u32);
+        chan.navigation_channel.0.replace(Box::new(navchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1098,6 +996,42 @@ impl ChannelHandlerTrait for NavigationChannelHandler {
 struct VideoChannelHandler {}
 
 impl ChannelHandlerTrait for VideoChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        let mut avchan = Wifi::AVChannel::new();
+        chan.set_channel_id(chanid as u8 as u32);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::VIDEO);
+        avchan.set_available_while_in_call(true);
+        avchan.set_audio_type(Wifi::audio_type::Enum::SYSTEM);
+        let mut vconfs = Vec::new();
+        vconfs.push({
+            let mut vc = Wifi::VideoConfig::new();
+            vc.set_video_resolution(Wifi::video_resolution::Enum::_480p);
+            vc.set_video_fps(Wifi::video_fps::Enum::_30);
+            vc.set_dpi(300);
+            vc.set_additional_depth(0);
+            vc.set_margin_height(0);
+            vc.set_margin_width(0);
+            if !vc.is_initialized() {
+                panic!();
+            }
+            vc
+        });
+        for v in vconfs {
+            avchan.video_configs.push(v);
+        }
+
+        chan.av_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1162,6 +1096,30 @@ impl ChannelHandlerTrait for VideoChannelHandler {
 struct SensorChannelHandler {}
 
 impl ChannelHandlerTrait for SensorChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        let mut sensor = Wifi::SensorChannel::new();
+        let mut sensors = Vec::new();
+        sensors.push({
+            let mut sensor1 = Wifi::Sensor::new();
+            sensor1.set_type(Wifi::sensor_type::Enum::COMPASS);
+            sensor1
+        });
+        for s in sensors {
+            sensor.sensors.push(s);
+        }
+        chan.sensor_channel.0.replace(Box::new(sensor));
+        chan.set_channel_id(chanid as u8 as u32);
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1214,6 +1172,29 @@ impl ChannelHandlerTrait for SensorChannelHandler {
 struct SpeechAudioChannelHandler {}
 
 impl ChannelHandlerTrait for SpeechAudioChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(chanid as u8 as u32);
+        let mut avchan = Wifi::AVChannel::new();
+        avchan.set_audio_type(Wifi::audio_type::Enum::SPEECH);
+        avchan.set_available_while_in_call(true);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
+        let mut ac = Wifi::AudioConfig::new();
+        ac.set_bit_depth(16);
+        ac.set_channel_count(1);
+        ac.set_sample_rate(16000);
+        avchan.audio_configs.push(ac);
+        chan.av_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1393,6 +1374,29 @@ impl TryFrom<&AndroidAutoFrame> for AvChannelMessage {
 struct SystemAudioChannelHandler {}
 
 impl ChannelHandlerTrait for SystemAudioChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(chanid as u8 as u32);
+        let mut avchan = Wifi::AVChannel::new();
+        avchan.set_audio_type(Wifi::audio_type::Enum::SYSTEM);
+        avchan.set_available_while_in_call(true);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
+        let mut ac = Wifi::AudioConfig::new();
+        ac.set_bit_depth(16);
+        ac.set_channel_count(1);
+        ac.set_sample_rate(16000);
+        avchan.audio_configs.push(ac);
+        chan.av_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1457,6 +1461,28 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
 struct AvInputChannelHandler {}
 
 impl ChannelHandlerTrait for AvInputChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(chanid as u8 as u32);
+        let mut avchan = Wifi::AVInputChannel::new();
+        avchan.set_available_while_in_call(true);
+        avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
+        let mut ac = Wifi::AudioConfig::new();
+        ac.set_bit_depth(16);
+        ac.set_channel_count(1);
+        ac.set_sample_rate(16000);
+        avchan.audio_config.0.replace(Box::new(ac));
+        chan.av_input_channel.0.replace(Box::new(avchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1509,6 +1535,26 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
 struct BluetoothChannelHandler {}
 
 impl ChannelHandlerTrait for BluetoothChannelHandler {
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        let mut chan = ChannelDescriptor::new();
+        chan.set_channel_id(chanid as u8 as u32);
+        let mut bchan = Wifi::BluetoothChannel::new();
+        bchan.set_adapter_address(config.bluetooth.address.clone());
+        let meth = Wifi::bluetooth_pairing_method::Enum::HFP;
+        bchan
+            .supported_pairing_methods
+            .push(EnumOrUnknown::new(meth));
+        chan.bluetooth_channel.0.replace(Box::new(bchan));
+        if !chan.is_initialized() {
+            panic!("Channel not initialized?");
+        }
+        Some(chan)
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1557,9 +1603,23 @@ impl ChannelHandlerTrait for BluetoothChannelHandler {
         todo!("{:x?}", msg);
     }
 }
-struct ControlChannelHandler {}
+struct ControlChannelHandler {
+    channels: Vec<ChannelDescriptor>,
+}
 
 impl ChannelHandlerTrait for ControlChannelHandler {
+    fn set_channels(&mut self, chans: Vec<ChannelDescriptor>) {
+        self.channels = chans;
+    }
+
+    fn build_channel(
+        &self,
+        config: &AndroidAutoConfiguration,
+        chanid: ChannelId,
+    ) -> Option<ChannelDescriptor> {
+        None
+    }
+
     fn receive_data(
         &mut self,
         msg: AndroidAutoFrame,
@@ -1631,8 +1691,8 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                     m2.set_left_hand_drive_vehicle(config.unit.left_hand);
                     m2.set_sw_build(config.unit.sw_build.clone());
                     m2.set_sw_version(config.unit.sw_version.clone());
-                    for s in channels(&config) {
-                        m2.channels.push(s);
+                    for s in &self.channels {
+                        m2.channels.push(s.clone());
                     }
                     let m4d = vec![
                         0x0a, 0x0f, 0x08, 0x07, 0x2a, 0x0b, 0x08, 0x01, 0x12, 0x07, 0x08, 0x80,
@@ -1825,7 +1885,13 @@ impl AndriodAutoBluettothServer {
 
         let mut channel_handlers: BTreeMap<ChannelId, ChannelHandler> = BTreeMap::new();
         channel_handlers.insert(ChannelId::BLUETOOTH, BluetoothChannelHandler {}.into());
-        channel_handlers.insert(ChannelId::CONTROL, ControlChannelHandler {}.into());
+        channel_handlers.insert(
+            ChannelId::CONTROL,
+            ControlChannelHandler {
+                channels: Vec::new(),
+            }
+            .into(),
+        );
         channel_handlers.insert(ChannelId::AV_INPUT, AvInputChannelHandler {}.into());
         channel_handlers.insert(ChannelId::SYSTEM_AUDIO, SystemAudioChannelHandler {}.into());
         channel_handlers.insert(ChannelId::SPEECH_AUDIO, SpeechAudioChannelHandler {}.into());
@@ -1835,6 +1901,16 @@ impl AndriodAutoBluettothServer {
         channel_handlers.insert(ChannelId::MEDIA_STATUS, MediaStatusChannelHandler {}.into());
         channel_handlers.insert(ChannelId::INPUT, InputChannelHandler {}.into());
         channel_handlers.insert(ChannelId::MEDIA_AUDIO, MediaAudioChannelHandler {}.into());
+        let mut chans = Vec::new();
+        for (chanid, handler) in channel_handlers.iter() {
+            if let Some(chan) = handler.build_channel(&config, *chanid) {
+                chans.push(chan);
+            }
+        }
+        channel_handlers
+            .get_mut(&ChannelId::CONTROL)
+            .unwrap()
+            .set_channels(chans);
         log::debug!(
             "Got a connection on port {} from {:?}",
             config.network.port,
