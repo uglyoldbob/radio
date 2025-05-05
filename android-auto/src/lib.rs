@@ -333,12 +333,13 @@ impl AndroidAutoFrameReceiver {
                 .read_exact(&mut self.data[0..*len as usize])?;
             let data = if header.frame.get_encryption() {
                 stream.get_mut().relay_data(&self.data);
-                let mut data = vec![0; *len as usize];
-                stream.ssl_read(&mut data).map_err(|e| {
+                let mut data = vec![0; AndroidAutoFrame::MAX_FRAME_DATA_SIZE];
+                let newlen = stream.ssl_read(&mut data).map_err(|e| {
                     let e2 = e.to_string();
                     std::io::Error::new(std::io::ErrorKind::Other, e2)
                 })?;
-                data
+                log::error!("openssl read lengths {} {}", len, newlen);
+                data[0..newlen].to_vec()
             } else {
                 self.data.clone()
             };
@@ -871,6 +872,9 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
         if let Ok(msg2) = msg2 {
             match msg2 {
                 AvChannelMessage::Control(m) => unimplemented!(),
+                AvChannelMessage::MediaIndication(_, _, _) => {
+                    log::error!("Received media data for media audio");
+                }
                 AvChannelMessage::SetupRequest(chan, m) => {
                     log::info!("Got channel setup request for {:?} audio: {:?}", chan, m);
                     let mut m2 = Wifi::AVChannelSetupResponse::new();
@@ -882,6 +886,17 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
                     openssl_stream.get_mut().plain.write_all(&d2)?;
                 }
                 AvChannelMessage::SetupResponse(chan, m) => unimplemented!(),
+                AvChannelMessage::VideoFocusRequest(chan, m) => {
+                    let mut m2 = Wifi::VideoFocusIndication::new();
+                    m2.set_focus_mode(Wifi::video_focus_mode::Enum::FOCUSED);
+                    m2.set_unrequested(false);
+                    let d: AndroidAutoFrame =
+                        AvChannelMessage::VideoIndicationResponse(channel, m2).into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream.get_mut().plain.write_all(&d2)?;
+                }
+                AvChannelMessage::VideoIndicationResponse(_, _) => unimplemented!(),
+                AvChannelMessage::StartIndication(_, _) => {}
             }
             return Ok(());
         } else {
@@ -1028,6 +1043,9 @@ impl ChannelHandlerTrait for VideoChannelHandler {
         if let Ok(msg2) = msg2 {
             match msg2 {
                 AvChannelMessage::Control(m) => unimplemented!(),
+                AvChannelMessage::MediaIndication(_, _, _) => {
+                    log::error!("Received media data for video");
+                }
                 AvChannelMessage::SetupRequest(chan, m) => {
                     log::info!("Got channel setup request for channel {:?}: {:?}", chan, m);
                     let mut m2 = Wifi::AVChannelSetupResponse::new();
@@ -1039,6 +1057,17 @@ impl ChannelHandlerTrait for VideoChannelHandler {
                     openssl_stream.get_mut().plain.write_all(&d2)?;
                 }
                 AvChannelMessage::SetupResponse(chan, m) => unimplemented!(),
+                AvChannelMessage::VideoFocusRequest(chan, m) => {
+                    let mut m2 = Wifi::VideoFocusIndication::new();
+                    m2.set_focus_mode(Wifi::video_focus_mode::Enum::FOCUSED);
+                    m2.set_unrequested(false);
+                    let d: AndroidAutoFrame =
+                        AvChannelMessage::VideoIndicationResponse(channel, m2).into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream.get_mut().plain.write_all(&d2)?;
+                }
+                AvChannelMessage::VideoIndicationResponse(_, _) => unimplemented!(),
+                AvChannelMessage::StartIndication(_, _) => {}
             }
             return Ok(());
         } else {
@@ -1132,6 +1161,9 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
         if let Ok(msg2) = msg2 {
             match msg2 {
                 AvChannelMessage::Control(m) => unimplemented!(),
+                AvChannelMessage::MediaIndication(_, _, _) => {
+                    log::error!("Received media data for speech audio");
+                }
                 AvChannelMessage::SetupRequest(chan, m) => {
                     log::info!("Got channel setup request for {:?} audio: {:?}", chan, m);
                     let mut m2 = Wifi::AVChannelSetupResponse::new();
@@ -1143,6 +1175,17 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
                     openssl_stream.get_mut().plain.write_all(&d2)?;
                 }
                 AvChannelMessage::SetupResponse(chan, m) => unimplemented!(),
+                AvChannelMessage::VideoFocusRequest(chan, m) => {
+                    let mut m2 = Wifi::VideoFocusIndication::new();
+                    m2.set_focus_mode(Wifi::video_focus_mode::Enum::FOCUSED);
+                    m2.set_unrequested(false);
+                    let d: AndroidAutoFrame =
+                        AvChannelMessage::VideoIndicationResponse(channel, m2).into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream.get_mut().plain.write_all(&d2)?;
+                }
+                AvChannelMessage::VideoIndicationResponse(_, _) => unimplemented!(),
+                AvChannelMessage::StartIndication(_, _) => {}
             }
             return Ok(());
         } else {
@@ -1155,6 +1198,10 @@ enum AvChannelMessage {
     Control(AndroidAutoControlMessage),
     SetupRequest(ChannelId, Wifi::AVChannelSetupRequest),
     SetupResponse(ChannelId, Wifi::AVChannelSetupResponse),
+    VideoFocusRequest(ChannelId, Wifi::VideoFocusRequest),
+    VideoIndicationResponse(ChannelId, Wifi::VideoFocusIndication),
+    StartIndication(ChannelId, Wifi::AVChannelStartIndication),
+    MediaIndication(ChannelId, Option<u64>, Vec<u8>),
 }
 
 impl Into<AndroidAutoFrame> for AvChannelMessage {
@@ -1178,6 +1225,25 @@ impl Into<AndroidAutoFrame> for AvChannelMessage {
                     data: m,
                 }
             }
+            Self::MediaIndication(_, _, _) => unimplemented!(),
+            Self::VideoFocusRequest(chan, m) => unimplemented!(),
+            Self::VideoIndicationResponse(chan, m) => {
+                let mut data = m.write_to_bytes().unwrap();
+                let t = Wifi::avchannel_message::Enum::VIDEO_FOCUS_INDICATION as u16;
+                let t = t.to_be_bytes();
+                let mut m = Vec::new();
+                m.push(t[0]);
+                m.push(t[1]);
+                m.append(&mut data);
+                AndroidAutoFrame {
+                    header: FrameHeader {
+                        channel_id: chan,
+                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, false),
+                    },
+                    data: m,
+                }
+            }
+            Self::StartIndication(_, _) => unimplemented!(),
         }
     }
 }
@@ -1191,31 +1257,48 @@ impl TryFrom<&AndroidAutoFrame> for AvChannelMessage {
         let ty = u16::from_be_bytes(ty);
         if let Some(sys) = Wifi::avchannel_message::Enum::from_i32(ty as i32) {
             match sys {
-                Wifi::avchannel_message::Enum::AV_MEDIA_WITH_TIMESTAMP_INDICATION => todo!(),
-                Wifi::avchannel_message::Enum::AV_MEDIA_INDICATION => todo!(),
+                Wifi::avchannel_message::Enum::AV_MEDIA_WITH_TIMESTAMP_INDICATION => {
+                    let mut b = [0u8; 8];
+                    b.copy_from_slice(&value.data[2..10]);
+                    let ts: u64 = u64::from_be_bytes(b);
+                    Ok(Self::MediaIndication(
+                        value.header.channel_id,
+                        Some(ts),
+                        value.data[10..].to_vec(),
+                    ))
+                }
+                Wifi::avchannel_message::Enum::AV_MEDIA_INDICATION => Ok(Self::MediaIndication(
+                    value.header.channel_id,
+                    None,
+                    value.data[2..].to_vec(),
+                )),
                 Wifi::avchannel_message::Enum::SETUP_REQUEST => {
-                    let mut bytes = value
-                        .data
-                        .clone()
-                        .into_iter()
-                        .rev()
-                        .skip_while(|&byte| byte == 0)
-                        .collect::<Vec<_>>();
-                    bytes.reverse();
-                    let m = Wifi::AVChannelSetupRequest::parse_from_bytes(&bytes[2..]);
+                    let m = Wifi::AVChannelSetupRequest::parse_from_bytes(&value.data[2..]);
                     match m {
                         Ok(m) => Ok(Self::SetupRequest(value.header.channel_id, m)),
                         Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
                     }
                 }
-                Wifi::avchannel_message::Enum::START_INDICATION => todo!(),
+                Wifi::avchannel_message::Enum::START_INDICATION => {
+                    let m = Wifi::AVChannelStartIndication::parse_from_bytes(&value.data[2..]);
+                    match m {
+                        Ok(m) => Ok(Self::StartIndication(value.header.channel_id, m)),
+                        Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
+                    }
+                }
                 Wifi::avchannel_message::Enum::STOP_INDICATION => todo!(),
                 Wifi::avchannel_message::Enum::SETUP_RESPONSE => unimplemented!(),
                 Wifi::avchannel_message::Enum::AV_MEDIA_ACK_INDICATION => todo!(),
                 Wifi::avchannel_message::Enum::AV_INPUT_OPEN_REQUEST => todo!(),
                 Wifi::avchannel_message::Enum::AV_INPUT_OPEN_RESPONSE => todo!(),
-                Wifi::avchannel_message::Enum::VIDEO_FOCUS_REQUEST => todo!(),
-                Wifi::avchannel_message::Enum::VIDEO_FOCUS_INDICATION => todo!(),
+                Wifi::avchannel_message::Enum::VIDEO_FOCUS_REQUEST => {
+                    let m = Wifi::VideoFocusRequest::parse_from_bytes(&value.data[2..]);
+                    match m {
+                        Ok(m) => Ok(Self::VideoFocusRequest(value.header.channel_id, m)),
+                        Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
+                    }
+                }
+                Wifi::avchannel_message::Enum::VIDEO_FOCUS_INDICATION => unimplemented!(),
             }
         } else if Wifi::ControlMessage::from_i32(ty as i32).is_some() {
             let w: Result<AndroidAutoControlMessage, String> = value.try_into();
@@ -1258,6 +1341,9 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
         if let Ok(msg2) = msg2 {
             match msg2 {
                 AvChannelMessage::Control(m) => unimplemented!(),
+                AvChannelMessage::MediaIndication(_, _, _) => {
+                    log::error!("Received media data for system audio");
+                }
                 AvChannelMessage::SetupRequest(chan, m) => {
                     log::info!("Got channel setup request for {:?} audio: {:?}", chan, m);
                     let mut m2 = Wifi::AVChannelSetupResponse::new();
@@ -1269,6 +1355,17 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
                     openssl_stream.get_mut().plain.write_all(&d2)?;
                 }
                 AvChannelMessage::SetupResponse(chan, m) => unimplemented!(),
+                AvChannelMessage::VideoFocusRequest(chan, m) => {
+                    let mut m2 = Wifi::VideoFocusIndication::new();
+                    m2.set_focus_mode(Wifi::video_focus_mode::Enum::FOCUSED);
+                    m2.set_unrequested(false);
+                    let d: AndroidAutoFrame =
+                        AvChannelMessage::VideoIndicationResponse(channel, m2).into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream.get_mut().plain.write_all(&d2)?;
+                }
+                AvChannelMessage::VideoIndicationResponse(_, _) => unimplemented!(),
+                AvChannelMessage::StartIndication(_, _) => {}
             }
             return Ok(());
         } else {
@@ -1399,7 +1496,14 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                 AndroidAutoControlMessage::PingResponse(_) => {
                     *skip_ping = true;
                 }
-                AndroidAutoControlMessage::PingRequest(_) => unimplemented!(),
+                AndroidAutoControlMessage::PingRequest(a) => {
+                    let mut m = Wifi::PingResponse::new();
+                    m.set_timestamp(a.timestamp());
+                    let m = AndroidAutoControlMessage::PingResponse(m);
+                    let d: AndroidAutoFrame = m.into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream.get_mut().plain.write_all(&d2)?;
+                }
                 AndroidAutoControlMessage::AudioFocusResponse(_) => unimplemented!(),
                 AndroidAutoControlMessage::AudioFocusRequest(m) => {
                     let mut m2 = Wifi::AudioFocusResponse::new();
@@ -1800,7 +1904,7 @@ impl AndriodAutoBluettothServer {
                 }
             }
             if !skip_ping && !openssl_stream.get_ref().handshake {
-                let mut m = Wifi::PingRequest2::new();
+                let mut m = Wifi::PingRequest::new();
                 m.set_timestamp(42);
                 let m = AndroidAutoControlMessage::PingRequest(m);
                 let d: AndroidAutoFrame = m.into();

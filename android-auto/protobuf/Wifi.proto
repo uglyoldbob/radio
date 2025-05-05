@@ -372,12 +372,6 @@ message PingRequest
     required int64 timestamp = 1;
 }
 
-message PingRequest2
-{
-    required uint64 timestamp = 1;
-}
-
-
 message PingResponse
 {
     required int64 timestamp = 1;
@@ -413,4 +407,43 @@ message BindingRequest
 message BindingResponse
 {
     required Status.Enum status = 1;
+}
+
+message VideoFocusMode
+{
+    enum Enum
+    {
+        NONE = 0;
+        FOCUSED = 1;
+        UNFOCUSED = 2;
+    }
+}
+
+message VideoFocusReason
+{
+    enum Enum
+    {
+        NONE = 0;
+        UNK_1 = 1;
+        UNK_2 = 2;
+    }
+}
+
+message VideoFocusRequest
+{
+    optional int32 disp_index = 1;
+    required VideoFocusMode.Enum focus_mode = 2;
+    required VideoFocusReason.Enum focus_reason = 3;
+}
+
+message VideoFocusIndication
+{
+    required VideoFocusMode.Enum focus_mode = 1;
+    required bool unrequested = 2;
+}
+
+message AVChannelStartIndication
+{
+    required int32 session = 1;
+    required uint32 config = 2;
 }
