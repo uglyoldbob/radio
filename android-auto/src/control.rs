@@ -49,7 +49,7 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoControlMessage {
 
                         log::error!("Ping request compare to  {:x?}", a);
                         log::error!("Ping request parse {:x?}", bytes);
-                        let m = Wifi::PingRequest2::parse_from_bytes(&bytes[2..]);
+                        let m = Wifi::PingRequest2::parse_from_bytes(&value.data[2..]);
                         log::error!("Ping request parse is {:x?}", m);
                         match m {
                             Ok(m) => Ok(AndroidAutoControlMessage::PingRequest(m)),
@@ -146,7 +146,22 @@ impl TryFrom<&AndroidAutoFrame> for AndroidAutoControlMessage {
 impl Into<AndroidAutoFrame> for AndroidAutoControlMessage {
     fn into(self) -> AndroidAutoFrame {
         match self {
-            AndroidAutoControlMessage::PingResponse(_) => unimplemented!(),
+            AndroidAutoControlMessage::PingResponse(m) => {
+                let mut data = m.write_to_bytes().unwrap();
+                let t = Wifi::ControlMessage::PING_RESPONSE as u16;
+                let t = t.to_be_bytes();
+                let mut m = Vec::new();
+                m.push(t[0]);
+                m.push(t[1]);
+                m.append(&mut data);
+                AndroidAutoFrame {
+                    header: FrameHeader {
+                        channel_id: ChannelId::CONTROL,
+                        frame: FrameHeaderContents::new(false, FrameHeaderType::Single, false),
+                    },
+                    data: m,
+                }
+            }
             AndroidAutoControlMessage::PingRequest(m) => {
                 let mut data = m.write_to_bytes().unwrap();
                 let t = Wifi::ControlMessage::PING_REQUEST as u16;

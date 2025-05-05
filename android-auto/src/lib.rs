@@ -334,11 +334,11 @@ impl AndroidAutoFrameReceiver {
             let data = if header.frame.get_encryption() {
                 stream.get_mut().relay_data(&self.data);
                 let mut data = vec![0; *len as usize];
-                stream.ssl_read(&mut data).map_err(|e| {
+                let newlen = stream.ssl_read(&mut data).map_err(|e| {
                     let e2 = e.to_string();
                     std::io::Error::new(std::io::ErrorKind::Other, e2)
                 })?;
-                data
+                data[0..newlen].to_vec()
             } else {
                 self.data.clone()
             };
@@ -937,9 +937,8 @@ impl ChannelHandlerTrait for MediaStatusChannelHandler {
                 } => unimplemented!(),
             }
             return Ok(());
-        } else {
-            todo!("{:x?}", msg);
-        }
+        } 
+        todo!("{:x?}", msg);
     }
 }
 
@@ -1399,7 +1398,17 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                 AndroidAutoControlMessage::PingResponse(_) => {
                     *skip_ping = true;
                 }
-                AndroidAutoControlMessage::PingRequest(_) => unimplemented!(),
+                AndroidAutoControlMessage::PingRequest(_) => {
+                    let mut m = Wifi::PingResponse::new();
+                    m.set_timestamp(42);
+                    let m = AndroidAutoControlMessage::PingResponse(m);
+                    let d: AndroidAutoFrame = m.into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream
+                        .get_mut()
+                        .plain
+                        .write_all(&d2)?;
+                }
                 AndroidAutoControlMessage::AudioFocusResponse(_) => unimplemented!(),
                 AndroidAutoControlMessage::AudioFocusRequest(m) => {
                     let mut m2 = Wifi::AudioFocusResponse::new();
