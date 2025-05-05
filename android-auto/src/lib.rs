@@ -118,7 +118,7 @@ impl TryFrom<u8> for ChannelId {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[repr(u8)]
 pub enum FrameHeaderType {
     Middle = 0,
@@ -275,6 +275,7 @@ impl AndroidAutoFrame {
 struct AndroidAutoFrameReceiver {
     len: Option<u16>,
     data: Vec<u8>,
+    rx_sofar: Vec<u8>,
 }
 
 impl AndroidAutoFrameReceiver {
@@ -282,6 +283,7 @@ impl AndroidAutoFrameReceiver {
         Self {
             len: None,
             data: Vec::new(),
+            rx_sofar: Vec::new(),
         }
     }
 
@@ -326,29 +328,51 @@ impl AndroidAutoFrameReceiver {
             self.data = vec![0; len as usize];
             self.len.replace(len);
         }
-        if let Some(len) = &self.len {
+        if let Some(len) = self.len.take() {
+            log::error!("Reading {} bytes of frame data, {}", len, self.data.len());
             stream
                 .get_mut()
                 .plain
-                .read_exact(&mut self.data[0..*len as usize])?;
-            let data = if header.frame.get_encryption() {
-                stream.get_mut().relay_data(&self.data);
-                let mut data = vec![0; AndroidAutoFrame::MAX_FRAME_DATA_SIZE];
-                let newlen = stream.ssl_read(&mut data).map_err(|e| {
-                    let e2 = e.to_string();
-                    std::io::Error::new(std::io::ErrorKind::Other, e2)
-                })?;
-                log::error!("openssl read lengths {} {}", len, newlen);
-                data[0..newlen].to_vec()
+                .read_exact(&mut self.data[0..len as usize])?;
+            let data = if header.frame.get_frame_type() == FrameHeaderType::Single {
+                let d = self.data.clone();
+                self.data.clear();
+                Some(d)
             } else {
-                self.data.clone()
+                self.rx_sofar.append(&mut self.data);
+                if header.frame.get_frame_type() == FrameHeaderType::Last {
+                    let d = self.rx_sofar.clone();
+                    self.rx_sofar.clear();
+                    Some(d)
+                }
+                else {
+                    None
+                }
             };
-            let f = AndroidAutoFrame {
-                header: header.clone(),
-                data,
-            };
-            let f = Some(f);
-            return Ok(f);
+            if let Some(data) = data {
+                let data = if header.frame.get_encryption() {
+                    stream.get_mut().relay_data(&data);
+                    let mut data = vec![0; AndroidAutoFrame::MAX_FRAME_DATA_SIZE];
+                    let newlen = stream.ssl_read(&mut data).map_err(|e| {
+                        let e2 = e.to_string();
+                        std::io::Error::new(std::io::ErrorKind::Other, e2)
+                    });
+                    if newlen.is_err() {
+                        log::error!("Error parsing frame {:?} {:?} {:x?}", header.channel_id, header.frame, data);
+                    }
+                    let newlen = newlen?;
+                    log::error!("openssl read lengths {} {}", len, newlen);
+                    data[0..newlen].to_vec()
+                } else {
+                    data.clone()
+                };
+                let f = AndroidAutoFrame {
+                    header: header.clone(),
+                    data,
+                };
+                let f = Some(f);
+                return Ok(f);
+            }
         }
         Ok(None)
     }
@@ -1785,6 +1809,7 @@ impl AndriodAutoBluettothServer {
             .plain
             .write_all(&d2)
             .map_err(|e| e.to_string())?;
+        let mut fr2 = AndroidAutoFrameReceiver::new();
         loop {
             let mut skip_ping = false;
             let mut fr = FrameHeaderReceiver::new();
@@ -1839,7 +1864,6 @@ impl AndriodAutoBluettothServer {
                 }
             };
             let f2 = if let Some(f) = f {
-                let mut fr2 = AndroidAutoFrameReceiver::new();
                 let f2 = loop {
                     match fr2.read(&f, &mut openssl_stream) {
                         Ok(Some(f2)) => break f2,
