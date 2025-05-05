@@ -2,6 +2,20 @@ syntax = "proto2";
 
 package androidauto.wifi;
 
+message NonspecificMessage 
+{
+    enum Enum 
+    {
+        VERSION_REQUEST = 0x0001;
+    }
+}
+
+enum CommonMessage 
+{
+    CHANNEL_OPEN_REQUEST = 0x0007;
+    CHANNEL_OPEN_RESPONSE = 0x0008;
+}
+
 enum ControlMessage
 {
     MESSAGE_NONE = 0x0000;
@@ -11,8 +25,6 @@ enum ControlMessage
     AUTH_COMPLETE = 0x0004;
     SERVICE_DISCOVERY_REQUEST = 0x0005;
     SERVICE_DISCOVERY_RESPONSE = 0x0006;
-    CHANNEL_OPEN_REQUEST = 0x0007;
-    CHANNEL_OPEN_RESPONSE = 0x0008;
     PING_REQUEST = 0x000b;
     PING_RESPONSE = 0x000c;
     NAVIGATION_FOCUS_REQUEST = 0x000d;
@@ -359,6 +371,12 @@ message PingRequest
 {
     required int64 timestamp = 1;
 }
+
+message PingRequest2
+{
+    required uint64 timestamp = 1;
+}
+
 
 message PingResponse
 {
