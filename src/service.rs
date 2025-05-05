@@ -320,9 +320,7 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     }
 }
 
-struct AndroidAutoStuff {
-
-}
+struct AndroidAutoStuff {}
 
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     fn supports_video(&mut self) -> Option<&mut dyn android_auto::AndroidAutoVideoChannelTrait> {

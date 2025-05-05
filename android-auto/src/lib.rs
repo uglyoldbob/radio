@@ -9,16 +9,20 @@ use protobuf::{EnumOrUnknown, Message};
 
 mod control;
 use control::*;
-mod nonspecific;
 mod common;
+mod nonspecific;
 use common::*;
+mod video;
+use video::*;
 
 pub trait AndroidAutoMainTrait {
     #[inline(always)]
-    fn supports_video(&mut self) -> Option<&mut dyn AndroidAutoVideoChannelTrait> { None }
+    fn supports_video(&mut self) -> Option<&mut dyn AndroidAutoVideoChannelTrait> {
+        None
+    }
 }
 
-pub trait AndroidAutoVideoChannelTrait : AndroidAutoMainTrait {
+pub trait AndroidAutoVideoChannelTrait: AndroidAutoMainTrait {
     fn receive_video(&mut self, data: &[u8]);
 }
 
@@ -740,7 +744,6 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
         let msg2: Result<AvChannelMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
             match msg2 {
-                AvChannelMessage::Control(m) => unimplemented!(),
                 AvChannelMessage::MediaIndication(_, _, _) => {
                     log::error!("Received media data for media audio");
                 }
@@ -980,109 +983,6 @@ impl ChannelHandlerTrait for NavigationChannelHandler {
     }
 }
 
-struct VideoChannelHandler {}
-
-impl ChannelHandlerTrait for VideoChannelHandler {
-    fn build_channel(
-        &self,
-        config: &AndroidAutoConfiguration,
-        chanid: ChannelId,
-    ) -> Option<ChannelDescriptor> {
-        let mut chan = ChannelDescriptor::new();
-        let mut avchan = Wifi::AVChannel::new();
-        chan.set_channel_id(chanid as u8 as u32);
-        avchan.set_stream_type(Wifi::avstream_type::Enum::VIDEO);
-        avchan.set_available_while_in_call(true);
-        avchan.set_audio_type(Wifi::audio_type::Enum::SYSTEM);
-        let mut vconfs = Vec::new();
-        vconfs.push({
-            let mut vc = Wifi::VideoConfig::new();
-            vc.set_video_resolution(Wifi::video_resolution::Enum::_480p);
-            vc.set_video_fps(Wifi::video_fps::Enum::_30);
-            vc.set_dpi(300);
-            vc.set_additional_depth(0);
-            vc.set_margin_height(0);
-            vc.set_margin_width(0);
-            if !vc.is_initialized() {
-                panic!();
-            }
-            vc
-        });
-        for v in vconfs {
-            avchan.video_configs.push(v);
-        }
-
-        chan.av_channel.0.replace(Box::new(avchan));
-        if !chan.is_initialized() {
-            panic!("Channel not initialized?");
-        }
-        Some(chan)
-    }
-
-    fn receive_data<T: AndroidAutoMainTrait>(
-        &mut self,
-        msg: AndroidAutoFrame,
-        _skip_ping: &mut bool,
-        openssl_stream: &mut openssl::ssl::SslStream<OpensslSocket>,
-        _config: &AndroidAutoConfiguration,
-        main: &mut T,
-    ) -> Result<(), std::io::Error> {
-        use std::io::Write;
-        let channel = msg.header.channel_id;
-        let msg2: Result<AndroidAutoCommonMessage, String> = (&msg).try_into();
-        if let Ok(msg2) = msg2 {
-            match msg2 {
-                AndroidAutoCommonMessage::ChannelOpenResponse(_, _) => unimplemented!(),
-                AndroidAutoCommonMessage::ChannelOpenRequest(m) => {
-                    log::info!("Got channel open request for video: {:?}", m);
-                    let mut m2 = Wifi::ChannelOpenResponse::new();
-                    m2.set_status(Wifi::status::Enum::OK);
-                    let d: AndroidAutoFrame =
-                        AndroidAutoCommonMessage::ChannelOpenResponse(channel, m2).into();
-                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                    openssl_stream.get_mut().plain.write_all(&d2)?;
-                }
-            }
-            return Ok(());
-        }
-        let msg2: Result<AvChannelMessage, String> = (&msg).try_into();
-        if let Ok(msg2) = msg2 {
-            match msg2 {
-                AvChannelMessage::Control(m) => unimplemented!(),
-                AvChannelMessage::MediaIndication(chan, time, data) => {
-                    if let Some(a) = main.supports_video() {
-                        a.receive_video(&data);
-                    }
-                }
-                AvChannelMessage::SetupRequest(chan, m) => {
-                    log::info!("Got channel setup request for channel {:?}: {:?}", chan, m);
-                    let mut m2 = Wifi::AVChannelSetupResponse::new();
-                    m2.set_max_unacked(10);
-                    m2.set_media_status(Wifi::avchannel_setup_status::Enum::OK);
-                    m2.configs.push(0);
-                    let d: AndroidAutoFrame = AvChannelMessage::SetupResponse(channel, m2).into();
-                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                    openssl_stream.get_mut().plain.write_all(&d2)?;
-                }
-                AvChannelMessage::SetupResponse(chan, m) => unimplemented!(),
-                AvChannelMessage::VideoFocusRequest(chan, m) => {
-                    let mut m2 = Wifi::VideoFocusIndication::new();
-                    m2.set_focus_mode(Wifi::video_focus_mode::Enum::FOCUSED);
-                    m2.set_unrequested(false);
-                    let d: AndroidAutoFrame =
-                        AvChannelMessage::VideoIndicationResponse(channel, m2).into();
-                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                    openssl_stream.get_mut().plain.write_all(&d2)?;
-                }
-                AvChannelMessage::VideoIndicationResponse(_, _) => unimplemented!(),
-                AvChannelMessage::StartIndication(_, _) => {}
-            }
-            return Ok(());
-        }
-        todo!("{:x?}", msg);
-    }
-}
-
 struct SensorChannelHandler {}
 
 impl ChannelHandlerTrait for SensorChannelHandler {
@@ -1215,7 +1115,6 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
         let msg2: Result<AvChannelMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
             match msg2 {
-                AvChannelMessage::Control(m) => unimplemented!(),
                 AvChannelMessage::MediaIndication(_, _, _) => {
                     log::error!("Received media data for speech audio");
                 }
@@ -1249,7 +1148,6 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
 }
 
 enum AvChannelMessage {
-    Control(AndroidAutoControlMessage),
     SetupRequest(ChannelId, Wifi::AVChannelSetupRequest),
     SetupResponse(ChannelId, Wifi::AVChannelSetupResponse),
     VideoFocusRequest(ChannelId, Wifi::VideoFocusRequest),
@@ -1261,7 +1159,6 @@ enum AvChannelMessage {
 impl Into<AndroidAutoFrame> for AvChannelMessage {
     fn into(self) -> AndroidAutoFrame {
         match self {
-            Self::Control(c) => c.into(),
             Self::SetupRequest(_, _) => unimplemented!(),
             Self::SetupResponse(chan, m) => {
                 let mut data = m.write_to_bytes().unwrap();
@@ -1314,6 +1211,7 @@ impl TryFrom<&AndroidAutoFrame> for AvChannelMessage {
                 Wifi::avchannel_message::Enum::AV_MEDIA_WITH_TIMESTAMP_INDICATION => {
                     let mut b = [0u8; 8];
                     b.copy_from_slice(&value.data[2..10]);
+                    log::info!("Recieved media on channel {:?} size {}", value.header.channel_id, value.data[10..].len());
                     let ts: u64 = u64::from_be_bytes(b);
                     Ok(Self::MediaIndication(
                         value.header.channel_id,
@@ -1354,9 +1252,6 @@ impl TryFrom<&AndroidAutoFrame> for AvChannelMessage {
                 }
                 Wifi::avchannel_message::Enum::VIDEO_FOCUS_INDICATION => unimplemented!(),
             }
-        } else if Wifi::ControlMessage::from_i32(ty as i32).is_some() {
-            let w: Result<AndroidAutoControlMessage, String> = value.try_into();
-            w.map(|v| Self::Control(v))
         } else {
             Err(format!("Not converted message: {:x?}", value.data))
         }
@@ -1418,7 +1313,6 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
         let msg2: Result<AvChannelMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
             match msg2 {
-                AvChannelMessage::Control(m) => unimplemented!(),
                 AvChannelMessage::MediaIndication(_, _, _) => {
                     log::error!("Received media data for system audio");
                 }
@@ -1865,6 +1759,7 @@ impl AndriodAutoBluettothServer {
         channel_handlers.insert(ChannelId::SPEECH_AUDIO, SpeechAudioChannelHandler {}.into());
         channel_handlers.insert(ChannelId::SENSOR, SensorChannelHandler {}.into());
         if main.supports_video().is_some() {
+            log::info!("Setting up video channel");
             channel_handlers.insert(ChannelId::VIDEO, VideoChannelHandler {}.into());
         }
         channel_handlers.insert(ChannelId::NAVIGATION, NavigationChannelHandler {}.into());
@@ -1911,13 +1806,64 @@ impl AndriodAutoBluettothServer {
             .map_err(|e| e.to_string())?;
         let mut fr2 = AndroidAutoFrameReceiver::new();
         loop {
-            let mut skip_ping = false;
+            let mut skip_ping = true;
             let mut fr = FrameHeaderReceiver::new();
             let f = loop {
                 match fr.read(&mut openssl_stream.get_mut().plain) {
                     Ok(Some(f)) => break Some(f),
-                    Err(e) => {
-                        match e.kind() {
+                    Err(e) => match e.kind() {
+                        std::io::ErrorKind::NotFound => todo!(),
+                        std::io::ErrorKind::PermissionDenied => todo!(),
+                        std::io::ErrorKind::ConnectionRefused => todo!(),
+                        std::io::ErrorKind::ConnectionReset => todo!(),
+                        std::io::ErrorKind::HostUnreachable => todo!(),
+                        std::io::ErrorKind::NetworkUnreachable => todo!(),
+                        std::io::ErrorKind::ConnectionAborted => todo!(),
+                        std::io::ErrorKind::NotConnected => todo!(),
+                        std::io::ErrorKind::AddrInUse => todo!(),
+                        std::io::ErrorKind::AddrNotAvailable => todo!(),
+                        std::io::ErrorKind::NetworkDown => todo!(),
+                        std::io::ErrorKind::BrokenPipe => todo!(),
+                        std::io::ErrorKind::AlreadyExists => todo!(),
+                        std::io::ErrorKind::WouldBlock => break None,
+                        std::io::ErrorKind::NotADirectory => todo!(),
+                        std::io::ErrorKind::IsADirectory => todo!(),
+                        std::io::ErrorKind::DirectoryNotEmpty => todo!(),
+                        std::io::ErrorKind::ReadOnlyFilesystem => todo!(),
+                        std::io::ErrorKind::StaleNetworkFileHandle => todo!(),
+                        std::io::ErrorKind::InvalidInput => todo!(),
+                        std::io::ErrorKind::InvalidData => todo!(),
+                        std::io::ErrorKind::TimedOut => todo!(),
+                        std::io::ErrorKind::WriteZero => todo!(),
+                        std::io::ErrorKind::StorageFull => todo!(),
+                        std::io::ErrorKind::NotSeekable => todo!(),
+                        std::io::ErrorKind::QuotaExceeded => todo!(),
+                        std::io::ErrorKind::FileTooLarge => todo!(),
+                        std::io::ErrorKind::ResourceBusy => todo!(),
+                        std::io::ErrorKind::ExecutableFileBusy => todo!(),
+                        std::io::ErrorKind::Deadlock => todo!(),
+                        std::io::ErrorKind::CrossesDevices => todo!(),
+                        std::io::ErrorKind::TooManyLinks => todo!(),
+                        std::io::ErrorKind::ArgumentListTooLong => todo!(),
+                        std::io::ErrorKind::Interrupted => todo!(),
+                        std::io::ErrorKind::Unsupported => todo!(),
+                        std::io::ErrorKind::UnexpectedEof => todo!(),
+                        std::io::ErrorKind::OutOfMemory => todo!(),
+                        std::io::ErrorKind::Other => todo!(),
+                        _ => return Err("Unknown error reading frame header".to_string()),
+                    },
+                    _ => break None,
+                }
+            };
+            let f2 = if let Some(f) = f {
+                let f2 = loop {
+                    match fr2.read(&f, &mut openssl_stream) {
+                        Ok(Some(f2)) => break Some(f2),
+                        Ok(None) => {
+                            skip_ping = true;
+                            break None;
+                        }
+                        Err(e) => match e.kind() {
                             std::io::ErrorKind::NotFound => todo!(),
                             std::io::ErrorKind::PermissionDenied => todo!(),
                             std::io::ErrorKind::ConnectionRefused => todo!(),
@@ -1931,7 +1877,7 @@ impl AndriodAutoBluettothServer {
                             std::io::ErrorKind::NetworkDown => todo!(),
                             std::io::ErrorKind::BrokenPipe => todo!(),
                             std::io::ErrorKind::AlreadyExists => todo!(),
-                            std::io::ErrorKind::WouldBlock => break None,
+                            std::io::ErrorKind::WouldBlock => {}
                             std::io::ErrorKind::NotADirectory => todo!(),
                             std::io::ErrorKind::IsADirectory => todo!(),
                             std::io::ErrorKind::DirectoryNotEmpty => todo!(),
@@ -1957,63 +1903,7 @@ impl AndriodAutoBluettothServer {
                             std::io::ErrorKind::OutOfMemory => todo!(),
                             std::io::ErrorKind::Other => todo!(),
                             _ => return Err("Unknown error reading frame header".to_string()),
-                        }
-                    }
-                    _ => break None,
-                }
-            };
-            let f2 = if let Some(f) = f {
-                let f2 = loop {
-                    match fr2.read(&f, &mut openssl_stream) {
-                        Ok(Some(f2)) => break Some(f2),
-                        Ok(None) => {
-                            skip_ping = true;
-                            break None;
-                        }
-                        Err(e) => {
-                            match e.kind() {
-                                std::io::ErrorKind::NotFound => todo!(),
-                                std::io::ErrorKind::PermissionDenied => todo!(),
-                                std::io::ErrorKind::ConnectionRefused => todo!(),
-                                std::io::ErrorKind::ConnectionReset => todo!(),
-                                std::io::ErrorKind::HostUnreachable => todo!(),
-                                std::io::ErrorKind::NetworkUnreachable => todo!(),
-                                std::io::ErrorKind::ConnectionAborted => todo!(),
-                                std::io::ErrorKind::NotConnected => todo!(),
-                                std::io::ErrorKind::AddrInUse => todo!(),
-                                std::io::ErrorKind::AddrNotAvailable => todo!(),
-                                std::io::ErrorKind::NetworkDown => todo!(),
-                                std::io::ErrorKind::BrokenPipe => todo!(),
-                                std::io::ErrorKind::AlreadyExists => todo!(),
-                                std::io::ErrorKind::WouldBlock => {}
-                                std::io::ErrorKind::NotADirectory => todo!(),
-                                std::io::ErrorKind::IsADirectory => todo!(),
-                                std::io::ErrorKind::DirectoryNotEmpty => todo!(),
-                                std::io::ErrorKind::ReadOnlyFilesystem => todo!(),
-                                std::io::ErrorKind::StaleNetworkFileHandle => todo!(),
-                                std::io::ErrorKind::InvalidInput => todo!(),
-                                std::io::ErrorKind::InvalidData => todo!(),
-                                std::io::ErrorKind::TimedOut => todo!(),
-                                std::io::ErrorKind::WriteZero => todo!(),
-                                std::io::ErrorKind::StorageFull => todo!(),
-                                std::io::ErrorKind::NotSeekable => todo!(),
-                                std::io::ErrorKind::QuotaExceeded => todo!(),
-                                std::io::ErrorKind::FileTooLarge => todo!(),
-                                std::io::ErrorKind::ResourceBusy => todo!(),
-                                std::io::ErrorKind::ExecutableFileBusy => todo!(),
-                                std::io::ErrorKind::Deadlock => todo!(),
-                                std::io::ErrorKind::CrossesDevices => todo!(),
-                                std::io::ErrorKind::TooManyLinks => todo!(),
-                                std::io::ErrorKind::ArgumentListTooLong => todo!(),
-                                std::io::ErrorKind::Interrupted => todo!(),
-                                std::io::ErrorKind::Unsupported => todo!(),
-                                std::io::ErrorKind::UnexpectedEof => todo!(),
-                                std::io::ErrorKind::OutOfMemory => todo!(),
-                                std::io::ErrorKind::Other => todo!(),
-                                _ => return Err("Unknown error reading frame header".to_string()),
-                            }
-                        }
-                        _ => {}
+                        },
                     }
                 };
                 f2
@@ -2047,7 +1937,10 @@ impl AndriodAutoBluettothServer {
     }
 
     #[cfg(feature = "wireless")]
-    pub fn wifi_listen<T: AndroidAutoMainTrait>(config: AndroidAutoConfiguration, mut main: T) -> Result<(), String> {
+    pub fn wifi_listen<T: AndroidAutoMainTrait>(
+        config: AndroidAutoConfiguration,
+        mut main: T,
+    ) -> Result<(), String> {
         log::debug!(
             "Listening on port {} for android auto stuff",
             config.network.port
