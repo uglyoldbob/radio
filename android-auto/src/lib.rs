@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use tokio::io::AsyncReadExt;
 
 mod cert;
@@ -379,6 +381,54 @@ impl Into<Vec<u8>> for AndroidAutoMessage {
     }
 }
 
+#[derive(Debug)]
+struct AndroidAutoServerVerifier {
+    base: Arc<rustls::client::WebPkiServerVerifier>,
+}
+
+impl AndroidAutoServerVerifier {
+    fn new(roots: Arc<rustls::RootCertStore>) -> Self {
+        Self {
+            base: rustls::client::WebPkiServerVerifier::builder(roots).build().unwrap(),
+        }
+    }
+}
+
+impl rustls::client::danger::ServerCertVerifier for AndroidAutoServerVerifier {
+    fn verify_server_cert(
+            &self,
+            _end_entity: &rustls::pki_types::CertificateDer<'_>,
+            _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+            _server_name: &rustls::pki_types::ServerName<'_>,
+            _ocsp_response: &[u8],
+            _now: rustls::pki_types::UnixTime,
+        ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+            &self,
+            message: &[u8],
+            cert: &rustls::pki_types::CertificateDer<'_>,
+            dss: &rustls::DigitallySignedStruct,
+        ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        self.base.verify_tls12_signature(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+            &self,
+            message: &[u8],
+            cert: &rustls::pki_types::CertificateDer<'_>,
+            dss: &rustls::DigitallySignedStruct,
+        ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        self.base.verify_tls13_signature(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        self.base.supported_verify_schemes()
+    }
+}
+
 impl AndriodAutoBluettothServer {
     #[cfg(feature = "wireless")]
     pub async fn new(bluetooth: &mut bluetooth_rust::BluetoothHandler) -> Self {
@@ -495,9 +545,12 @@ impl AndriodAutoBluettothServer {
         };
         log::debug!("AAuto cert: {:?}", aautocertder);
         root_store.add(aautocertder).expect("Failed to load android auto server cert");
-        let ssl_client_config = rustls::ClientConfig::builder()
-            .with_root_certificates(root_store)
+        let root_store = Arc::new(root_store);
+        let mut ssl_client_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store.clone())
             .with_no_client_auth();
+        let sver = Arc::new(AndroidAutoServerVerifier::new(root_store));
+        ssl_client_config.dangerous().set_certificate_verifier(sver);
         let config = Arc::new(ssl_client_config);
         let server = "idontknow.com".try_into().unwrap();
         let mut ssl_client = rustls::ClientConnection::new(config, server).expect("Failed to build ssl client");
@@ -506,17 +559,17 @@ impl AndriodAutoBluettothServer {
         let m = AndroidAutoWifiMessage::VersionRequest;
         let d: AndroidAutoFrame = m.into();
         let d2: Vec<u8> = d.into();
-        stream.write_all(&d2).await;
+        stream.write_all(&d2).await.map_err(|e|e.to_string())?;
         loop {
             let mut fr = FrameHeaderReceiver::new();
             let f = loop {
-                if let Ok(Some(f)) = fr.read(&mut stream).await {
+                if let Ok(Some(f)) = fr.read(stream).await {
                     break f;
                 }
             };
             let mut fr2 = AndroidAutoFrameReceiver::new();
             let f2 = loop {
-                if let Ok(Some(f2)) = fr2.read(&f, &mut stream).await {
+                if let Ok(Some(f2)) = fr2.read(&f, stream).await {
                     break f2;
                 }
             };
@@ -547,7 +600,7 @@ impl AndriodAutoBluettothServer {
                                 let m = AndroidAutoWifiMessage::SslHandshake(s);
                                 let d: AndroidAutoFrame = m.into();
                                 let d2: Vec<u8> = d.into();
-                                stream.write_all(&d2).await;
+                                stream.write_all(&d2).await.map_err(|e|e.to_string())?;
                             }
                         }
                     }
@@ -574,7 +627,7 @@ impl AndriodAutoBluettothServer {
                                 let m = AndroidAutoWifiMessage::SslHandshake(s);
                                 let d: AndroidAutoFrame = m.into();
                                 let d2: Vec<u8> = d.into();
-                                let a = stream.write_all(&d2).await;
+                                stream.write_all(&d2).await.map_err(|e|e.to_string())?;
                             }
                         }
                     }
