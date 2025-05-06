@@ -497,8 +497,8 @@ async fn smain() {
             let net2 = network.clone();
             tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
             let main = AndroidAutoStuff { sendr: aautochan.0 };
-            std::thread::spawn(move || {
-                android_auto::AndriodAutoBluettothServer::wifi_listen(config, main)
+            tasks.spawn(async move {
+                android_auto::AndriodAutoBluettothServer::wifi_listen(config, main).await
             });
         }
     }
