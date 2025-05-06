@@ -5,10 +5,7 @@ mod video;
 #[cfg(feature = "wifi")]
 mod wifi;
 
-use eframe::{
-    egui::{self, Vec2},
-    glow::PACK_IMAGE_HEIGHT,
-};
+use eframe::egui::{self, Vec2};
 
 #[enum_dispatch::enum_dispatch]
 trait SubwindowTrait {

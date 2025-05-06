@@ -26,8 +26,10 @@ pub trait AndroidAutoMainTrait {
     }
 }
 
+#[async_trait::async_trait]
 pub trait AndroidAutoVideoChannelTrait: AndroidAutoMainTrait {
     fn receive_video(&mut self, data: &[u8]);
+    async fn test(&mut self) {}
 }
 
 pub struct AndriodAutoBluettothServer {
