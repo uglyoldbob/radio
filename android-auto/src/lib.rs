@@ -1649,13 +1649,24 @@ impl AndriodAutoBluettothServer {
                 .expect("Invalid pem sert vor aauto server");
             CertificateDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
         };
+        let cert = {
+            let mut br = std::io::Cursor::new(cert::CERTIFICATE.to_string().as_bytes().to_vec());
+            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto client").expect("Invalid pem cert for aauto client");
+            CertificateDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
+        };
+        let key = {
+            let mut br = std::io::Cursor::new(cert::PRIVATE_KEY.to_string().as_bytes().to_vec());
+            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto client").expect("Invalid pem cert for aauto client");
+            rustls::pki_types::PrivateKeyDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
+        };
+        let cert = vec![cert];
         root_store
             .add(aautocertder)
             .expect("Failed to load android auto server cert");
         let root_store = Arc::new(root_store);
         let mut ssl_client_config = rustls::ClientConfig::builder()
             .with_root_certificates(root_store.clone())
-            .with_no_client_auth();
+            .with_client_auth_cert(cert, key).unwrap();
         let sver = Arc::new(AndroidAutoServerVerifier::new(root_store));
         ssl_client_config.dangerous().set_certificate_verifier(sver);
         let sslconfig = Arc::new(ssl_client_config);
