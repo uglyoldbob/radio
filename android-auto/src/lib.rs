@@ -204,12 +204,16 @@ impl FrameHeaderReceiver {
     ) -> Result<Option<FrameHeader>, std::io::Error> {
         if self.channel_id.is_none() {
             let mut b = [0u8];
+            log::error!("trying to read channel id of frame");
             stream.read_exact(&mut b).await?;
             self.channel_id = ChannelId::try_from(b[0]).ok();
+            log::error!("Got channel id {:?}", self.channel_id);
         }
         if let Some(channel_id) = &self.channel_id {
             let mut b = [0u8];
+            log::error!("Trying to read frame header");
             stream.read_exact(&mut b).await?;
+            log::error!("Got frame header {:x?}", b);
             let mut a = FrameHeaderContents::new(false, FrameHeaderType::Single, false);
             a.0 = b[0];
             let fh = FrameHeader {
@@ -279,7 +283,7 @@ impl AndroidAutoFrame {
             buf.append(&mut p);
             buf.append(&mut data);
         }
-        log::error!("Converted packet to final format to send out");
+        log::error!("Converted packet to final format to send out: {:02x?}", buf);
         buf
     }
 }
@@ -1429,8 +1433,9 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                             log::debug!("Got buffer length {} to send for ssl stuff {:x?}", l, s);
                             let m = AndroidAutoControlMessage::SslHandshake(s);
                             let d: AndroidAutoFrame = m.into();
-                            let d2: Vec<u8> = d.build_vec(Some(ssl_stream)).await;
+                            let d2: Vec<u8> = d.build_vec(None).await;
                             stream.write_all(&d2).await?;
+                            log::error!("ssl handshaking {} RX {} TX {}", ssl_stream.is_handshaking(), ssl_stream.wants_read(), ssl_stream.wants_write());
                         }
                     }
                 }
