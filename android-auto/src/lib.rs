@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, io::Cursor, sync::Arc};
+use std::{
+    collections::VecDeque,
+    io::{Cursor, Read},
+    sync::Arc,
+};
 
 mod cert;
 
@@ -360,7 +364,9 @@ impl AndroidAutoFrameReceiver {
                 let data_plain = if header.frame.get_encryption() {
                     ssl_stream.read_tls(&mut Cursor::new(&data_frame)).unwrap();
                     let state = ssl_stream.process_new_packets();
-                    todo!("{:?} {:02x?}", state, data_frame);
+                    let mut plain_data = vec![0u8; data_frame.len()];
+                    let a = ssl_stream.reader().read(&mut plain_data).unwrap();
+                    plain_data[0..a].to_vec()
                 } else {
                     data_frame
                 };
@@ -1435,7 +1441,12 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                             let d: AndroidAutoFrame = m.into();
                             let d2: Vec<u8> = d.build_vec(None).await;
                             stream.write_all(&d2).await?;
-                            log::error!("ssl handshaking {} RX {} TX {}", ssl_stream.is_handshaking(), ssl_stream.wants_read(), ssl_stream.wants_write());
+                            log::error!(
+                                "ssl handshaking {} RX {} TX {}",
+                                ssl_stream.is_handshaking(),
+                                ssl_stream.wants_read(),
+                                ssl_stream.wants_write()
+                            );
                         }
                     }
                     if !ssl_stream.is_handshaking() {
@@ -1657,13 +1668,17 @@ impl AndriodAutoBluettothServer {
         };
         let cert = {
             let mut br = std::io::Cursor::new(cert::CERTIFICATE.to_string().as_bytes().to_vec());
-            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto client").expect("Invalid pem cert for aauto client");
+            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br)
+                .expect("Failed to parse pem for aauto client")
+                .expect("Invalid pem cert for aauto client");
             CertificateDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
         };
         log::error!("Cert is {:02x?}", cert);
         let key = {
             let mut br = std::io::Cursor::new(cert::PRIVATE_KEY.to_string().as_bytes().to_vec());
-            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto client").expect("Invalid pem cert for aauto client");
+            let aautocertpem = rustls::pki_types::pem::from_buf(&mut br)
+                .expect("Failed to parse pem for aauto client")
+                .expect("Invalid pem cert for aauto client");
             rustls::pki_types::PrivateKeyDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
         };
         let cert = vec![cert];
@@ -1673,7 +1688,8 @@ impl AndriodAutoBluettothServer {
         let root_store = Arc::new(root_store);
         let mut ssl_client_config = rustls::ClientConfig::builder()
             .with_root_certificates(root_store.clone())
-            .with_client_auth_cert(cert, key).unwrap();
+            .with_client_auth_cert(cert, key)
+            .unwrap();
         let sver = Arc::new(AndroidAutoServerVerifier::new(root_store));
         ssl_client_config.dangerous().set_certificate_verifier(sver);
         let sslconfig = Arc::new(ssl_client_config);
