@@ -11,7 +11,7 @@ enum_dispatch = "0.3.13"
 futures = "0.3.30"
 log = "0.4.27"
 protobuf = "3.7.2"
-rustls = "0.23.26"
+rustls = { git = "https://github.com/uglyoldbob/rustls.git", version = "0.23.26", features = ["ring"] }
 tokio = { version = "1.40.0", features = ["full"], optional = true }
 webpki-roots = "0.26.9"
 

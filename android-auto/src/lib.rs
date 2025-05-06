@@ -1438,6 +1438,12 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                             log::error!("ssl handshaking {} RX {} TX {}", ssl_stream.is_handshaking(), ssl_stream.wants_read(), ssl_stream.wants_write());
                         }
                     }
+                    if !ssl_stream.is_handshaking() {
+                        let m = AndroidAutoControlMessage::SslAuthComplete(true);
+                        let d: AndroidAutoFrame = m.into();
+                        let d2: Vec<u8> = d.build_vec(None).await;
+                        stream.write_all(&d2).await?;
+                    }
                 }
                 AndroidAutoControlMessage::VersionRequest => unimplemented!(),
                 AndroidAutoControlMessage::VersionResponse {
@@ -1654,6 +1660,7 @@ impl AndriodAutoBluettothServer {
             let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto client").expect("Invalid pem cert for aauto client");
             CertificateDer::from_pem(aautocertpem.0, aautocertpem.1).unwrap()
         };
+        log::error!("Cert is {:02x?}", cert);
         let key = {
             let mut br = std::io::Cursor::new(cert::PRIVATE_KEY.to_string().as_bytes().to_vec());
             let aautocertpem = rustls::pki_types::pem::from_buf(&mut br).expect("Failed to parse pem for aauto client").expect("Invalid pem cert for aauto client");
