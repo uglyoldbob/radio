@@ -121,7 +121,10 @@ impl eframe::App for MyEguiApp {
         }
         self.common.radio.get_cameras();
         self.common.radio.try_get_bluetooth();
+        self.common.radio.try_get_android_auto();
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
+            uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
+            uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}
             uobradio_comms::MessageToApp::BluetoothMessage(_) => {}
             uobradio_comms::MessageToApp::BluetoothHandlerResult(_) => {}
             uobradio_comms::MessageToApp::CamerasBtreeMap(_) => {}

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 
 use openssl::ssl::SslVerifyMode;
 
@@ -335,8 +335,7 @@ impl AndroidAutoFrameReceiver {
                 stream.get_mut().plain.read_exact(&mut p)?;
                 let len = u16::from_be_bytes([p[0], p[1]]);
                 self.len.replace(len);
-            }
-            else {
+            } else {
                 let mut p = [0u8; 2];
                 stream.get_mut().plain.read_exact(&mut p)?;
                 let len = u16::from_be_bytes(p);
@@ -345,11 +344,13 @@ impl AndroidAutoFrameReceiver {
         }
         if let Some(len) = self.len.take() {
             let mut data_frame = vec![0u8; len as usize];
-            log::error!("Receiving frame type {:?} {}, len {}", header.frame.get_frame_type(), header.frame.get_encryption(), len);
-            stream
-                .get_mut()
-                .plain
-                .read_exact(&mut data_frame)?;
+            log::error!(
+                "Receiving frame type {:?} {}, len {}",
+                header.frame.get_frame_type(),
+                header.frame.get_encryption(),
+                len
+            );
+            stream.get_mut().plain.read_exact(&mut data_frame)?;
             let data = if header.frame.get_frame_type() == FrameHeaderType::Single {
                 if !self.rx_sofar.is_empty() {
                     todo!("{} bytes ignored", self.rx_sofar.len());
@@ -357,12 +358,20 @@ impl AndroidAutoFrameReceiver {
                 let data_plain = if header.frame.get_encryption() {
                     stream.get_mut().relay_data(&data_frame);
                     let mut data = vec![0; AndroidAutoFrame::MAX_FRAME_DATA_SIZE];
-                    let newlen = stream.ssl_read(&mut data).map_err(|e| {
-                        let e2 = e.to_string();
-                        std::io::Error::new(std::io::ErrorKind::Other, e2)
-                    }).inspect_err(|e| {
-                        log::error!("Problem decoding {:?} {:02x?} {:02x?}", e, header, data_frame);
-                    })?;
+                    let newlen = stream
+                        .ssl_read(&mut data)
+                        .map_err(|e| {
+                            let e2 = e.to_string();
+                            std::io::Error::new(std::io::ErrorKind::Other, e2)
+                        })
+                        .inspect_err(|e| {
+                            log::error!(
+                                "Problem decoding {:?} {:02x?} {:02x?}",
+                                e,
+                                header,
+                                data_frame
+                            );
+                        })?;
                     if newlen == AndroidAutoFrame::MAX_FRAME_DATA_SIZE {
                         todo!();
                     }
@@ -376,12 +385,20 @@ impl AndroidAutoFrameReceiver {
                 let data_plain = if header.frame.get_encryption() {
                     stream.get_mut().relay_data(&data_frame);
                     let mut data = vec![0; AndroidAutoFrame::MAX_FRAME_DATA_SIZE];
-                    let newlen = stream.ssl_read(&mut data).map_err(|e| {
-                        let e2 = e.to_string();
-                        std::io::Error::new(std::io::ErrorKind::Other, e2)
-                    }).inspect_err(|e| {
-                        log::error!("Problem decoding {:?} {:02x?} {:02x?}", e, header, data_frame);
-                    })?;
+                    let newlen = stream
+                        .ssl_read(&mut data)
+                        .map_err(|e| {
+                            let e2 = e.to_string();
+                            std::io::Error::new(std::io::ErrorKind::Other, e2)
+                        })
+                        .inspect_err(|e| {
+                            log::error!(
+                                "Problem decoding {:?} {:02x?} {:02x?}",
+                                e,
+                                header,
+                                data_frame
+                            );
+                        })?;
                     if newlen == AndroidAutoFrame::MAX_FRAME_DATA_SIZE {
                         todo!();
                     }
@@ -399,7 +416,7 @@ impl AndroidAutoFrameReceiver {
                 }
             };
             if let Some(data) = data {
-                let data : Vec<u8> = data.into_iter().flatten().collect();
+                let data: Vec<u8> = data.into_iter().flatten().collect();
                 let f = AndroidAutoFrame {
                     header: header.clone(),
                     data,

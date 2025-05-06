@@ -70,6 +70,8 @@ pub struct AppUserCommon {
     #[cfg(feature = "bluetooth")]
     /// Determines who deals with the bluetooth stuff
     blue_addr: Option<std::net::SocketAddr>,
+    /// Determines who deals with the android-auto stuff
+    aauto_addr: Option<std::net::SocketAddr>,
     video: Vec<VideoSource>,
     old_settings: NonvolatileSettings,
     settings: NonvolatileSettings,
@@ -139,6 +141,21 @@ pub async fn process_app(
                 }
             }
             match packet {
+                uobradio_comms::MessageFromApp::AndroidAutoMessage(m) => match m {
+                    uobradio_comms::aauto::AndroidAutoMessageToPhone::Test => todo!(),
+                },
+                uobradio_comms::MessageFromApp::RequestAndroidAutoControl => {
+                    let mut common = common.lock().await;
+                    let r = if common.aauto_addr.is_none() {
+                        println!("Setting {:?} as android auto master", addr);
+                        common.aauto_addr = Some(addr);
+                        true
+                    } else {
+                        false
+                    };
+                    let packet = uobradio_comms::MessageToApp::AndroidAutoHandlerResult(r);
+                    packet.send_to_stream(&mut stream).await?;
+                }
                 uobradio_comms::MessageFromApp::BluetoothMessage(m) => {
                     let common2 = common.lock().await;
                     if Some(addr) == common2.blue_addr {
@@ -310,6 +327,10 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
                         println!("Setting {:?} as no longer the bluetooth master", addr);
                         common3.blue_addr.take();
                     }
+                    if Some(addr) == common3.aauto_addr {
+                        println!("Setting {:?} as no longer the android auto master", addr);
+                        common3.aauto_addr.take();
+                    }
                     println!("Completed handling user {:?}", r);
                     r
                 });
@@ -393,6 +414,7 @@ async fn smain() {
         blue_recv: bluechan.1,
         #[cfg(feature = "bluetooth")]
         blue_addr: None,
+        aauto_addr: None,
         video: vs,
         old_settings: s.clone(),
         settings: s.clone(),

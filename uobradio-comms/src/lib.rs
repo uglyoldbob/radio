@@ -3,6 +3,7 @@
 use std::{collections::BTreeMap, io::{Read, Write}, thread::JoinHandle};
 
 pub mod video;
+pub mod aauto;
 
 #[cfg(target_os = "linux")]
 pub use v4l;
@@ -32,10 +33,12 @@ pub struct UobRadio {
     waiting_for_camera_options: bool,
     #[cfg(feature = "bluetooth")]
     bluetooth_handler: bool,
+    android_auto_handler: bool,
     #[cfg(feature = "bluetooth")]
     pub display_passkey: Option<u32>,
     #[cfg(feature = "bluetooth")]
     pub confirm_passkey: Option<u32>,
+    android_auto_video_buf: Vec<u8>,
 }
 
 impl UobRadio {
@@ -52,10 +55,12 @@ impl UobRadio {
             waiting_for_camera_options: false,
             #[cfg(feature = "bluetooth")]
             bluetooth_handler: false,
+            android_auto_handler: false,
             #[cfg(feature = "bluetooth")]
             display_passkey: None,
             #[cfg(feature = "bluetooth")]
             confirm_passkey: None,
+            android_auto_video_buf: Vec::new(),
         }
     }
 
@@ -111,12 +116,16 @@ pub enum MessageFromApp {
     CameraSettingControl(u8, u8, video::ControlValue),
     NewSettings(NonvolatileSettings),
     RequestSettings,
-    /// Request to the the app user that handles bluetooth pairing stuff
+    /// Request from the the app user that handles bluetooth pairing stuff
     RequestBluetoothControl,
+    /// Request from the app user that handles android auto stuff
+    RequestAndroidAutoControl,
     /// Enable or disable bluetooth discoverable
     SetBluetoothDiscovery(bool),
     /// A generic bluetooth command
     BluetoothMessage(bluetooth_rust::MessageFromBluetoothHost),
+    /// A generic android auto command to the "phone"
+    AndroidAutoMessage(aauto::AndroidAutoMessageToPhone),
 }
 
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};
@@ -162,8 +171,12 @@ pub enum MessageToApp {
     NewSettings(NonvolatileSettings),
     /// Tell the app if they were accepted as a bluetooth handler
     BluetoothHandlerResult(bool),
+    /// Tell the app if they were accepted as an android auto handler
+    AndroidAutoHandlerResult(bool),
     /// A bluetooth message from the bluetooth stuff
     BluetoothMessage(ActualMessageToBluetoothHost),
+    /// A generic android auto command from the "phone"
+    AndroidAutoMessage(aauto::AndroidAutoMessageFromPhone),
 }
 
 impl MessageFromApp {
@@ -253,6 +266,13 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::AndroidAutoMessage(m) => {
+                                            match m {
+                                                aauto::AndroidAutoMessageFromPhone::VideoContent(data) => {
+                                                    self.android_auto_video_buf.append(&mut data.to_owned());
+                                                }
+                                            }
+                                        }
                                         MessageToApp::PingReply(_) => {}
                                         MessageToApp::NewSettings(_) => {}
                                         MessageToApp::BluetoothMessage(m) => {
@@ -284,6 +304,9 @@ impl UobRadio {
                                         MessageToApp::CamerasBtreeMap(map) => {
                                             self.cameras.replace(map.to_owned());
                                         }
+                                        MessageToApp::AndroidAutoHandlerResult(result) => {
+                                            self.android_auto_handler = *result;
+                                        }
                                         MessageToApp::BluetoothHandlerResult(result) => {
                                             self.bluetooth_handler = *result;
                                         }
@@ -313,6 +336,22 @@ impl UobRadio {
             }
         }
         Ok(())
+    }
+
+    pub fn get_android_video_buf(&mut self) -> Option<Vec<u8>> {
+        if self.android_auto_handler {
+            if !self.android_auto_video_buf.is_empty() {
+                let b = self.android_auto_video_buf.clone();
+                self.android_auto_video_buf.clear();
+                Some(b)
+            }
+            else {
+                None
+            }
+        }
+        else {
+            None
+        }
     }
 
     pub fn get_cameras(&mut self) -> bool {
@@ -378,6 +417,12 @@ impl UobRadio {
     pub fn try_get_bluetooth(&mut self) {
         if !self.bluetooth_handler {
             self.send_packet(MessageFromApp::RequestBluetoothControl);
+        }
+    }
+
+    pub fn try_get_android_auto(&mut self) {
+        if !self.android_auto_handler {
+            self.send_packet(MessageFromApp::RequestAndroidAutoControl);
         }
     }
 
