@@ -1800,6 +1800,7 @@ impl AndriodAutoBluettothServer {
             };
             if let Some(f2) = f2 {
                 if let Some(handler) = channel_handlers.get_mut(f2.header.channel_id as usize) {
+                    log::error!("Receiving data for channel {:?}", f2.header.channel_id);
                     handler
                         .receive_data(f2, &mut skip_ping, &mut openssl_stream, &config, main)
                         .map_err(|e| e.to_string())?;

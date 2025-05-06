@@ -81,6 +81,15 @@ impl ChannelHandlerTrait for VideoChannelHandler {
                 }
                 AvChannelMessage::SetupRequest(chan, m) => {
                     log::info!("Got channel setup request for channel {:?}: {:?}", chan, m);
+
+                    let mut m2 = Wifi::VideoFocusIndication::new();
+                    m2.set_focus_mode(Wifi::video_focus_mode::Enum::FOCUSED);
+                    m2.set_unrequested(false);
+                    let d: AndroidAutoFrame =
+                        AvChannelMessage::VideoIndicationResponse(channel, m2).into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream.get_mut().plain.write_all(&d2)?;
+
                     let mut m2 = Wifi::AVChannelSetupResponse::new();
                     m2.set_max_unacked(1);
                     m2.set_media_status(Wifi::avchannel_setup_status::Enum::OK);
