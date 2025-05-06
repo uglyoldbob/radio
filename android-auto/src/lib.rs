@@ -746,6 +746,7 @@ impl ChannelHandlerTrait for MediaAudioChannelHandler {
         let msg2: Result<AvChannelMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
             match msg2 {
+                AvChannelMessage::MediaIndicationAck(_, _) => unimplemented!(),
                 AvChannelMessage::MediaIndication(_, _, _) => {
                     log::error!("Received media data for media audio");
                 }
@@ -1040,6 +1041,7 @@ impl ChannelHandlerTrait for SpeechAudioChannelHandler {
         let msg2: Result<AvChannelMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
             match msg2 {
+                AvChannelMessage::MediaIndicationAck(_, _) => unimplemented!(),
                 AvChannelMessage::MediaIndication(_, _, _) => {
                     log::error!("Received media data for speech audio");
                 }
@@ -1079,11 +1081,28 @@ enum AvChannelMessage {
     VideoIndicationResponse(ChannelId, Wifi::VideoFocusIndication),
     StartIndication(ChannelId, Wifi::AVChannelStartIndication),
     MediaIndication(ChannelId, Option<u64>, Vec<u8>),
+    MediaIndicationAck(ChannelId, Wifi::AVMediaAckIndication),
 }
 
 impl Into<AndroidAutoFrame> for AvChannelMessage {
     fn into(self) -> AndroidAutoFrame {
         match self {
+            Self::MediaIndicationAck(chan, m) => {
+                let mut data = m.write_to_bytes().unwrap();
+                let t = Wifi::avchannel_message::Enum::AV_MEDIA_ACK_INDICATION as u16;
+                let t = t.to_be_bytes();
+                let mut m = Vec::new();
+                m.push(t[0]);
+                m.push(t[1]);
+                m.append(&mut data);
+                AndroidAutoFrame {
+                    header: FrameHeader {
+                        channel_id: chan,
+                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, false),
+                    },
+                    data: m,
+                }
+            }
             Self::SetupRequest(_, _) => unimplemented!(),
             Self::SetupResponse(chan, m) => {
                 let mut data = m.write_to_bytes().unwrap();
@@ -1243,6 +1262,7 @@ impl ChannelHandlerTrait for SystemAudioChannelHandler {
         let msg2: Result<AvChannelMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
             match msg2 {
+                AvChannelMessage::MediaIndicationAck(_, _) => unimplemented!(),
                 AvChannelMessage::MediaIndication(_, _, _) => {
                     log::error!("Received media data for system audio");
                 }
@@ -1737,7 +1757,7 @@ impl AndriodAutoBluettothServer {
                         std::io::ErrorKind::Unsupported => todo!(),
                         std::io::ErrorKind::UnexpectedEof => todo!(),
                         std::io::ErrorKind::OutOfMemory => todo!(),
-                        std::io::ErrorKind::Other => todo!(),
+                        std::io::ErrorKind::Other => todo!("{}", e.to_string()),
                         _ => return Err("Unknown error reading frame header".to_string()),
                     },
                     _ => break None,
@@ -1789,7 +1809,7 @@ impl AndriodAutoBluettothServer {
                             std::io::ErrorKind::Unsupported => todo!(),
                             std::io::ErrorKind::UnexpectedEof => todo!(),
                             std::io::ErrorKind::OutOfMemory => todo!(),
-                            std::io::ErrorKind::Other => todo!(),
+                            std::io::ErrorKind::Other => todo!("{}", e.to_string()),
                             _ => return Err("Unknown error reading frame header".to_string()),
                         },
                     }

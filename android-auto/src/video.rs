@@ -73,11 +73,20 @@ impl ChannelHandlerTrait for VideoChannelHandler {
         let msg2: Result<AvChannelMessage, String> = (&msg).try_into();
         if let Ok(msg2) = msg2 {
             match msg2 {
+                AvChannelMessage::MediaIndicationAck(_, _) => unimplemented!(),
                 AvChannelMessage::MediaIndication(chan, time, data) => {
                     log::error!("Got media with timestamp {:?}", time);
                     if let Some(a) = main.supports_video() {
                         a.receive_video(&data);
                     }
+
+                    let mut m2 = Wifi::AVMediaAckIndication::new();
+                    m2.set_session(0);
+                    m2.set_value(1);
+                    let d: AndroidAutoFrame =
+                        AvChannelMessage::MediaIndicationAck(channel, m2).into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream.get_mut().plain.write_all(&d2)?;
                 }
                 AvChannelMessage::SetupRequest(chan, m) => {
                     log::info!("Got channel setup request for channel {:?}: {:?}", chan, m);
