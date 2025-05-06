@@ -1,7 +1,8 @@
 use super::{
-    AndroidAutoCommonMessage, AndroidAutoConfiguration, AndroidAutoControlMessage, AndroidAutoFrame, AndroidAutoMainTrait, AvChannelMessage,
-    ChannelHandlerTrait,
-    ChannelId, ChannelDescriptor, FrameHeader, FrameHeaderContents, FrameHeaderType, OpensslSocket,
+    AndroidAutoCommonMessage, AndroidAutoConfiguration, AndroidAutoControlMessage,
+    AndroidAutoFrame, AndroidAutoMainTrait, AvChannelMessage, ChannelDescriptor,
+    ChannelHandlerTrait, ChannelId, FrameHeader, FrameHeaderContents, FrameHeaderType,
+    OpensslSocket,
 };
 use crate::Wifi;
 use protobuf::{Enum, EnumOrUnknown, Message};
@@ -12,7 +13,6 @@ pub enum BluetoothMessage {
     PairingResponse(ChannelId, Wifi::BluetoothPairingResponse),
     Auth,
 }
-
 
 impl Into<AndroidAutoFrame> for BluetoothMessage {
     fn into(self) -> AndroidAutoFrame {
@@ -108,8 +108,7 @@ impl ChannelHandlerTrait for BluetoothChannelHandler {
                     let mut m2 = Wifi::BluetoothPairingResponse::new();
                     m2.set_already_paired(true);
                     m2.set_status(Wifi::bluetooth_pairing_status::Enum::OK);
-                    let d: AndroidAutoFrame =
-                        BluetoothMessage::PairingResponse(channel, m2).into();
+                    let d: AndroidAutoFrame = BluetoothMessage::PairingResponse(channel, m2).into();
                     let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
                     openssl_stream.get_mut().plain.write_all(&d2)?;
                 }

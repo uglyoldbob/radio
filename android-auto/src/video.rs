@@ -1,7 +1,7 @@
 use super::{
-    AndroidAutoCommonMessage, AndroidAutoConfiguration, AndroidAutoFrame, AndroidAutoMainTrait, AvChannelMessage,
-    ChannelHandlerTrait,
-    ChannelId, FrameHeader, FrameHeaderContents, FrameHeaderType, OpensslSocket,
+    AndroidAutoCommonMessage, AndroidAutoConfiguration, AndroidAutoFrame, AndroidAutoMainTrait,
+    AvChannelMessage, ChannelHandlerTrait, ChannelId, FrameHeader, FrameHeaderContents,
+    FrameHeaderType, OpensslSocket,
 };
 use crate::Wifi;
 use protobuf::{Enum, Message};
@@ -24,9 +24,8 @@ impl ChannelHandlerTrait for VideoChannelHandler {
         vconfs.push({
             let mut vc = Wifi::VideoConfig::new();
             vc.set_video_resolution(Wifi::video_resolution::Enum::_480p);
-            vc.set_video_fps(Wifi::video_fps::Enum::_30);
-            vc.set_dpi(300);
-            vc.set_additional_depth(0);
+            vc.set_video_fps(Wifi::video_fps::Enum::_60);
+            vc.set_dpi(111);
             vc.set_margin_height(0);
             vc.set_margin_width(0);
             if !vc.is_initialized() {
@@ -75,6 +74,7 @@ impl ChannelHandlerTrait for VideoChannelHandler {
         if let Ok(msg2) = msg2 {
             match msg2 {
                 AvChannelMessage::MediaIndication(chan, time, data) => {
+                    log::error!("Got media with timestamp {:?}", time);
                     if let Some(a) = main.supports_video() {
                         a.receive_video(&data);
                     }
@@ -82,7 +82,7 @@ impl ChannelHandlerTrait for VideoChannelHandler {
                 AvChannelMessage::SetupRequest(chan, m) => {
                     log::info!("Got channel setup request for channel {:?}: {:?}", chan, m);
                     let mut m2 = Wifi::AVChannelSetupResponse::new();
-                    m2.set_max_unacked(10);
+                    m2.set_max_unacked(1);
                     m2.set_media_status(Wifi::avchannel_setup_status::Enum::OK);
                     m2.configs.push(0);
                     let d: AndroidAutoFrame = AvChannelMessage::SetupResponse(channel, m2).into();
@@ -91,6 +91,7 @@ impl ChannelHandlerTrait for VideoChannelHandler {
                 }
                 AvChannelMessage::SetupResponse(chan, m) => unimplemented!(),
                 AvChannelMessage::VideoFocusRequest(chan, m) => {
+                    log::error!("Got video focus request {:?}", m);
                     let mut m2 = Wifi::VideoFocusIndication::new();
                     m2.set_focus_mode(Wifi::video_focus_mode::Enum::FOCUSED);
                     m2.set_unrequested(false);

@@ -261,6 +261,7 @@ impl AndroidAutoFrame {
     fn build_vec(&self, stream: Option<&mut openssl::ssl::SslStream<OpensslSocket>>) -> Vec<u8> {
         let mut buf = Vec::new();
         self.header.add_to(&mut buf);
+        log::error!("Sending packet {:02x?} {:02x?}", buf, self.data);
         if self.header.frame.get_encryption() {
             if let Some(stream) = stream {
                 stream.ssl_write(&self.data).unwrap();
@@ -343,7 +344,7 @@ impl AndroidAutoFrameReceiver {
                 .plain
                 .read_exact(&mut self.data[0..len as usize])?;
             let data = if header.frame.get_frame_type() == FrameHeaderType::Single {
-                if !self.rx_sofar.is_empty() { 
+                if !self.rx_sofar.is_empty() {
                     todo!("{:02x?}", self.rx_sofar);
                 }
                 let d = self.data.clone();
@@ -1135,7 +1136,11 @@ impl TryFrom<&AndroidAutoFrame> for AvChannelMessage {
                 Wifi::avchannel_message::Enum::AV_MEDIA_WITH_TIMESTAMP_INDICATION => {
                     let mut b = [0u8; 8];
                     b.copy_from_slice(&value.data[2..10]);
-                    log::info!("Recieved media on channel {:?} size {}", value.header.channel_id, value.data[10..].len());
+                    log::info!(
+                        "Recieved media on channel {:?} size {}",
+                        value.header.channel_id,
+                        value.data[10..].len()
+                    );
                     let ts: u64 = u64::from_be_bytes(b);
                     Ok(Self::MediaIndication(
                         value.header.channel_id,
@@ -1280,7 +1285,7 @@ impl ChannelHandlerTrait for AvInputChannelHandler {
         let mut chan = ChannelDescriptor::new();
         chan.set_channel_id(chanid as u8 as u32);
         let mut avchan = Wifi::AVInputChannel::new();
-        avchan.set_available_while_in_call(true);
+        //avchan.set_available_while_in_call(true);
         avchan.set_stream_type(Wifi::avstream_type::Enum::AUDIO);
         let mut ac = Wifi::AudioConfig::new();
         ac.set_bit_depth(16);
@@ -1430,9 +1435,39 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                     m2.set_left_hand_drive_vehicle(config.unit.left_hand);
                     m2.set_sw_build(config.unit.sw_build.clone());
                     m2.set_sw_version(config.unit.sw_version.clone());
+
                     for s in &self.channels {
                         m2.channels.push(s.clone());
                     }
+
+                    let m3data = [
+                        0x0au8, 0x0f, 0x08, 0x07, 0x2a, 0x0b, 0x08, 0x01, 0x12, 0x07, 0x08, 0x80,
+                        0x7d, 0x10, 0x10, 0x18, 0x01, 0x0a, 0x14, 0x08, 0x04, 0x1a, 0x10, 0x08,
+                        0x01, 0x10, 0x03, 0x1a, 0x08, 0x08, 0x80, 0xf7, 0x02, 0x10, 0x10, 0x18,
+                        0x02, 0x28, 0x01, 0x0a, 0x13, 0x08, 0x05, 0x1a, 0x0f, 0x08, 0x01, 0x10,
+                        0x01, 0x1a, 0x07, 0x08, 0x80, 0x7d, 0x10, 0x10, 0x18, 0x01, 0x28, 0x01,
+                        0x0a, 0x13, 0x08, 0x06, 0x1a, 0x0f, 0x08, 0x01, 0x10, 0x02, 0x1a, 0x07,
+                        0x08, 0x80, 0x7d, 0x10, 0x10, 0x18, 0x01, 0x28, 0x01, 0x0a, 0x0c, 0x08,
+                        0x02, 0x12, 0x08, 0x0a, 0x02, 0x08, 0x0d, 0x0a, 0x02, 0x08, 0x0a, 0x0a,
+                        0x14, 0x08, 0x03, 0x1a, 0x10, 0x08, 0x03, 0x22, 0x0a, 0x08, 0x01, 0x10,
+                        0x02, 0x18, 0x00, 0x20, 0x00, 0x28, 0x6f, 0x28, 0x01, 0x0a, 0x19, 0x08,
+                        0x08, 0x32, 0x15, 0x0a, 0x11, 0x30, 0x30, 0x3a, 0x39, 0x33, 0x3a, 0x33,
+                        0x37, 0x3a, 0x45, 0x46, 0x3a, 0x42, 0x37, 0x3a, 0x35, 0x37, 0x10, 0x04,
+                        0x0a, 0x16, 0x08, 0x09, 0x42, 0x12, 0x08, 0xe8, 0x07, 0x10, 0x01, 0x1a,
+                        0x0b, 0x08, 0x80, 0x02, 0x10, 0x80, 0x02, 0x18, 0x10, 0x20, 0xff, 0x01,
+                        0x0a, 0x04, 0x08, 0x0a, 0x4a, 0x00, 0x0a, 0x0c, 0x08, 0x01, 0x22, 0x08,
+                        0x12, 0x06, 0x08, 0x80, 0x0f, 0x10, 0xb8, 0x08, 0x12, 0x08, 0x4f, 0x70,
+                        0x65, 0x6e, 0x41, 0x75, 0x74, 0x6f, 0x1a, 0x09, 0x55, 0x6e, 0x69, 0x76,
+                        0x65, 0x72, 0x73, 0x61, 0x6c, 0x22, 0x04, 0x32, 0x30, 0x31, 0x38, 0x2a,
+                        0x08, 0x32, 0x30, 0x31, 0x38, 0x30, 0x33, 0x30, 0x31, 0x30, 0x01, 0x3a,
+                        0x03, 0x66, 0x31, 0x78, 0x42, 0x10, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x75,
+                        0x74, 0x6f, 0x20, 0x41, 0x75, 0x74, 0x6f, 0x61, 0x70, 0x70, 0x4a, 0x01,
+                        0x31, 0x52, 0x03, 0x31, 0x2e, 0x30, 0x58, 0x00, 0x60, 0x00,
+                    ];
+                    let m3 = Wifi::ServiceDiscoveryResponse::parse_from_bytes(&m3data);
+                    log::error!("Golden service response is {:?}", m3);
+                    log::error!("Our service response is {:?}", m2);
+
                     let m3 = AndroidAutoControlMessage::ServiceDiscoveryResponse(m2);
                     let d: AndroidAutoFrame = m3.into();
                     let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
@@ -1597,37 +1632,37 @@ impl AndriodAutoBluettothServer {
             .map_err(|e| e.to_string())?;
         use std::io::Write;
 
-        let mut channel_handlers: BTreeMap<ChannelId, ChannelHandler> = BTreeMap::new();
-        channel_handlers.insert(ChannelId::BLUETOOTH, BluetoothChannelHandler {}.into());
-        channel_handlers.insert(
-            ChannelId::CONTROL,
+        let mut channel_handlers: Vec<ChannelHandler> = Vec::new();
+        channel_handlers.push(
             ControlChannelHandler {
                 channels: Vec::new(),
             }
             .into(),
         );
-        channel_handlers.insert(ChannelId::AV_INPUT, AvInputChannelHandler {}.into());
-        channel_handlers.insert(ChannelId::SYSTEM_AUDIO, SystemAudioChannelHandler {}.into());
-        channel_handlers.insert(ChannelId::SPEECH_AUDIO, SpeechAudioChannelHandler {}.into());
-        channel_handlers.insert(ChannelId::SENSOR, SensorChannelHandler {}.into());
+        channel_handlers.push(InputChannelHandler {}.into());
+        channel_handlers.push(SensorChannelHandler {}.into());
         if main.supports_video().is_some() {
             log::info!("Setting up video channel");
-            channel_handlers.insert(ChannelId::VIDEO, VideoChannelHandler {}.into());
+            channel_handlers.push(VideoChannelHandler {}.into());
         }
-        channel_handlers.insert(ChannelId::NAVIGATION, NavigationChannelHandler {}.into());
-        channel_handlers.insert(ChannelId::MEDIA_STATUS, MediaStatusChannelHandler {}.into());
-        channel_handlers.insert(ChannelId::INPUT, InputChannelHandler {}.into());
-        channel_handlers.insert(ChannelId::MEDIA_AUDIO, MediaAudioChannelHandler {}.into());
+        channel_handlers.push(MediaAudioChannelHandler {}.into());
+        channel_handlers.push(SpeechAudioChannelHandler {}.into());
+        channel_handlers.push(SystemAudioChannelHandler {}.into());
+        channel_handlers.push(AvInputChannelHandler {}.into());
+        channel_handlers.push(BluetoothChannelHandler {}.into());
+        channel_handlers.push(NavigationChannelHandler {}.into());
+        channel_handlers.push(MediaStatusChannelHandler {}.into());
+
         let mut chans = Vec::new();
-        for (chanid, handler) in channel_handlers.iter() {
-            if let Some(chan) = handler.build_channel(&config, *chanid) {
+        let chan_visit = [7, 4, 5, 6, 2, 3, 8, 9, 10, 1];
+        for index in chan_visit {
+            let handler = &channel_handlers[index];
+            let chan: ChannelId = (index as u8).try_into().unwrap();
+            if let Some(chan) = handler.build_channel(&config, chan) {
                 chans.push(chan);
             }
         }
-        channel_handlers
-            .get_mut(&ChannelId::CONTROL)
-            .unwrap()
-            .set_channels(chans);
+        channel_handlers.get_mut(0).unwrap().set_channels(chans);
         log::debug!(
             "Got a connection on port {} from {:?}",
             config.network.port,
@@ -1763,7 +1798,7 @@ impl AndriodAutoBluettothServer {
                 None
             };
             if let Some(f2) = f2 {
-                if let Some(handler) = channel_handlers.get_mut(&f2.header.channel_id) {
+                if let Some(handler) = channel_handlers.get_mut(f2.header.channel_id as usize) {
                     handler
                         .receive_data(f2, &mut skip_ping, &mut openssl_stream, &config, main)
                         .map_err(|e| e.to_string())?;

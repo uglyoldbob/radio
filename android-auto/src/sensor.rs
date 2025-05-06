@@ -1,7 +1,8 @@
 use super::{
-    AndroidAutoCommonMessage, AndroidAutoConfiguration, AndroidAutoControlMessage, AndroidAutoFrame, AndroidAutoMainTrait, AvChannelMessage,
-    ChannelHandlerTrait,
-    ChannelId, ChannelDescriptor, FrameHeader, FrameHeaderContents, FrameHeaderType, OpensslSocket,
+    AndroidAutoCommonMessage, AndroidAutoConfiguration, AndroidAutoControlMessage,
+    AndroidAutoFrame, AndroidAutoMainTrait, AvChannelMessage, ChannelDescriptor,
+    ChannelHandlerTrait, ChannelId, FrameHeader, FrameHeaderContents, FrameHeaderType,
+    OpensslSocket,
 };
 use crate::Wifi::{self, DrivingStatus};
 use protobuf::{Enum, EnumOrUnknown, Message};
@@ -12,7 +13,6 @@ pub enum SensorMessage {
     SensorStartResponse(ChannelId, Wifi::SensorStartResponseMessage),
     Event(ChannelId, Wifi::SensorEventIndication),
 }
-
 
 impl Into<AndroidAutoFrame> for SensorMessage {
     fn into(self) -> AndroidAutoFrame {
@@ -34,7 +34,22 @@ impl Into<AndroidAutoFrame> for SensorMessage {
                     data: m,
                 }
             }
-            Self::Event(_, _) => unimplemented!(),
+            Self::Event(chan, m) => {
+                let mut data = m.write_to_bytes().unwrap();
+                let t = Wifi::sensor_channel_message::Enum::SENSOR_EVENT_INDICATION as u16;
+                let t = t.to_be_bytes();
+                let mut m = Vec::new();
+                m.push(t[0]);
+                m.push(t[1]);
+                m.append(&mut data);
+                AndroidAutoFrame {
+                    header: FrameHeader {
+                        channel_id: chan,
+                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, true),
+                    },
+                    data: m,
+                }
+            }
         }
     }
 }
@@ -78,7 +93,12 @@ impl ChannelHandlerTrait for SensorChannelHandler {
         let mut sensors = Vec::new();
         sensors.push({
             let mut sensor1 = Wifi::Sensor::new();
-            sensor1.set_type(Wifi::sensor_type::Enum::COMPASS);
+            sensor1.set_type(Wifi::sensor_type::Enum::DRIVING_STATUS);
+            sensor1
+        });
+        sensors.push({
+            let mut sensor1 = Wifi::Sensor::new();
+            sensor1.set_type(Wifi::sensor_type::Enum::NIGHT_DATA);
             sensor1
         });
         for s in sensors {
@@ -108,12 +128,12 @@ impl ChannelHandlerTrait for SensorChannelHandler {
                 SensorMessage::Event(chan, m) => unimplemented!(),
                 SensorMessage::SensorStartResponse(_, _) => unimplemented!(),
                 SensorMessage::SensorStartRequest(chan, m) => {
+                    log::error!("Sensor start request {:?}", m);
                     let mut m3 = Wifi::SensorEventIndication::new();
                     let mut ds = Wifi::DrivingStatus::new();
                     ds.set_status(Wifi::DrivingStatusEnum::UNRESTRICTED as i32);
                     m3.driving_status.push(ds);
-                    let d: AndroidAutoFrame =
-                        SensorMessage::Event(channel, m3).into();
+                    let d: AndroidAutoFrame = SensorMessage::Event(channel, m3).into();
                     let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
                     openssl_stream.get_mut().plain.write_all(&d2)?;
 
