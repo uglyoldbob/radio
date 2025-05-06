@@ -29,7 +29,7 @@ impl Into<AndroidAutoFrame> for BluetoothMessage {
                 AndroidAutoFrame {
                     header: FrameHeader {
                         channel_id: chan,
-                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, true),
+                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, false),
                     },
                     data: m,
                 }

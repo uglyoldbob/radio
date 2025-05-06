@@ -29,7 +29,7 @@ impl Into<AndroidAutoFrame> for SensorMessage {
                 AndroidAutoFrame {
                     header: FrameHeader {
                         channel_id: chan,
-                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, true),
+                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, false),
                     },
                     data: m,
                 }
@@ -45,7 +45,7 @@ impl Into<AndroidAutoFrame> for SensorMessage {
                 AndroidAutoFrame {
                     header: FrameHeader {
                         channel_id: chan,
-                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, true),
+                        frame: FrameHeaderContents::new(true, FrameHeaderType::Single, false),
                     },
                     data: m,
                 }
@@ -129,18 +129,31 @@ impl ChannelHandlerTrait for SensorChannelHandler {
                 SensorMessage::SensorStartResponse(_, _) => unimplemented!(),
                 SensorMessage::SensorStartRequest(chan, m) => {
                     log::error!("Sensor start request {:?}", m);
-                    let mut m3 = Wifi::SensorEventIndication::new();
-                    let mut ds = Wifi::DrivingStatus::new();
-                    ds.set_status(Wifi::DrivingStatusEnum::UNRESTRICTED as i32);
-                    m3.driving_status.push(ds);
-                    let d: AndroidAutoFrame = SensorMessage::Event(channel, m3).into();
-                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
-                    openssl_stream.get_mut().plain.write_all(&d2)?;
 
                     let mut m2 = Wifi::SensorStartResponseMessage::new();
                     m2.set_status(Wifi::status::Enum::OK);
                     let d: AndroidAutoFrame =
                         SensorMessage::SensorStartResponse(channel, m2).into();
+                    let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
+                    openssl_stream.get_mut().plain.write_all(&d2)?;
+
+                    let mut m3 = Wifi::SensorEventIndication::new();
+                    match m.sensor_type() {
+                        Wifi::sensor_type::Enum::DRIVING_STATUS => {
+                            let mut ds = Wifi::DrivingStatus::new();
+                            ds.set_status(Wifi::DrivingStatusEnum::UNRESTRICTED as i32);
+                            m3.driving_status.push(ds);
+                        }
+                        Wifi::sensor_type::Enum::NIGHT_DATA => {
+                            let mut ds = Wifi::NightMode::new();
+                            ds.set_is_night(false);
+                            m3.night_mode.push(ds);
+                        }
+                        _ => {
+                            todo!();
+                        }
+                    };
+                    let d: AndroidAutoFrame = SensorMessage::Event(channel, m3).into();
                     let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
                     openssl_stream.get_mut().plain.write_all(&d2)?;
                 }

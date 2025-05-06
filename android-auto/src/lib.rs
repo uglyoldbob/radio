@@ -1174,6 +1174,7 @@ impl TryFrom<&AndroidAutoFrame> for AvChannelMessage {
                 Wifi::avchannel_message::Enum::AV_INPUT_OPEN_RESPONSE => todo!(),
                 Wifi::avchannel_message::Enum::VIDEO_FOCUS_REQUEST => {
                     let m = Wifi::VideoFocusRequest::parse_from_bytes(&value.data[2..]);
+                    log::error!("Video focus request {:02x?}", m);
                     match m {
                         Ok(m) => Ok(Self::VideoFocusRequest(value.header.channel_id, m)),
                         Err(e) => Err(format!("Invalid channel open request: {}", e.to_string())),
@@ -1383,7 +1384,7 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                 }
                 AndroidAutoControlMessage::PingRequest(a) => {
                     let mut m = Wifi::PingResponse::new();
-                    m.set_timestamp(a.timestamp());
+                    m.set_timestamp(a.timestamp() + 1);
                     let m = AndroidAutoControlMessage::PingResponse(m);
                     let d: AndroidAutoFrame = m.into();
                     let d2: Vec<u8> = d.build_vec(Some(openssl_stream));
@@ -1423,7 +1424,7 @@ impl ChannelHandlerTrait for ControlChannelHandler {
                 AndroidAutoControlMessage::ServiceDiscoveryRequest(m) => {
                     let mut m2 = Wifi::ServiceDiscoveryResponse::new();
                     m2.set_car_model(config.unit.car_model.clone());
-                    m2.set_can_play_native_media_during_vr(config.unit.native_media);
+                    m2.set_can_play_native_media_during_vr(false);
                     m2.set_car_serial(config.unit.car_serial.clone());
                     m2.set_car_year(config.unit.car_year.clone());
                     m2.set_head_unit_name(config.unit.name.clone());

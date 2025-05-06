@@ -101,7 +101,9 @@ impl ChannelHandlerTrait for VideoChannelHandler {
                     openssl_stream.get_mut().plain.write_all(&d2)?;
                 }
                 AvChannelMessage::VideoIndicationResponse(_, _) => unimplemented!(),
-                AvChannelMessage::StartIndication(_, _) => {}
+                AvChannelMessage::StartIndication(chan, _) => {
+                    log::error!("Got start indication for channel {:?}", chan);
+                }
             }
             return Ok(());
         }
