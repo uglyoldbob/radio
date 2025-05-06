@@ -77,6 +77,8 @@ fn main() {
 struct CommonWindowProperties {
     radio: uobradio_comms::UobRadio,
     pub settings: uobradio_comms::NonvolatileSettings,
+    android_auto_video_decoder: openh264::decoder::Decoder,
+    android_auto_texture: Option<egui::TextureHandle>,
 }
 
 impl CommonWindowProperties {
@@ -84,6 +86,8 @@ impl CommonWindowProperties {
         Self {
             radio: uobradio_comms::UobRadio::localhost(),
             settings: uobradio_comms::NonvolatileSettings::default(),
+            android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
+            android_auto_texture: None,
         }
     }
 
@@ -124,7 +128,55 @@ impl eframe::App for MyEguiApp {
         self.common.radio.try_get_android_auto();
         if let Some(vdata) = self.common.radio.get_android_video_buf() {
             log::error!("Got some video data length {}", vdata.len());
+            for p in openh264::nal_units(&vdata) {
+                match self.common.android_auto_video_decoder.decode(p) {
+                    Err(e) => {
+                        log::error!("Failed to decode android auto video {:?}", e);
+                    }
+                    Ok(Some(image)) => {
+                        use openh264::formats::YUVSource;
+                        let rgb_len = image.rgb8_len();
+                        let mut rgb_raw = vec![0; rgb_len];
+                        image.write_rgb8(&mut rgb_raw);
+                        let (w, h) = image.dimensions_uv();
+                        log::info!(
+                            "Got an android auto video frame size {} {}x{}",
+                            rgb_len,
+                            w * 2,
+                            h * 2
+                        );
+                        let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
+                        let image = egui::ColorImage {
+                            size: [w * 2 as usize, h * 2 as usize],
+                            pixels: ei.get_egui(),
+                        };
+                        if let None = self.common.android_auto_texture {
+                            self.common.android_auto_texture = Some(ctx.load_texture(
+                                "android_auto",
+                                image,
+                                egui::TextureOptions::LINEAR,
+                            ));
+                        } else if let Some(t) = &mut self.common.android_auto_texture {
+                            t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                        }
+                    }
+                    _ => {}
+                }
+            }
         }
+        let h = ctx.screen_rect().height();
+        egui::SidePanel::right("AndroidAutoPanel").show(ctx, |ui| {
+            let size = ui.available_size();
+            if let Some(t) = &self.common.android_auto_texture {
+                let isize = t.size()[1];
+                let zoom = isize as f32 / size.y;
+                let dsize = t.size_vec2() / zoom;
+                ui.add(egui::Image::from_texture(egui::load::SizedTexture {
+                    id: t.id(),
+                    size: dsize,
+                }));
+            }
+        });
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
             uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
             uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}
