@@ -122,6 +122,9 @@ impl eframe::App for MyEguiApp {
         self.common.radio.get_cameras();
         self.common.radio.try_get_bluetooth();
         self.common.radio.try_get_android_auto();
+        if let Some(vdata) = self.common.radio.get_android_video_buf() {
+            log::error!("Got some video data length {}", vdata.len());
+        }
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
             uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
             uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}

@@ -11,7 +11,7 @@ use std::{
 
 use android_auto::HeadUnitInfo;
 use tokio::io::AsyncReadExt;
-use uobradio_comms::NonvolatileSettings;
+use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings};
 use video_service::VideoSource;
 use wifi_rs::prelude::ManagedWifiHotspotTrait;
 use wifi_rs::prelude::WifiHotspot;
@@ -72,6 +72,7 @@ pub struct AppUserCommon {
     blue_addr: Option<std::net::SocketAddr>,
     /// Determines who deals with the android-auto stuff
     aauto_addr: Option<std::net::SocketAddr>,
+    aauto_recv: tokio::sync::mpsc::Receiver<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
     video: Vec<VideoSource>,
     old_settings: NonvolatileSettings,
     settings: NonvolatileSettings,
@@ -120,7 +121,7 @@ pub async fn process_app(
         if let Ok((packet, _length)) = packet {
             {
                 let mut common2 = common.lock().await;
-                if Some(addr) == common2.blue_addr {
+                if common2.blue_addr.is_some() {
                     while let Ok(m) = common2.blue_recv.try_recv() {
                         match &m {
                             bluetooth_rust::MessageToBluetoothHost::DisplayPasskey(_, sender) => {
@@ -274,6 +275,15 @@ pub async fn process_app(
                     }
                 },
             }
+            {
+                let mut common2 = common.lock().await;
+                if common2.aauto_addr.is_some() {
+                    while let Ok(m) = common2.aauto_recv.try_recv() {
+                        let packet = MessageToApp::AndroidAutoMessage(m);
+                        packet.send_to_stream(&mut stream).await?;
+                    }
+                }
+            }
         } else {
             println!("Failed to process packet");
             return Err("Received bad packet".to_string());
@@ -341,7 +351,9 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     }
 }
 
-struct AndroidAutoStuff {}
+struct AndroidAutoStuff {
+    sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
+}
 
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     fn supports_video(&mut self) -> Option<&mut dyn android_auto::AndroidAutoVideoChannelTrait> {
@@ -352,6 +364,8 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
 impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
     fn receive_video(&mut self, data: &[u8]) {
         log::error!("Received {} bytes of video data", data.len());
+        let a = self.sendr.blocking_send(AndroidAutoMessageFromPhone::VideoContent(data.to_vec()));
+        log::error!("Attempt to relay video data {:?}", a);
     }
 }
 
@@ -396,6 +410,8 @@ async fn smain() {
         .await
         .expect("Could not open bluetooth");
 
+    let aautochan = tokio::sync::mpsc::channel(5);
+
     #[cfg(all(feature = "bluetooth", feature = "androidauto"))]
     let mut android_auto_bluetooth_server =
         android_auto::AndriodAutoBluettothServer::new(&mut bluetooth).await;
@@ -415,6 +431,7 @@ async fn smain() {
         #[cfg(feature = "bluetooth")]
         blue_addr: None,
         aauto_addr: None,
+        aauto_recv: aautochan.1,
         video: vs,
         old_settings: s.clone(),
         settings: s.clone(),
@@ -477,7 +494,7 @@ async fn smain() {
             };
             let net2 = network.clone();
             tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
-            let main = AndroidAutoStuff {};
+            let main = AndroidAutoStuff { sendr: aautochan.0, };
             std::thread::spawn(move || {
                 android_auto::AndriodAutoBluettothServer::wifi_listen(config, main)
             });

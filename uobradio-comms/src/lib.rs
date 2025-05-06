@@ -32,8 +32,8 @@ pub struct UobRadio {
     cameras: Option<BTreeMap<u8, video::SendableVideoSource>>,
     waiting_for_camera_options: bool,
     #[cfg(feature = "bluetooth")]
-    bluetooth_handler: bool,
-    android_auto_handler: bool,
+    bluetooth_handler: Option<bool>,
+    android_auto_handler: Option<bool>,
     #[cfg(feature = "bluetooth")]
     pub display_passkey: Option<u32>,
     #[cfg(feature = "bluetooth")]
@@ -54,8 +54,8 @@ impl UobRadio {
             cameras: None,
             waiting_for_camera_options: false,
             #[cfg(feature = "bluetooth")]
-            bluetooth_handler: false,
-            android_auto_handler: false,
+            bluetooth_handler: Some(false),
+            android_auto_handler: Some(false),
             #[cfg(feature = "bluetooth")]
             display_passkey: None,
             #[cfg(feature = "bluetooth")]
@@ -269,6 +269,7 @@ impl UobRadio {
                                         MessageToApp::AndroidAutoMessage(m) => {
                                             match m {
                                                 aauto::AndroidAutoMessageFromPhone::VideoContent(data) => {
+                                                    log::error!("Received android auto video data length {}", data.len());
                                                     self.android_auto_video_buf.append(&mut data.to_owned());
                                                 }
                                             }
@@ -305,10 +306,12 @@ impl UobRadio {
                                             self.cameras.replace(map.to_owned());
                                         }
                                         MessageToApp::AndroidAutoHandlerResult(result) => {
-                                            self.android_auto_handler = *result;
+                                            log::error!("Android auto result is {}", result);
+                                            self.android_auto_handler = Some(*result);
                                         }
                                         MessageToApp::BluetoothHandlerResult(result) => {
-                                            self.bluetooth_handler = *result;
+                                            log::error!("Bluetooth result is {}", result);
+                                            self.bluetooth_handler = Some(*result);
                                         }
                                     }
                                     closure(&packet);
@@ -339,9 +342,10 @@ impl UobRadio {
     }
 
     pub fn get_android_video_buf(&mut self) -> Option<Vec<u8>> {
-        if self.android_auto_handler {
+        if Some(true) == self.android_auto_handler {
             if !self.android_auto_video_buf.is_empty() {
                 let b = self.android_auto_video_buf.clone();
+                log::error!("Retrieved {} bytes of video data", b.len());
                 self.android_auto_video_buf.clear();
                 Some(b)
             }
@@ -415,14 +419,16 @@ impl UobRadio {
     }
 
     pub fn try_get_bluetooth(&mut self) {
-        if !self.bluetooth_handler {
+        if Some(false) == self.bluetooth_handler {
             self.send_packet(MessageFromApp::RequestBluetoothControl);
+            self.bluetooth_handler.take();
         }
     }
 
     pub fn try_get_android_auto(&mut self) {
-        if !self.android_auto_handler {
+        if Some(false) == self.android_auto_handler {
             self.send_packet(MessageFromApp::RequestAndroidAutoControl);
+            self.android_auto_handler.take();
         }
     }
 
@@ -431,8 +437,9 @@ impl UobRadio {
         self.status = RadioReceiveStatus::Disconnected;
         #[cfg(feature = "bluetooth")]
         {
-            self.bluetooth_handler = false;
+            self.bluetooth_handler = Some(false);
         }
+        self.android_auto_handler = Some(false);
         self.waiting_until = None;
     }
 

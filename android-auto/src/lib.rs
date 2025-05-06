@@ -352,9 +352,6 @@ impl AndroidAutoFrameReceiver {
             );
             stream.get_mut().plain.read_exact(&mut data_frame)?;
             let data = if header.frame.get_frame_type() == FrameHeaderType::Single {
-                if !self.rx_sofar.is_empty() {
-                    todo!("{} bytes ignored", self.rx_sofar.len());
-                }
                 let data_plain = if header.frame.get_encryption() {
                     stream.get_mut().relay_data(&data_frame);
                     let mut data = vec![0; AndroidAutoFrame::MAX_FRAME_DATA_SIZE];
