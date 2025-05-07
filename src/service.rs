@@ -361,13 +361,13 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     }
 }
 
+#[async_trait::async_trait]
 impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
-    fn receive_video(&mut self, data: &[u8]) {
-        log::error!("Received {} bytes of video data", data.len());
-        let a = self
+    async fn receive_video(&mut self, data: Vec<u8>) {
+        let _ = self
             .sendr
-            .blocking_send(AndroidAutoMessageFromPhone::VideoContent(data.to_vec()));
-        log::error!("Attempt to relay video data {:?}", a);
+            .send(AndroidAutoMessageFromPhone::VideoContent(data))
+            .await;
     }
 }
 

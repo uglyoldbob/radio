@@ -79,7 +79,7 @@ impl ChannelHandlerTrait for VideoChannelHandler {
                 AvChannelMessage::MediaIndication(chan, time, data) => {
                     log::error!("Got media with timestamp {:?}", time);
                     if let Some(a) = main.supports_video() {
-                        a.receive_video(&data);
+                        a.receive_video(data).await;
                     }
 
                     let mut m2 = Wifi::AVMediaAckIndication::new();

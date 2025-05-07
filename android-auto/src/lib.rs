@@ -1,6 +1,6 @@
 use std::{
     collections::VecDeque,
-    io::{Cursor, Read},
+    io::{Cursor, Read, Write},
     sync::Arc,
 };
 
@@ -32,7 +32,7 @@ pub trait AndroidAutoMainTrait {
 
 #[async_trait::async_trait]
 pub trait AndroidAutoVideoChannelTrait: AndroidAutoMainTrait {
-    fn receive_video(&mut self, data: &[u8]);
+    async fn receive_video(&mut self, data: Vec<u8>);
     async fn test(&mut self) {}
 }
 
@@ -274,6 +274,7 @@ impl AndroidAutoFrame {
         if self.header.frame.get_encryption() {
             if let Some(stream) = stream {
                 let mut data = Vec::new();
+                stream.writer().write_all(&self.data).unwrap();
                 stream.write_tls(&mut data).unwrap();
                 let mut p = (data.len() as u16).to_be_bytes().to_vec();
                 buf.append(&mut p);
