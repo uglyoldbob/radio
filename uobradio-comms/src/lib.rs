@@ -410,25 +410,34 @@ impl UobRadio {
         }
     }
 
-    pub fn send_packet(&mut self, packet: MessageFromApp) {
+    pub fn send_packet(&mut self, packet: MessageFromApp) -> Result<(), ()> {
         if let Some(stream) = &mut self.comms {
             if packet.send_to_stream(stream).is_err() {
                 self.disconnect();
+                Err(())
             }
+            else {
+                Ok(())
+            }
+        }
+        else {
+            Err(())
         }
     }
 
     pub fn try_get_bluetooth(&mut self) {
         if Some(false) == self.bluetooth_handler {
-            self.send_packet(MessageFromApp::RequestBluetoothControl);
-            self.bluetooth_handler.take();
+            if self.send_packet(MessageFromApp::RequestBluetoothControl).is_ok() {
+                self.bluetooth_handler.take();
+            }
         }
     }
 
     pub fn try_get_android_auto(&mut self) {
         if Some(false) == self.android_auto_handler {
-            self.send_packet(MessageFromApp::RequestAndroidAutoControl);
-            self.android_auto_handler.take();
+            if self.send_packet(MessageFromApp::RequestAndroidAutoControl).is_ok() {
+                self.android_auto_handler.take();
+            }
         }
     }
 
