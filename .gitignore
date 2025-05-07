@@ -14,3 +14,6 @@ radiohw/radiosim/*.lst
 android2/target/*
 bluetooth/target
 uobradio-comms/target
+aauto/*
+android_auto/*
+oa/*
