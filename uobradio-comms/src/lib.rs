@@ -1,13 +1,12 @@
 //! Module for communicating with a uobradio
 
-use std::{collections::BTreeMap, io::{Read, Write}, thread::JoinHandle};
+use std::{collections::BTreeMap, io::{Read, Write}};
 
 pub mod video;
 pub mod aauto;
 
 #[cfg(target_os = "linux")]
 pub use v4l;
-use video::SendableVideoSource;
 
 pub type UobRadios = BTreeMap<std::net::SocketAddr, UobRadio>;
 

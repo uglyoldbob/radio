@@ -495,7 +495,7 @@ async fn smain() {
                 },
             };
             let net2 = network.clone();
-            tasks.spawn(async move { android_auto_bluetooth_server.bluetooth_listen(net2).await });
+            tasks.spawn(async move { android_auto_bluetooth_server.expect("Failed to setup bluetooth server").bluetooth_listen(net2).await });
             let main = AndroidAutoStuff { sendr: aautochan.0 };
             tasks.spawn(async move {
                 android_auto::AndriodAutoBluettothServer::wifi_listen(config, main).await

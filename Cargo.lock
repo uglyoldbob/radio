@@ -183,7 +183,7 @@ dependencies = [
 [[package]]
 name = "android-auto"
 version = "0.1.0"
-source = "git+https://github.com/uglyoldbob/android-auto.git#b736f4a3225a9cad625b2803c594c2a7f903d117"
+source = "git+https://github.com/uglyoldbob/android-auto.git#63b4dae1fc2ef0adcf2fdd71af6011a3f4530458"
 dependencies = [
  "async-trait",
  "bitfield",
@@ -3992,9 +3992,12 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.11.0"
+version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "917ce264624a4b4db1c364dcc35bfca9ded014d0a958cd47ad3e960e988ea51c"
+checksum = "229a4a4c221013e7e1f1a043678c5cc39fe5171437c88fb47151a21e6f5b5c79"
+dependencies = [
+ "zeroize",
+]
 
 [[package]]
 name = "rustls-webpki"
