@@ -352,6 +352,26 @@ impl AndroidAutoFrameReceiver {
                 self.len.replace(len);
             }
         }
+
+        let decrypt =
+            |ssl_stream: &mut rustls::client::ClientConnection, len: u16, data_frame: Vec<u8>| {
+                let mut plain_data = vec![0u8; data_frame.len()];
+                let mut cursor = Cursor::new(&data_frame);
+                let mut index = 0;
+                loop {
+                    let asdf = ssl_stream.read_tls(&mut cursor).unwrap();
+                    let state = ssl_stream.process_new_packets();
+                    log::error!("State is {} {} {:?}", asdf, len, state);
+                    if asdf == 0 {
+                        break;
+                    }
+                    if let Ok(l) = ssl_stream.reader().read(&mut plain_data[index..]) {
+                        index += l;
+                    }
+                }
+                plain_data[0..index].to_vec()
+            };
+
         if let Some(len) = self.len.take() {
             let mut data_frame = vec![0u8; len as usize];
             log::error!(
@@ -363,11 +383,7 @@ impl AndroidAutoFrameReceiver {
             stream.read_exact(&mut data_frame).await?;
             let data = if header.frame.get_frame_type() == FrameHeaderType::Single {
                 let data_plain = if header.frame.get_encryption() {
-                    ssl_stream.read_tls(&mut Cursor::new(&data_frame)).unwrap();
-                    let state = ssl_stream.process_new_packets();
-                    let mut plain_data = vec![0u8; data_frame.len()];
-                    let a = ssl_stream.reader().read(&mut plain_data).unwrap();
-                    plain_data[0..a].to_vec()
+                    decrypt(ssl_stream, len, data_frame)
                 } else {
                     data_frame
                 };
@@ -375,7 +391,7 @@ impl AndroidAutoFrameReceiver {
                 Some(vec![d])
             } else {
                 let data_plain = if header.frame.get_encryption() {
-                    todo!("Data: {:02x?}", data_frame);
+                    decrypt(ssl_stream, len, data_frame)
                 } else {
                     data_frame
                 };
