@@ -6,15 +6,13 @@
 
 use std::{
     io::Read,
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 use android_auto::HeadUnitInfo;
 use tokio::io::AsyncReadExt;
 use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings};
 use video_service::VideoSource;
-use wifi_rs::prelude::ManagedWifiHotspotTrait;
-use wifi_rs::prelude::WifiHotspot;
 
 mod video_service;
 
@@ -363,12 +361,22 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
 
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
-    async fn receive_video(&mut self, data: Vec<u8>) {
+    async fn receive_video(&mut self, data: Vec<u8>, _timestamp: Option<u64>) {
         let _ = self
             .sendr
             .send(AndroidAutoMessageFromPhone::VideoContent(data))
             .await;
     }
+
+    async fn setup_video(&mut self) -> Result<(),()> {
+        Ok(())
+    }
+
+    async fn teardown_video(&mut self) {}
+
+    async fn wait_for_focus(&mut self) {}
+
+    async fn set_focus(&mut self, _focus: bool) {}
 }
 
 /// The main function for the service
@@ -415,7 +423,7 @@ async fn smain() {
     let aautochan = tokio::sync::mpsc::channel(5);
 
     #[cfg(all(feature = "bluetooth", feature = "androidauto"))]
-    let mut android_auto_bluetooth_server =
+    let android_auto_bluetooth_server =
         android_auto::AndriodAutoBluettothServer::new(&mut bluetooth).await;
 
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {

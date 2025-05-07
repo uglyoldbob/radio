@@ -183,7 +183,7 @@ dependencies = [
 [[package]]
 name = "android-auto"
 version = "0.1.0"
-source = "git+https://github.com/uglyoldbob/android-auto.git#63b4dae1fc2ef0adcf2fdd71af6011a3f4530458"
+source = "git+https://github.com/uglyoldbob/android-auto.git#d77af20783e2af8b56471f826ea5a930ff03b4f9"
 dependencies = [
  "async-trait",
  "bitfield",
