@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-android-auto = { path = "./android-auto", optional = true }
+android-auto = { git = "https://github.com/uglyoldbob/android-auto.git", optional = true }
 async-trait = "0.1.88"
 bincode = {version = "2.0.1", features = ["serde"]}
-bluetooth-rust = { path = "./bluetooth", optional = true}
+bluetooth-rust = { git = "https://github.com/uglyoldbob/bluetooth-rust.git", optional = true}
 eframe = { version = "0.31.1" }
 egui_extras = { version = "0.31.1", features = ["all_loaders"] }
 enum_dispatch = "0.3.13"

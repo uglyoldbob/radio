@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-android-auto = { path = "../android-auto", optional = true }
+android-auto = { git = "https://github.com/uglyoldbob/android-auto.git", optional = true }
 bincode = {version = "2.0.1", features = ["serde"]}
-bluetooth-rust = { path = "../bluetooth", optional = true}
+bluetooth-rust = { git = "https://github.com/uglyoldbob/bluetooth-rust.git", optional = true}
 egui = { version = "0.31.1" }
 ffimage = "0.10.0"
 ffimage_yuv = "0.10.0"

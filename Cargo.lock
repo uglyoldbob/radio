@@ -183,6 +183,7 @@ dependencies = [
 [[package]]
 name = "android-auto"
 version = "0.1.0"
+source = "git+https://github.com/uglyoldbob/android-auto.git#b736f4a3225a9cad625b2803c594c2a7f903d117"
 dependencies = [
  "async-trait",
  "bitfield",
@@ -788,6 +789,7 @@ dependencies = [
 [[package]]
 name = "bluetooth-rust"
 version = "0.1.0"
+source = "git+https://github.com/uglyoldbob/bluetooth-rust.git#fe41916b3f7665f84e33c31d53a7cbc8fadf34f3"
 dependencies = [
  "bluer",
  "futures",
