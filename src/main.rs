@@ -168,10 +168,27 @@ impl eframe::App for MyEguiApp {
                 let isize = t.size()[1];
                 let zoom = isize as f32 / size.y;
                 let dsize = t.size_vec2() / zoom;
-                ui.add(egui::Image::from_texture(egui::load::SizedTexture {
+                let p = ui.cursor();
+                let r = ui.add(egui::Image::from_texture(egui::load::SizedTexture {
                     id: t.id(),
                     size: dsize,
-                }));
+                }).sense(egui::Sense::click_and_drag()));
+                let mut o = r.interact_pointer_pos();
+                if let Some(o) = &mut o {
+                    o.x -= p.left();
+                    o.y -= p.top();
+                    o.x *= zoom;
+                    o.y *= zoom;
+                }
+                if r.clicked() {
+                    log::error!("Android auto clicked at {:?}", o);
+                } else if r.drag_started() {
+                    log::error!("A drag started at {:?} {:?}", o, r);
+                } else if r.drag_stopped() {
+                    log::error!("A drag stopped at {:?} {:?}", o, r);
+                } else if r.dragged() {
+                    log::error!("A drag at {:?} {:?}", o, r);
+                }
             }
         });
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
