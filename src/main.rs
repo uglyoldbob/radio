@@ -169,10 +169,13 @@ impl eframe::App for MyEguiApp {
                 let zoom = isize as f32 / size.y;
                 let dsize = t.size_vec2() / zoom;
                 let p = ui.cursor();
-                let r = ui.add(egui::Image::from_texture(egui::load::SizedTexture {
-                    id: t.id(),
-                    size: dsize,
-                }).sense(egui::Sense::click_and_drag()));
+                let r = ui.add(
+                    egui::Image::from_texture(egui::load::SizedTexture {
+                        id: t.id(),
+                        size: dsize,
+                    })
+                    .sense(egui::Sense::click_and_drag()),
+                );
                 let mut o = r.interact_pointer_pos();
                 if let Some(o) = &mut o {
                     o.x -= p.left();

@@ -4,10 +4,7 @@
 
 //! This program is for handling the video and audio components for the radio
 
-use std::{
-    io::Read,
-    sync::Arc,
-};
+use std::{io::Read, sync::Arc};
 
 use android_auto::HeadUnitInfo;
 use tokio::io::AsyncReadExt;
@@ -74,6 +71,7 @@ pub struct AppUserCommon {
     video: Vec<VideoSource>,
     old_settings: NonvolatileSettings,
     settings: NonvolatileSettings,
+    //aauto_sender: Option<tokio::sync::mpsc::Sender<android_auto::AndroidAutoMessage>>,
 }
 
 #[cfg(feature = "wifi")]
@@ -351,12 +349,20 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
 
 struct AndroidAutoStuff {
     sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
+//    recvr: Option<tokio::sync::mpsc::Receiver<android_auto::AndroidAutoMessage>>,
+//    frame_sender: tokio::sync::mpsc::Sender<android_auto::AndroidAutoMessage>,
 }
 
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     fn supports_video(&mut self) -> Option<&mut dyn android_auto::AndroidAutoVideoChannelTrait> {
         Some(self)
     }
+
+/*    fn get_receiver(
+        &mut self,
+    ) -> Option<tokio::sync::mpsc::Receiver<android_auto::AndroidAutoMessage>> {
+        self.recvr.take()
+    }*/
 }
 
 #[async_trait::async_trait]
@@ -368,7 +374,7 @@ impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
             .await;
     }
 
-    async fn setup_video(&mut self) -> Result<(),()> {
+    async fn setup_video(&mut self) -> Result<(), ()> {
         Ok(())
     }
 
@@ -426,7 +432,7 @@ async fn smain() {
     let android_auto_bluetooth_server =
         android_auto::AndriodAutoBluettothServer::new(&mut bluetooth).await;
 
-    let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
+    let mut common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
             interface: Some(&sys.wifi_name),
@@ -445,6 +451,7 @@ async fn smain() {
         video: vs,
         old_settings: s.clone(),
         settings: s.clone(),
+        //aauto_sender: None,
     }));
 
     {
@@ -503,8 +510,22 @@ async fn smain() {
                 },
             };
             let net2 = network.clone();
-            tasks.spawn(async move { android_auto_bluetooth_server.expect("Failed to setup bluetooth server").bluetooth_listen(net2).await });
-            let main = AndroidAutoStuff { sendr: aautochan.0 };
+            //let aa_chan = tokio::sync::mpsc::channel(10);
+            {
+                let mut common2 = common.lock().await;
+                //common2.aauto_sender.replace(aa_chan.0.clone());
+            }
+            tasks.spawn(async move {
+                android_auto_bluetooth_server
+                    .expect("Failed to setup bluetooth server")
+                    .bluetooth_listen(net2)
+                    .await
+            });
+            let main = AndroidAutoStuff {
+                sendr: aautochan.0,
+                //recvr: Some(aa_chan.1),
+                //frame_sender: aa_chan.0,
+            };
             tasks.spawn(async move {
                 android_auto::AndriodAutoBluettothServer::wifi_listen(config, main).await
             });
