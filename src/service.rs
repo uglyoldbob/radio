@@ -71,7 +71,7 @@ pub struct AppUserCommon {
     video: Vec<VideoSource>,
     old_settings: NonvolatileSettings,
     settings: NonvolatileSettings,
-    //aauto_sender: Option<tokio::sync::mpsc::Sender<android_auto::AndroidAutoMessage>>,
+    aauto_sender: Option<tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>>,
 }
 
 #[cfg(feature = "wifi")]
@@ -140,6 +140,14 @@ pub async fn process_app(
             match packet {
                 uobradio_comms::MessageFromApp::AndroidAutoMessage(m) => match m {
                     uobradio_comms::aauto::AndroidAutoMessageToPhone::Test => todo!(),
+                    uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(m) => {
+                        let mut common2 = common.lock().await;
+                        if Some(addr) == common2.aauto_addr {
+                            if let Some(aas) = &mut common2.aauto_sender {
+                                aas.send(m).await.map_err(|e| e.to_string())?;
+                            }
+                        }
+                    }
                 },
                 uobradio_comms::MessageFromApp::RequestAndroidAutoControl => {
                     let mut common = common.lock().await;
@@ -349,8 +357,8 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
 
 struct AndroidAutoStuff {
     sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
-//    recvr: Option<tokio::sync::mpsc::Receiver<android_auto::AndroidAutoMessage>>,
-//    frame_sender: tokio::sync::mpsc::Sender<android_auto::AndroidAutoMessage>,
+    recvr: Option<tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>>,
+    frame_sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
 }
 
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
@@ -358,11 +366,11 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
         Some(self)
     }
 
-/*    fn get_receiver(
+    fn get_receiver(
         &mut self,
-    ) -> Option<tokio::sync::mpsc::Receiver<android_auto::AndroidAutoMessage>> {
+    ) -> Option<tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>> {
         self.recvr.take()
-    }*/
+    }
 }
 
 #[async_trait::async_trait]
@@ -432,7 +440,7 @@ async fn smain() {
     let android_auto_bluetooth_server =
         android_auto::AndriodAutoBluettothServer::new(&mut bluetooth).await;
 
-    let mut common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
+    let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
             interface: Some(&sys.wifi_name),
@@ -451,7 +459,7 @@ async fn smain() {
         video: vs,
         old_settings: s.clone(),
         settings: s.clone(),
-        //aauto_sender: None,
+        aauto_sender: None,
     }));
 
     {
@@ -510,10 +518,10 @@ async fn smain() {
                 },
             };
             let net2 = network.clone();
-            //let aa_chan = tokio::sync::mpsc::channel(10);
+            let aa_chan = tokio::sync::mpsc::channel(10);
             {
                 let mut common2 = common.lock().await;
-                //common2.aauto_sender.replace(aa_chan.0.clone());
+                common2.aauto_sender.replace(aa_chan.0.clone());
             }
             tasks.spawn(async move {
                 android_auto_bluetooth_server
@@ -523,8 +531,8 @@ async fn smain() {
             });
             let main = AndroidAutoStuff {
                 sendr: aautochan.0,
-                //recvr: Some(aa_chan.1),
-                //frame_sender: aa_chan.0,
+                recvr: Some(aa_chan.1),
+                frame_sender: aa_chan.0,
             };
             tasks.spawn(async move {
                 android_auto::AndriodAutoBluettothServer::wifi_listen(config, main).await

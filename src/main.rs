@@ -125,40 +125,40 @@ impl eframe::App for MyEguiApp {
         self.common.radio.try_get_android_auto();
         if let Some(vdata) = self.common.radio.get_android_video_buf() {
             log::error!("Got some video data length {}", vdata.len());
-            for p in openh264::nal_units(&vdata) {
+            let mut units = openh264::nal_units(&vdata).peekable();
+            while let Some(p) = units.next() {
                 match self.common.android_auto_video_decoder.decode(p) {
                     Err(e) => {
                         log::error!("Failed to decode android auto video {:?}", e);
                     }
                     Ok(Some(image)) => {
-                        use openh264::formats::YUVSource;
-                        let rgb_len = image.rgb8_len();
-                        let mut rgb_raw = vec![0; rgb_len];
-                        image.write_rgb8(&mut rgb_raw);
-                        let (w, h) = image.dimensions_uv();
-                        log::info!(
-                            "Got an android auto video frame size {} {}x{}",
-                            rgb_len,
-                            w * 2,
-                            h * 2
-                        );
-                        let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
-                        let image = egui::ColorImage {
-                            size: [w * 2 as usize, h * 2 as usize],
-                            pixels: ei.get_egui(),
-                        };
-                        if let None = self.common.android_auto_texture {
-                            self.common.android_auto_texture = Some(ctx.load_texture(
-                                "android_auto",
-                                image,
-                                egui::TextureOptions::LINEAR,
-                            ));
-                        } else if let Some(t) = &mut self.common.android_auto_texture {
-                            t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                        if units.peek().is_none() {
+                            use openh264::formats::YUVSource;
+                            let rgb_len = image.rgb8_len();
+                            let mut rgb_raw = vec![0; rgb_len];
+                            image.write_rgb8(&mut rgb_raw);
+                            let (w, h) = image.dimensions_uv();
+                            let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
+                            let image = egui::ColorImage {
+                                size: [w * 2 as usize, h * 2 as usize],
+                                pixels: ei.get_egui(),
+                            };
+                            if let None = self.common.android_auto_texture {
+                                self.common.android_auto_texture = Some(ctx.load_texture(
+                                    "android_auto",
+                                    image,
+                                    egui::TextureOptions::LINEAR,
+                                ));
+                            } else if let Some(t) = &mut self.common.android_auto_texture {
+                                t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                            }
                         }
                     }
                     _ => {}
                 }
+            }
+            for p in openh264::nal_units(&vdata) {
+                
             }
         }
         let h = ctx.screen_rect().height();
@@ -174,23 +174,53 @@ impl eframe::App for MyEguiApp {
                         id: t.id(),
                         size: dsize,
                     })
-                    .sense(egui::Sense::click_and_drag()),
+                    .sense(egui::Sense::drag()),
                 );
-                let mut o = r.interact_pointer_pos();
-                if let Some(o) = &mut o {
+                let o = if let Some(mut o) = r.interact_pointer_pos() {
                     o.x -= p.left();
                     o.y -= p.top();
                     o.x *= zoom;
                     o.y *= zoom;
-                }
-                if r.clicked() {
-                    log::error!("Android auto clicked at {:?}", o);
-                } else if r.drag_started() {
-                    log::error!("A drag started at {:?} {:?}", o, r);
-                } else if r.drag_stopped() {
-                    log::error!("A drag stopped at {:?} {:?}", o, r);
-                } else if r.dragged() {
-                    log::error!("A drag at {:?} {:?}", o, r);
+                    Some(o)
+                } else if let Some(mut o) = r.hover_pos() {
+                    o.x -= p.left();
+                    o.y -= p.top();
+                    o.x *= zoom;
+                    o.y *= zoom;
+                    Some(o)
+                } else {
+                    None
+                };
+                if let Some(o) = o {
+                    let mut i_event = android_auto::Wifi::InputEventIndication::new();
+                    i_event.set_timestamp(1); // pretend the input was a REALLY long time ago
+                    let mut te = android_auto::Wifi::TouchEvent::new();
+                    let mut tl = android_auto::Wifi::TouchLocation::new();
+                    tl.set_x(o.x as u32);
+                    tl.set_y(o.y as u32);
+                    tl.set_pointer_id(0);
+                    te.touch_location = vec![tl];
+                    let mut do_touch = true;
+                    if r.drag_started() {
+                        te.set_touch_action(android_auto::Wifi::touch_action::Enum::PRESS);
+                        log::error!("A drag started at {:?} {:?}", o, r);
+                    } else if r.drag_stopped() {
+                        te.set_touch_action(android_auto::Wifi::touch_action::Enum::RELEASE);
+                        log::error!("A drag stopped at {:?} {:?}", o, r);
+                    } else if r.dragged() {
+                        te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
+                        log::error!("A drag at {:?} {:?}", o, r);
+                    } else if r.hovered() {
+                        te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
+                    } else {
+                        do_touch = false;
+                    }
+                    if do_touch {
+                        i_event.touch_event = android_auto::protobuf::MessageField::some(te);
+                        let e = android_auto::AndroidAutoMessage::Input(i_event);
+                        let m2 = uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(e.sendable());
+                        let _ = self.common.radio.send_packet(uobradio_comms::MessageFromApp::AndroidAutoMessage(m2));
+                    }
                 }
             }
         });
@@ -242,7 +272,7 @@ impl eframe::App for MyEguiApp {
                             let r = bluetooth_rust::ResponseToPasskey::Yes;
                             let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
                             let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            self.common.radio.send_packet(packet);
+                            let _ = self.common.radio.send_packet(packet);
                             log::info!("Got confirm request from user for bluetooth passkey");
                         }
                         if ui
@@ -252,7 +282,7 @@ impl eframe::App for MyEguiApp {
                             let r = bluetooth_rust::ResponseToPasskey::No;
                             let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
                             let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            self.common.radio.send_packet(packet);
+                            let _ = self.common.radio.send_packet(packet);
                             log::info!("Got reject request from user for bluetooth passkey");
                         }
                         if ui
@@ -262,7 +292,7 @@ impl eframe::App for MyEguiApp {
                             let r = bluetooth_rust::ResponseToPasskey::Cancel;
                             let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
                             let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            self.common.radio.send_packet(packet);
+                            let _ = self.common.radio.send_packet(packet);
                             log::info!("Got cancel request from user for bluetooth passkey");
                         }
                     })
