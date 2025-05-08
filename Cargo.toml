@@ -15,6 +15,7 @@ ffimage = "0.10.0"
 ffimage_yuv = "0.10.0"
 image = { version = "0.25.2", features = ["jpeg", "png"] } # Add the types you want support for
 log = "0.4.27"
+network-interface = "2.0.1"
 openh264 = "0.8.1"
 qrcode = { version = "0.14.1", optional = true}
 serde = {version = "1.0.219", features = ["derive"]}

@@ -157,9 +157,6 @@ impl eframe::App for MyEguiApp {
                     _ => {}
                 }
             }
-            for p in openh264::nal_units(&vdata) {
-                
-            }
         }
         let h = ctx.screen_rect().height();
         egui::SidePanel::right("AndroidAutoPanel").show(ctx, |ui| {
@@ -218,8 +215,12 @@ impl eframe::App for MyEguiApp {
                     if do_touch {
                         i_event.touch_event = android_auto::protobuf::MessageField::some(te);
                         let e = android_auto::AndroidAutoMessage::Input(i_event);
-                        let m2 = uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(e.sendable());
-                        let _ = self.common.radio.send_packet(uobradio_comms::MessageFromApp::AndroidAutoMessage(m2));
+                        let m2 =
+                            uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(e.sendable());
+                        let _ = self
+                            .common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::AndroidAutoMessage(m2));
                     }
                 }
             }

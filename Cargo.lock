@@ -183,7 +183,7 @@ dependencies = [
 [[package]]
 name = "android-auto"
 version = "0.1.0"
-source = "git+https://github.com/uglyoldbob/android-auto.git?branch=take_user_input#52a6419cf60e060133ee88534e318e9e71a2648f"
+source = "git+https://github.com/uglyoldbob/android-auto.git?branch=take_user_input#b713c9ceaba397b3115b4cbdc053fe99e2fee23b"
 dependencies = [
  "async-trait",
  "bitfield",
@@ -790,7 +790,7 @@ dependencies = [
 [[package]]
 name = "bluetooth-rust"
 version = "0.1.0"
-source = "git+https://github.com/uglyoldbob/bluetooth-rust.git#fe41916b3f7665f84e33c31d53a7cbc8fadf34f3"
+source = "git+https://github.com/uglyoldbob/bluetooth-rust.git#01460189d9e3dc10a153cdd40a3e62c4df1e4932"
 dependencies = [
  "bluer",
  "futures",
@@ -2713,6 +2713,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "network-interface"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3329f515506e4a2de3aa6e07027a6758e22e0f0e8eaf64fa47261cec2282602"
+dependencies = [
+ "cc",
+ "libc",
+ "thiserror 1.0.69",
+ "winapi",
+]
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3624,6 +3636,7 @@ dependencies = [
  "ffimage_yuv",
  "image",
  "log",
+ "network-interface",
  "openh264",
  "qrcode",
  "serde",

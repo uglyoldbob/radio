@@ -23,8 +23,6 @@ struct MainConfiguration {
 struct SystemSettings {
     #[cfg(feature = "wifi")]
     wifi_name: String,
-    #[cfg(feature = "wifi")]
-    wifi_mac: String,
 }
 
 impl SystemSettings {
@@ -434,11 +432,22 @@ async fn smain() {
         .await
         .expect("Could not open bluetooth");
 
+    let blue_addresses = bluetooth.addresses().await;
+
     let aautochan = tokio::sync::mpsc::channel(5);
 
     #[cfg(all(feature = "bluetooth", feature = "androidauto"))]
     let android_auto_bluetooth_server =
         android_auto::AndriodAutoBluettothServer::new(&mut bluetooth).await;
+
+    use network_interface::NetworkInterfaceConfig;
+    let network_interfaces = network_interface::NetworkInterface::show().unwrap();
+    let mut wifi_mac = String::new();
+    for i in network_interfaces {
+        if i.name == sys.wifi_name {
+            wifi_mac = i.mac_addr.unwrap();
+        }
+    }
 
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
@@ -485,7 +494,7 @@ async fn smain() {
             Some(android_auto::NetworkInformation {
                 ssid: a.0.clone(),
                 psk: a.1.clone(),
-                mac_addr: common2.system.wifi_mac.clone(),
+                mac_addr: wifi_mac,
                 ip: "10.42.0.1".to_string(),
                 port: 5277,
                 security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
@@ -496,12 +505,20 @@ async fn smain() {
         }
     };
 
+    let bluetooth_address = {
+        let b = blue_addresses[0].0;
+        format!(
+            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+            b[0], b[1], b[2], b[3], b[4], b[5]
+        )
+    };
+
     {
         if let Some(network) = network {
             let config = android_auto::AndroidAutoConfiguration {
                 network: network.clone(),
                 bluetooth: android_auto::BluetoothInformation {
-                    address: "00:93:37:EF:B7:57".to_string(),
+                    address: bluetooth_address,
                 },
                 unit: HeadUnitInfo {
                     name: "UobRadio".to_string(),
