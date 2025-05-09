@@ -63,6 +63,8 @@ pub struct UobRadio {
     pub confirm_passkey: Option<u32>,
     /// The video data received so far from the android auto device
     android_auto_video_buf: Vec<u8>,
+    /// Is android auto running?
+    android_auto_running: bool,
 }
 
 impl UobRadio {
@@ -85,6 +87,7 @@ impl UobRadio {
             #[cfg(feature = "bluetooth")]
             confirm_passkey: None,
             android_auto_video_buf: Vec::new(),
+            android_auto_running: false,
         }
     }
 
@@ -315,7 +318,11 @@ impl UobRadio {
                                                     self.android_auto_video_buf.append(&mut data.to_owned());
                                                 }
                                                 aauto::AndroidAutoMessageFromPhone::Disconnect => {
-                                                    todo!();
+                                                    self.android_auto_video_buf.clear();
+                                                    self.android_auto_running = false;
+                                                }
+                                                aauto::AndroidAutoMessageFromPhone::Connect => {
+                                                    self.android_auto_running = true;
                                                 }
                                             }
                                         }

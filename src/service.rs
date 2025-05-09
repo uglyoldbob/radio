@@ -104,12 +104,12 @@ pub async fn process_app(
     let mut send_passkey_response = None;
 
     loop {
-        let length = stream.read_u32().await.map_err(|e| e.to_string())?;
+        let length = stream.read_u32().await.map_err(|e| format!("Error reading packet length: {}", e))?;
         let mut packet = vec![0; length as usize];
         stream
             .read_exact(&mut packet)
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("Error reading packet of length {}: {}", length, e))?;
         let packet: Result<(uobradio_comms::MessageFromApp, usize), bincode::error::DecodeError> =
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
@@ -142,7 +142,7 @@ pub async fn process_app(
                         let mut common2 = common.lock().await;
                         if Some(addr) == common2.aauto_addr {
                             if let Some(aas) = &mut common2.aauto_sender {
-                                aas.send(m).await.map_err(|e| e.to_string())?;
+                                aas.send(m).await.map_err(|e| format!("Failed to send message to android auto: {}", e))?;
                             }
                         }
                     }
@@ -369,6 +369,10 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
         &mut self,
     ) -> Option<tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>> {
         self.recvr.take()
+    }
+
+    async fn connect(&mut self) {
+        let _ = self.sendr.send(AndroidAutoMessageFromPhone::Connect).await;
     }
 
     async fn disconnect(&mut self) {

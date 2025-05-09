@@ -16,4 +16,6 @@ pub enum AndroidAutoMessageFromPhone {
     VideoContent(Vec<u8>),
     /// The device disconected for an unknown reason
     Disconnect,
+    /// The device connected
+    Connect,
 }
