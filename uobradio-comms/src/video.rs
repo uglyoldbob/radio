@@ -1,3 +1,5 @@
+//! Video handling code
+
 use std::sync::{Arc, Mutex};
 
 use ffimage::iter::BytesExt;
@@ -106,15 +108,24 @@ impl From<PixelImage<RgbPixel>> for egui::ColorImage {
     }
 }
 
+/// A value for a video control
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum ControlValue {
+    /// Nothing
     None,
+    /// An integer
     Int64(i64),
+    /// A bool
     Bool(bool),
+    /// A string
     String(String),
+    /// The CompoundU8 type from v4l2
     VecU8(Vec<u8>),
+    /// The CompoundU16 type from v4l2
     VecU16(Vec<u16>),
+    /// The CompoundU32 type from v4l2
     VecU32(Vec<u32>),
+    /// The Ptr type from v4l2
     Ptr(Vec<u8>),
 }
 
@@ -182,12 +193,18 @@ impl From<v4l::control::Value> for ControlValue {
     }
 }
 
+/// Represents a single frame of video
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct VideoFrame {
+    /// The with of the frame in pixels
     pub width: u16,
+    /// The height of the image in pixels
     pub height: u16,
+    /// The optional pixel data for the frame
     pub pixel_data: Option<PixelData>,
+    /// Should the image be hroizontally mirrored
     pub hmirror: bool,
+    /// Should the image ve vertically mirrored
     pub vmirror: bool,
 }
 
@@ -206,6 +223,7 @@ impl From<PixelImage<RgbPixel>> for VideoFrame {
 }
 
 impl VideoFrame {
+    /// Construct an empty video frame
     pub fn new() -> Self {
         Self {
             width: 0,
@@ -216,6 +234,7 @@ impl VideoFrame {
         }
     }
 
+    /// Build a jpeg with the video frame. Currently quality is hard-coded to 75 percent
     pub fn get_jpeg(&self) -> Vec<u8> {
         if let Some(pixels) = &self.pixel_data {
             let rgb = pixels.get_rgb();
@@ -233,6 +252,7 @@ impl VideoFrame {
         }
     }
 
+    /// Run the horizontal and vertical mirroring for the image. Should probably only do this once per image.
     pub fn mirroring(&mut self) {
         if let Some(pd) = &mut self.pixel_data {
             pd.mirroring(self.width, self.hmirror, self.vmirror);
@@ -275,16 +295,22 @@ enum ControlData {
     },
 }
 
+/// A control element for a video source
 #[cfg(target_os = "linux")]
 pub struct ControlElement {
+    /// The id of the control
     pub id: u32,
+    /// The user-visible name of the control
     pub name: String,
+    /// Specifies how the control can be manipulated
     data: ControlData,
+    /// The value for the control element
     pub value: v4l::control::Value,
 }
 
 #[cfg(target_os = "linux")]
 impl ControlElement {
+    /// Build a sendable version of the control element
     pub fn sendable(&self) -> SendableControlElement {
         SendableControlElement {
             id: self.id,
@@ -294,6 +320,7 @@ impl ControlElement {
         }
     }
 
+    /// Construct a new self, with the given description and value
     pub fn new(
         d: &v4l::control::Description,
         value: v4l::control::Value,
@@ -354,27 +381,35 @@ impl ControlElement {
     }
 }
 
+/// A plain video source
 #[cfg(target_os="linux")]
 pub struct VideoSource {
+    /// The latext image for the video source
     pub image: Arc<Mutex<VideoFrame>>,
+    /// The controls for the video source
     pub controls: Vec<ControlElement>,
 }
 
 #[cfg(target_os="linux")]
 impl VideoSource {
+    /// Get a sendable version of the video source
     pub fn sendable(&self) -> Option<SendableVideoSource> {
         let img = self.image.lock().ok()?;
         Some(SendableVideoSource { image: Some(img.clone()), controls: self.controls.iter().map(|a| a.into()).collect() })
     }
 }
 
+/// A video source that can be sent over a network or other channel
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SendableVideoSource {
+    /// The newest image for the video source
     pub image: Option<VideoFrame>,
+    /// The controls for the video source
     pub controls: Vec<SendableControlElement>,
 }
 
 impl SendableVideoSource {
+    /// construct a new self
     pub fn new() -> Self {
         Self {
             image: None,
@@ -383,11 +418,16 @@ impl SendableVideoSource {
     }
 }
 
+/// A control element that can be sent across the network or a channel
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SendableControlElement {
+    /// The id for the control
     pub id: u32,
+    /// The user visible name of the control
     pub name: String,
+    /// The details for how the value can be set
     data: ControlData,
+    /// The current value for the control
     pub value: ControlValue,
 }
 
@@ -405,9 +445,10 @@ impl From<&ControlElement> for SendableControlElement {
 
 #[cfg(target_os = "linux")]
 impl SendableControlElement {
+    /// Show the control element on a egui form
     pub fn egui_show(&mut self, ui: &mut egui::Ui) -> bool {
         ui.label(self.name.clone());
-        let mut value = &mut self.value;
+        let value = &mut self.value;
         match &mut self.data {
             ControlData::Integer {
                 val: _,
@@ -541,18 +582,17 @@ impl SendableControlElement {
     }
 }
 
-pub struct VideoSourceSendable {
-    pub image: Arc<Mutex<VideoFrame>>,
-    pub controls: Vec<SendableControlElement>,
-}
-
+/// An image in either yuyv or rgb format
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum PixelData {
+    /// The image is represented with yuyv 4:2:2 data
     Yuyv(Vec<u8>),
+    /// The image is represented with rgb data, 8 bits per channel, no alpha channel
     Rgb(Vec<u8>),
 }
 
 impl PixelData {
+    /// Convert the given yuyv data to rgb
     fn yuyv_to_rgb(vec: &[u8]) -> Vec<u8> {
         let mut a = vec![0u8; vec.len() / 2 * 3];
         vec.iter()
@@ -566,12 +606,14 @@ impl PixelData {
         a
     }
 
+    /// Convert the given rgb data to a compatible egui format
     fn rgb_to_egui(vec: &[u8]) -> Vec<egui::Color32> {
         vec.chunks_exact(3)
             .map(|i| egui::Color32::from_rgb(i[0], i[1], i[2]))
             .collect()
     }
 
+    /// Convert the pixel data to rgb, if required
     pub fn to_rgb(self) -> Self {
         match self {
             PixelData::Yuyv(vec) => PixelData::Rgb(Self::yuyv_to_rgb(&vec)),
@@ -586,6 +628,7 @@ impl PixelData {
         }
     }
 
+    /// Get an egui compatible image
     pub fn get_egui(&self) -> Vec<egui::Color32> {
         match self {
             PixelData::Yuyv(vec) => {

@@ -359,6 +359,7 @@ struct AndroidAutoStuff {
     frame_sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
 }
 
+#[async_trait::async_trait]
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     fn supports_video(&mut self) -> Option<&mut dyn android_auto::AndroidAutoVideoChannelTrait> {
         Some(self)
@@ -368,6 +369,10 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
         &mut self,
     ) -> Option<tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>> {
         self.recvr.take()
+    }
+
+    async fn disconnect(&mut self) {
+        let _ = self.sendr.send(AndroidAutoMessageFromPhone::Disconnect).await;
     }
 }
 

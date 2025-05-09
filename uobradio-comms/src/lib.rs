@@ -1,5 +1,8 @@
 //! Module for communicating with a uobradio
 
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
+
 use std::{collections::BTreeMap, io::{Read, Write}};
 
 pub mod video;
@@ -8,35 +11,57 @@ pub mod aauto;
 #[cfg(target_os = "linux")]
 pub use v4l;
 
+/// A list of radios, according the ip adress and port the live at
 pub type UobRadios = BTreeMap<std::net::SocketAddr, UobRadio>;
 
+/// Defines the state for the state machine of receiving packets from the radio
 #[derive(Debug)]
 pub enum RadioReceiveStatus {
+    /// The radio is not connected
     Disconnected,
+    /// Wait for entire length of packet from the radio until the specified time, storing what has been received so far, and the number of bytes received
     WaitForLength(std::time::Instant, [u8; 4], u8),
+    /// Wait for the entire packet of a known length until the specified time, storing the data received so far and the length of the entire packet expected
     WaitForPacket(std::time::Instant, Vec<u8>, u32, u32),
+    /// The state machine has received a packet and is ready to process the packet
     GotPacket(Vec<u8>),
 }
 
 /// The port to listen to for udp communication
 const UDP_PORT: u16 = 13456;
 
+/// Represents a uob radio connection
 pub struct UobRadio {
+    /// Address of where the radio can be contacted
     address: std::net::SocketAddr,
+    /// The stream, if comms are currently open
     comms: Option<std::net::TcpStream>,
+    /// The status of the receiving state machine
     status: RadioReceiveStatus,
+    /// The time to wait until to send another camera image request
     waiting_until: Option<std::time::Instant>,
+    /// The length of time for timeouts in receiving packets from the radio
     timeout: std::time::Duration,
+    /// The next time a ping should be sent
     ping_time: std::time::Instant,
+    /// The map of cameras for the radio, by camera id
     cameras: Option<BTreeMap<u8, video::SendableVideoSource>>,
+    /// Am i waiting on the camera options from the radio? TODO, add a timeout feature to this (probably `Option<std::time::Instant>`)
     waiting_for_camera_options: bool,
+    /// Am I the handler for bluetooth on the radio. Primarily used by the application on the radio itself.
+    /// None indicates I am waiting to see if I was accepted as the bluetooth handler.
     #[cfg(feature = "bluetooth")]
     bluetooth_handler: Option<bool>,
+    /// Am I the handler for android auto on the radio. Primarily used by the application on the radio itself.
+    /// None indicates I am waiting to see if I was accepted as the android auto handler.
     android_auto_handler: Option<bool>,
+    /// The passkey to be displayed for the user to see during bluetooth pairing.
     #[cfg(feature = "bluetooth")]
     pub display_passkey: Option<u32>,
+    /// The passkey to be displayed for confirmation by the user
     #[cfg(feature = "bluetooth")]
     pub confirm_passkey: Option<u32>,
+    /// The video data received so far from the android auto device
     android_auto_video_buf: Vec<u8>,
 }
 
@@ -71,18 +96,23 @@ impl UobRadio {
         std::time::Instant::now() > self.ping_time
     }
 
+    /// Get the list of all cameras, as a reference
     pub fn cameras(&self) -> Option<&BTreeMap<u8, video::SendableVideoSource>> {
         self.cameras.as_ref()
     }
 
+    /// Get the list of all cameras, mutably
     pub fn cameras_mut(&mut self) -> Option<&mut BTreeMap<u8, video::SendableVideoSource>> {
         self.cameras.as_mut()
     }
 }
 
+/// A potentially unused struct
 #[cfg(not(target_os = "android"))]
-pub struct MessageAboutAppUser {
+pub struct FakeMessageAboutAppUser {
+    /// who cares
     pub addr: std::net::SocketAddr,
+    /// who cares
     pub send: std::sync::mpsc::Sender<MessageToApp>,
 }
 
@@ -90,6 +120,7 @@ impl Drop for UobRadio {
     fn drop(&mut self) {}
 }
 
+/// Commands to manipulate the gpio on a radio
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Gpio {
     /// Control the winch output, IN, OUT. Both together is invalid.
@@ -101,19 +132,32 @@ pub enum Gpio {
     /// Unlock doors
     UnlockDoors,
     /// Control a door window up or down
-    WindowControl { id: u8, up: bool, down: bool },
+    WindowControl { 
+        /// The window id
+        id: u8, 
+        /// Make the window go up. Up and down at the same time is invalid
+        up: bool, 
+        /// Make the window go down. Up and down at the same time is invalid
+        down: bool, 
+    },
 }
 
+/// A message that can be sent from an app. 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum MessageFromApp {
+    /// A ping message
     Ping(u16),
+    /// Request an image from the specified camera
     RequestCamera(u8),
     /// Request the entire btreemap of all cameras
     RequestCameras,
+    /// Manipulate gpio in the manner specified
     GpioControl(Gpio),
     /// The camera index with the bincode encoded data for the setting to change
     CameraSettingControl(u8, u8, video::ControlValue),
+    /// Update the nonvolatile settings on the radio
     NewSettings(NonvolatileSettings),
+    /// Request all nonvolatile settings
     RequestSettings,
     /// Request from the the app user that handles bluetooth pairing stuff
     RequestBluetoothControl,
@@ -153,11 +197,7 @@ pub enum ActualMessageToBluetoothHost {
     BluetoothEnabled(bool),
 }
 
-pub struct MessageFromAppWithAddr {
-    pub addr: std::net::SocketAddr,
-    pub message: MessageFromApp,
-}
-
+/// A message that can be sent to an app. The main radio application is also considered an app. Therefore anything the main radio can do, the mobile app has the potential to also do.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum MessageToApp {
     /// Contains the ping id number for tcp communications, or the port number for udp communications
@@ -179,6 +219,7 @@ pub enum MessageToApp {
 }
 
 impl MessageFromApp {
+    /// Send the message to the given stream.
     pub fn send_to_stream(&self, stream: &mut std::net::TcpStream) -> Result<(), String> {
         let packet = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
         stream
@@ -190,6 +231,7 @@ impl MessageFromApp {
 }
 
 impl MessageToApp {
+    /// Send the message to the given stream.
     #[cfg(not(target_os = "android"))]
     pub async fn send_to_stream(&self, stream: &mut tokio::net::TcpStream) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
@@ -204,6 +246,7 @@ impl MessageToApp {
 }
 
 impl UobRadio {
+    /// Call this to prcess received packets. The closure allows the user to specify additional processing for any packets received.
     pub fn process_received<F: FnMut(&MessageToApp)>(
         &mut self,
         mut closure: F,
@@ -270,6 +313,9 @@ impl UobRadio {
                                                 aauto::AndroidAutoMessageFromPhone::VideoContent(data) => {
                                                     log::error!("Received android auto video data length {}", data.len());
                                                     self.android_auto_video_buf.append(&mut data.to_owned());
+                                                }
+                                                aauto::AndroidAutoMessageFromPhone::Disconnect => {
+                                                    todo!();
                                                 }
                                             }
                                         }
@@ -340,6 +386,7 @@ impl UobRadio {
         Ok(())
     }
 
+    /// Retrieve the data received so far for the android audo video stream and then clear the buffer for new data to be received.
     pub fn get_android_video_buf(&mut self) -> Option<Vec<u8>> {
         if Some(true) == self.android_auto_handler {
             if !self.android_auto_video_buf.is_empty() {
@@ -357,6 +404,7 @@ impl UobRadio {
         }
     }
 
+    /// Send a request for all cameras available on the radio. Does nothing if camera info has already been received or if waiting on camera data from the radio.
     pub fn get_cameras(&mut self) -> bool {
         if self.cameras.is_none() {
             if !self.waiting_for_camera_options {
@@ -371,6 +419,7 @@ impl UobRadio {
         !self.cameras.is_none()
     }
 
+    /// Send a ping to the radio. Only actually sends a ping when required based on the last time a packet was sent. This prevents needless pings from being sent.
     pub fn ping(&mut self) -> Result<(), String> {
         self.connect();
         let time = self.check_ping_time();
@@ -392,6 +441,8 @@ impl UobRadio {
         }
     }
 
+    /// Run this function whenever a connection to the radio is needed.
+    /// Does nothing if already connected to the radio.
     pub fn connect(&mut self) {
         if self.comms.is_none() {
             let tcp = std::net::TcpStream::connect(self.address);
@@ -409,9 +460,11 @@ impl UobRadio {
         }
     }
 
+    /// Send a packet to the radio, handling disconnects if sending should fail.
     pub fn send_packet(&mut self, packet: MessageFromApp) -> Result<(), ()> {
         if let Some(stream) = &mut self.comms {
             if packet.send_to_stream(stream).is_err() {
+                self.update_ping_time();
                 self.disconnect();
                 Err(())
             }
@@ -424,6 +477,7 @@ impl UobRadio {
         }
     }
 
+    /// Try to establish self as the handler for bluetooth. Does nothing if already established as the handler
     pub fn try_get_bluetooth(&mut self) {
         if Some(false) == self.bluetooth_handler {
             if self.send_packet(MessageFromApp::RequestBluetoothControl).is_ok() {
@@ -432,6 +486,7 @@ impl UobRadio {
         }
     }
 
+    /// Try to establish self as the handler for android auto. Does nothing if already established as the handler
     pub fn try_get_android_auto(&mut self) {
         if Some(false) == self.android_auto_handler {
             if self.send_packet(MessageFromApp::RequestAndroidAutoControl).is_ok() {
@@ -440,6 +495,7 @@ impl UobRadio {
         }
     }
 
+    /// Disconnect from the radio for some reasion
     pub fn disconnect(&mut self) {
         self.comms.take();
         self.status = RadioReceiveStatus::Disconnected;
@@ -451,6 +507,7 @@ impl UobRadio {
         self.waiting_until = None;
     }
 
+    /// Send gpio data to the radio
     pub fn send_gpio(&mut self, gpio: Gpio) -> Result<(), String> {
         self.connect();
         if let Some(comms) = &mut self.comms {
@@ -465,6 +522,7 @@ impl UobRadio {
         }
     }
 
+    /// Send a request to obtain the image of the specified camera
     pub fn send_camera_request(&mut self, index: u8) -> Result<(),String> {
         self.connect();
         if let Some(inst) = &self.waiting_until {
@@ -483,17 +541,21 @@ impl UobRadio {
         Ok(())
     }
 
+    /// Indicate that the camera image request has been completed.
     pub fn finish_camera_request(&mut self) {
         log::error!("Finishing camera request");
         self.waiting_until = None;
     }
 
+    /// Construct a new self, corresponding to localhost. Used by the main radio application.
     pub fn localhost() -> Self {
         let ip: std::net::Ipv4Addr = std::net::Ipv4Addr::new(127, 0, 0, 1);
         let addr = std::net::SocketAddr::new(std::net::IpAddr::V4(ip), 13457);
         UobRadio::new(addr, 5)
     }
 
+    /// Run a detection to find all uob radios on the local network.
+    /// times is the number of broadcast packets to send out. Since it is udp, there is no guarantee that 100% of packets will be received.
     pub fn detect_radios(
         times: u8,
     ) -> Result<UobRadios, std::io::Error> {
@@ -522,6 +584,7 @@ impl UobRadio {
     }
 }
 
+/// Non-volatile settings that should be saved to nonvolatile storage of some kind
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 pub struct NonvolatileSettings {
     #[cfg(feature = "wifi")]
@@ -530,6 +593,7 @@ pub struct NonvolatileSettings {
 }
 
 impl NonvolatileSettings {
+    /// Save the non-volatile settings to the current directory
     pub fn save(&self) {
         let d = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
         let f = std::fs::File::create("./settings.bin");
@@ -538,6 +602,7 @@ impl NonvolatileSettings {
         }
     }
 
+    /// Load the nonvolatile settings from the current directory
     pub fn load() -> Self {
         let f = std::fs::File::open("./settings.bin");
         if let Ok(mut f) = f {
