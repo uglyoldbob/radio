@@ -71,7 +71,7 @@ impl SubwindowTrait for Settings {
                                         size: [image.width as usize, image.height as usize],
                                         pixels: pd.get_egui(),
                                     };
-                                    if let None = self.texture {
+                                    if self.texture.is_none() {
                                         self.texture = Some(ctx.load_texture(
                                             "camera0",
                                             image,

@@ -21,12 +21,12 @@ impl SubwindowTrait for BluetoothConfig {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label("Future expansion here for bluetooth settings");
             if ui.button("Enable discovery").clicked() {
-                common
+                let _ = common
                     .radio
                     .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(true));
             }
             if ui.button("Disable discovery").clicked() {
-                common
+                let _ = common
                     .radio
                     .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(false));
             }

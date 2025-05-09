@@ -66,7 +66,7 @@ impl SubwindowTrait for Video {
                                         size: [image.width as usize, image.height as usize],
                                         pixels: pd.get_egui(),
                                     };
-                                    if let None = self.texture {
+                                    if self.texture.is_none() {
                                         self.texture = Some(ctx.load_texture(
                                             "camera0",
                                             image,
@@ -80,7 +80,9 @@ impl SubwindowTrait for Video {
                         }
                     }
                     for packet in packets_to_send {
-                        common.radio.send_packet(packet);
+                        if common.radio.send_packet(packet).is_err() {
+                            break;
+                        }
                     }
                 });
         });

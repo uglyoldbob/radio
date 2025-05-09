@@ -19,16 +19,19 @@ struct MainConfiguration {
     debug_level: Option<service::LogLevel>,
 }
 
+/// System specific settings (not set by the user)
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 struct SystemSettings {
+    /// The name of the wifi adapter to use for wifi operations
     #[cfg(feature = "wifi")]
     wifi_name: String,
 }
 
 impl SystemSettings {
+    /// Load the system settings from the current directory
     pub fn load() -> Self {
         let p = std::path::Path::new("./settings.toml");
-        let f = std::fs::File::open(&p);
+        let f = std::fs::File::open(p);
         if let Ok(mut f) = f {
             let mut a = String::new();
             if f.read_to_string(&mut a).is_ok() {
@@ -51,27 +54,38 @@ impl SystemSettings {
 
 /// The common data for an app user
 pub struct AppUserCommon {
+    /// The system specific (not user set) settings.
     system: SystemSettings,
     #[cfg(feature = "wifi")]
+    /// Used for wifi operations
     wifi: wifi_rs::WiFi,
     #[cfg(feature = "wifi")]
+    /// The optional wifi hotspot (if enabled by the user)
     hotspot: Option<wifi_rs::prelude::ManagedWifiHotspot>,
     #[cfg(feature = "bluetooth")]
+    /// The main bluetooth struct
     bluetooth: bluetooth_rust::BluetoothHandler,
     #[cfg(feature = "bluetooth")]
+    /// Used to receive messages to the bluetooth host
     blue_recv: tokio::sync::mpsc::Receiver<bluetooth_rust::MessageToBluetoothHost>,
     #[cfg(feature = "bluetooth")]
     /// Determines who deals with the bluetooth stuff
     blue_addr: Option<std::net::SocketAddr>,
     /// Determines who deals with the android-auto stuff
     aauto_addr: Option<std::net::SocketAddr>,
+    /// Used to receive android auto messages from a users device
     aauto_recv: tokio::sync::mpsc::Receiver<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
+    /// The video sources in the system
     video: Vec<VideoSource>,
+    /// The old nonvolatile settings of the radio, used to see if settings should be saved
     old_settings: NonvolatileSettings,
+    /// The nonvolatile settings of the radio
     settings: NonvolatileSettings,
+    /// Used to send messages to the android auto library
     aauto_sender: Option<tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>>,
 }
 
+/// Performs the creation of a managed wifi hotspot, and also starts it up.
 #[cfg(feature = "wifi")]
 fn create_hotspot(
     wifi: &mut wifi_rs::WiFi,
@@ -81,9 +95,12 @@ fn create_hotspot(
     use wifi_rs::prelude::ManagedWifiHotspotTrait;
     let configuration = wifi_rs::prelude::HotspotConfig::new(None, None);
     log::info!("Attempting to create hotspot {:?} {:?}", name, password);
-    let a = wifi
+    let mut a = wifi
         .create_managed_hotspot(name, password, Some(&configuration))
         .ok();
+    if let Some(a) = &mut a {
+        a.start_hotspot().ok()?;
+    }
     a
 }
 
@@ -104,7 +121,10 @@ pub async fn process_app(
     let mut send_passkey_response = None;
 
     loop {
-        let length = stream.read_u32().await.map_err(|e| format!("Error reading packet length: {}", e))?;
+        let length = stream
+            .read_u32()
+            .await
+            .map_err(|e| format!("Error reading packet length: {}", e))?;
         let mut packet = vec![0; length as usize];
         stream
             .read_exact(&mut packet)
@@ -142,7 +162,9 @@ pub async fn process_app(
                         let mut common2 = common.lock().await;
                         if Some(addr) == common2.aauto_addr {
                             if let Some(aas) = &mut common2.aauto_sender {
-                                aas.send(m).await.map_err(|e| format!("Failed to send message to android auto: {}", e))?;
+                                aas.send(m).await.map_err(|e| {
+                                    format!("Failed to send message to android auto: {}", e)
+                                })?;
                             }
                         }
                     }
@@ -220,9 +242,6 @@ pub async fn process_app(
                         } else {
                             common2.hotspot = None;
                         }
-                        if let Some(hotspot) = &mut common2.hotspot {
-                            let _ = hotspot.start_hotspot();
-                        }
                     }
                 }
                 uobradio_comms::MessageFromApp::CameraSettingControl(id, control, data) => {
@@ -293,6 +312,7 @@ pub async fn process_app(
     }
 }
 
+/// Start the udp listener, responsible for making a radio discoverable on the network.
 async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:13456").await.unwrap();
     println!("Starting radio listener");
@@ -300,22 +320,18 @@ async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result
     loop {
         log::info!("Waiting for a udp client");
         while let Ok((n, addr)) = socket.recv_from(&mut response).await {
-            let addr = addr.clone();
             println!("Got request from {:?} {} {:x?}", addr, n, &response[0..n]);
             let packet =
                 bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
             if let Ok((packet, _len)) = packet {
-                match packet {
-                    uobradio_comms::MessageFromApp::Ping(val) => {
-                        println!("got ping packet {}", val);
-                        let response = bincode::serde::encode_to_vec(
-                            uobradio_comms::MessageToApp::PingReply(13457),
-                            bincode::config::standard(),
-                        )
-                        .unwrap();
-                        let _ = socket.send_to(&response, addr).await;
-                    }
-                    _ => {}
+                if let uobradio_comms::MessageFromApp::Ping(val) = packet {
+                    println!("got ping packet {}", val);
+                    let response = bincode::serde::encode_to_vec(
+                        uobradio_comms::MessageToApp::PingReply(13457),
+                        bincode::config::standard(),
+                    )
+                    .unwrap();
+                    let _ = socket.send_to(&response, addr).await;
                 }
             } else {
                 println!("invalid packet received {:x?}", response);
@@ -325,6 +341,7 @@ async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result
     }
 }
 
+/// Run the tcp listener for a radio, reporting an error if anything went wront setting up the service
 async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
     if let Ok(tcp) = tcp {
@@ -332,7 +349,7 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
             log::info!("Waiting for a tcp client");
             if let Ok((stream, addr)) = tcp.accept().await {
                 let common2 = common.clone();
-                let _ = tokio::task::spawn(async move {
+                tokio::task::spawn(async move {
                     let r = process_app(stream, addr, common2.clone()).await;
                     let mut common3 = common2.lock().await;
                     if Some(addr) == common3.blue_addr {
@@ -353,9 +370,13 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     }
 }
 
+/// Stores communication links for android auto
 struct AndroidAutoStuff {
+    /// Used internally to relay android auto messages from the users phone
     sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
+    /// Temporary storage for the android auto crate to use to send us messages
     recvr: Option<tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>>,
+    /// Used for sending responses to the android auto crate
     frame_sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
 }
 
@@ -376,7 +397,10 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     }
 
     async fn disconnect(&mut self) {
-        let _ = self.sendr.send(AndroidAutoMessageFromPhone::Disconnect).await;
+        let _ = self
+            .sendr
+            .send(AndroidAutoMessageFromPhone::Disconnect)
+            .await;
     }
 }
 
@@ -485,9 +509,6 @@ async fn smain() {
         let hotspot = common2.settings.hotspot_enabled.clone();
         if let Some((n, p)) = hotspot {
             common2.hotspot = create_hotspot(&mut common2.wifi, &n, &p);
-            if let Some(hotspot) = &mut common2.hotspot {
-                let _ = hotspot.start_hotspot();
-            }
         }
     }
 
@@ -499,8 +520,11 @@ async fn smain() {
 
     let network = {
         let common2 = common.lock().await;
-        if let Some(a) = &common2.settings.hotspot_enabled {
-            Some(android_auto::NetworkInformation {
+        common2
+            .settings
+            .hotspot_enabled
+            .as_ref()
+            .map(|a| android_auto::NetworkInformation {
                 ssid: a.0.clone(),
                 psk: a.1.clone(),
                 mac_addr: wifi_mac,
@@ -509,9 +533,6 @@ async fn smain() {
                 security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
                 ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
             })
-        } else {
-            None
-        }
     };
 
     let bluetooth_address = {

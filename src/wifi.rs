@@ -30,7 +30,7 @@ impl SubwindowTrait for Screen {
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
-        common
+        let _ = common
             .radio
             .send_packet(uobradio_comms::MessageFromApp::RequestSettings);
         if self.texture.is_none() {
@@ -60,7 +60,7 @@ impl SubwindowTrait for Screen {
             }
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.label(format!("This is the wifi page"));
+            ui.label("This is the wifi page".to_string());
             let mut hotspot = common.settings.hotspot_enabled.is_some();
             if ui.checkbox(&mut hotspot, "Enable hotspot").changed() {
                 if hotspot {
@@ -69,7 +69,7 @@ impl SubwindowTrait for Screen {
                 } else {
                     common.settings.hotspot_enabled = None;
                 }
-                common
+                let _ = common
                     .radio
                     .send_packet(uobradio_comms::MessageFromApp::NewSettings(
                         common.settings.clone(),

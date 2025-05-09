@@ -140,10 +140,10 @@ impl eframe::App for MyEguiApp {
                             let (w, h) = image.dimensions_uv();
                             let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
                             let image = egui::ColorImage {
-                                size: [w * 2 as usize, h * 2 as usize],
+                                size: [w * 2usize, h * 2usize],
                                 pixels: ei.get_egui(),
                             };
-                            if let None = self.common.android_auto_texture {
+                            if self.common.android_auto_texture.is_none() {
                                 self.common.android_auto_texture = Some(ctx.load_texture(
                                     "android_auto",
                                     image,
@@ -158,7 +158,6 @@ impl eframe::App for MyEguiApp {
                 }
             }
         }
-        let h = ctx.screen_rect().height();
         egui::SidePanel::right("AndroidAutoPanel").show(ctx, |ui| {
             let size = ui.available_size();
             if let Some(t) = &self.common.android_auto_texture {
@@ -250,11 +249,11 @@ impl eframe::App for MyEguiApp {
                 .with_max_inner_size(ctx.screen_rect().size() / 2.0);
             ctx.show_viewport_immediate(id, builder, |ctx, _class| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.label(&format!("Passkey: {:06}", 1));
-                    ui.label(&format!("Passkey: {:06}", pass));
+                    ui.label(format!("Passkey: {:06}", 1));
+                    ui.label(format!("Passkey: {:06}", pass));
                 });
             });
-        } else if let Some(pass) = self.common.radio.confirm_passkey.clone() {
+        } else if let Some(pass) = self.common.radio.confirm_passkey {
             let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
             let builder = egui::ViewportBuilder::default()
                 .with_title("Bluetooth passkey")
@@ -307,16 +306,15 @@ impl eframe::App for MyEguiApp {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     if let Some(cameras) = self.common.radio.cameras() {
-                        if !cameras.is_empty() {
-                            if ui
+                        if !cameras.is_empty()
+                            && ui
                                 .button(
                                     eframe::egui::RichText::new("V")
                                         .font(eframe::egui::FontId::proportional(64.0)),
                                 )
                                 .clicked()
-                            {
-                                self.subwindow = Subwindow::Video(video::Video::new());
-                            }
+                        {
+                            self.subwindow = Subwindow::Video(video::Video::new());
                         }
                     }
                     #[cfg(feature = "wifi")]

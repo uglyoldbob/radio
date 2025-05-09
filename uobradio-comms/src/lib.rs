@@ -319,9 +319,11 @@ impl UobRadio {
                                                 }
                                                 aauto::AndroidAutoMessageFromPhone::Disconnect => {
                                                     self.android_auto_video_buf.clear();
+                                                    log::error!("Android auto no longer running");
                                                     self.android_auto_running = false;
                                                 }
                                                 aauto::AndroidAutoMessageFromPhone::Connect => {
+                                                    log::error!("Android auto now running");
                                                     self.android_auto_running = true;
                                                 }
                                             }
