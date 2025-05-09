@@ -132,7 +132,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
 dependencies = [
  "cfg-if",
- "getrandom 0.3.2",
+ "getrandom 0.3.3",
  "once_cell",
  "version_check",
  "zerocopy",
@@ -183,7 +183,8 @@ dependencies = [
 [[package]]
 name = "android-auto"
 version = "0.1.0"
-source = "git+https://github.com/uglyoldbob/android-auto.git?branch=take_user_input#b713c9ceaba397b3115b4cbdc053fe99e2fee23b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ddcd902db329bc2f91abb9dd62aa7219c7949f3edc4ecc26424bf111de58394"
 dependencies = [
  "async-trait",
  "bitfield",
@@ -193,7 +194,7 @@ dependencies = [
  "log",
  "protobuf",
  "protobuf-codegen",
- "rustls 0.23.26",
+ "rustls",
  "serde",
  "tokio",
  "webpki-roots 0.26.11",
@@ -545,9 +546,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.13.0"
+version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19b756939cb2f8dc900aa6dcd505e6e2428e9cae7ff7b028c49e3946efa70878"
+checksum = "93fcc8f365936c834db5514fc45aee5b1202d677e6b40e48468aaaa8183ca8c7"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -555,9 +556,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.28.2"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa9b6986f250236c27e5a204062434a773a13243d2ffc2955f37bdba4c5c6a1"
+checksum = "61b1d86e7705efe1be1b569bab41d4fa1e14e220b60a160f78de2db687add079"
 dependencies = [
  "bindgen 0.69.5",
  "cc",
@@ -790,7 +791,8 @@ dependencies = [
 [[package]]
 name = "bluetooth-rust"
 version = "0.1.0"
-source = "git+https://github.com/uglyoldbob/bluetooth-rust.git#01460189d9e3dc10a153cdd40a3e62c4df1e4932"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d902a85a6a6350272f3211f2aaae918b47fb99ce947e5ef5e3cb05a9e8279619"
 dependencies = [
  "bluer",
  "futures",
@@ -875,9 +877,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.21"
+version = "1.2.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8691782945451c1c383942c4874dbe63814f61cb57ef773cda2972682b7bb3c0"
+checksum = "32db95edf998450acc7881c932f94cd9b05c87b4b2599e8bab064753da4acfd1"
 dependencies = [
  "jobserver",
  "libc",
@@ -1895,9 +1897,9 @@ dependencies = [
 
 [[package]]
 name = "getrandom"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73fea8450eea4bac3940448fb7ae50d91f034f941199fcd9d909a5a07aa455f0"
+checksum = "26145e563e54f2cadc477553f1ec5ee650b00862f0a58bcd12cbdc5f0ea2d2f4"
 dependencies = [
  "cfg-if",
  "libc",
@@ -2367,7 +2369,7 @@ version = "0.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38f262f097c174adebe41eb73d66ae9c06b2844fb0da69969647bbddd9b0538a"
 dependencies = [
- "getrandom 0.3.2",
+ "getrandom 0.3.3",
  "libc",
 ]
 
@@ -3953,30 +3955,16 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.26"
-source = "git+https://github.com/uglyoldbob/rustls.git#900ac045228a97682ac64acfe00a0dc783373898"
+version = "0.23.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "730944ca083c1c233a75c09f199e973ca499344a2b7ba9e755c457e86fb4a321"
 dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.2 (git+https://github.com/uglyoldbob/webpki.git)",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "rustls"
-version = "0.23.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "730944ca083c1c233a75c09f199e973ca499344a2b7ba9e755c457e86fb4a321"
-dependencies = [
- "log",
- "once_cell",
- "ring",
- "rustls-pki-types",
- "rustls-webpki 0.103.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustls-webpki",
  "subtle",
  "zeroize",
 ]
@@ -3988,17 +3976,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "229a4a4c221013e7e1f1a043678c5cc39fe5171437c88fb47151a21e6f5b5c79"
 dependencies = [
  "zeroize",
-]
-
-[[package]]
-name = "rustls-webpki"
-version = "0.103.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7149975849f1abb3832b246010ef62ccc80d3a76169517ada7188252b9cfb437"
-dependencies = [
- "ring",
- "rustls-pki-types",
- "untrusted",
 ]
 
 [[package]]
@@ -4435,7 +4412,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7437ac7763b9b123ccf33c338a5cc1bac6f69b45a136c19bdd8a65e3916435bf"
 dependencies = [
  "fastrand",
- "getrandom 0.3.2",
+ "getrandom 0.3.3",
  "once_cell",
  "rustix 1.0.7",
  "windows-sys 0.59.0",
@@ -4783,7 +4760,7 @@ dependencies = [
  "flate2",
  "log",
  "once_cell",
- "rustls 0.23.27",
+ "rustls",
  "rustls-pki-types",
  "url",
  "webpki-roots 0.26.11",
@@ -4892,7 +4869,7 @@ version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
 dependencies = [
- "getrandom 0.3.2",
+ "getrandom 0.3.3",
 ]
 
 [[package]]
