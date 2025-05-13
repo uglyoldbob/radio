@@ -30,6 +30,44 @@ pub enum RadioReceiveStatus {
 /// The port to listen to for udp communication
 const UDP_PORT: u16 = 13456;
 
+/// Manages the user facing aspects of an android auto server
+pub struct AndroidAutoServerFrontend {
+    /// The video data received so far from the android auto device, h264 encoded video packets
+    video_buf: Vec<u8>,
+    /// Waiting on acceptance for android auto server frontend
+    waiting: bool,
+    /// Frontend is running now
+    running: bool,
+}
+
+impl AndroidAutoServerFrontend {
+    /// Construct a new self, initialize as waiting for control
+    pub fn new() -> Self {
+        Self {
+            video_buf: Vec::new(),
+            waiting: true,
+            running: false,
+        }
+    }
+
+    /// Retrieve the data received so far for the android audo video stream and then clear the buffer for new data to be received.
+    pub fn get_android_video_buf(&mut self) -> Option<Vec<u8>> {
+        if !self.video_buf.is_empty() {
+            let b = self.video_buf.clone();
+            self.video_buf.clear();
+            Some(b)
+        }
+        else {
+            None
+        }
+    }
+}
+
+impl Drop for AndroidAutoServerFrontend {
+    fn drop(&mut self) {
+    }
+}
+
 /// Represents a uob radio connection
 pub struct UobRadio {
     /// Address of where the radio can be contacted
@@ -52,19 +90,15 @@ pub struct UobRadio {
     /// None indicates I am waiting to see if I was accepted as the bluetooth handler.
     #[cfg(feature = "bluetooth")]
     bluetooth_handler: Option<bool>,
-    /// Am I the handler for android auto on the radio. Primarily used by the application on the radio itself.
-    /// None indicates I am waiting to see if I was accepted as the android auto handler.
-    android_auto_handler: Option<bool>,
     /// The passkey to be displayed for the user to see during bluetooth pairing.
     #[cfg(feature = "bluetooth")]
     pub display_passkey: Option<u32>,
     /// The passkey to be displayed for confirmation by the user
     #[cfg(feature = "bluetooth")]
     pub confirm_passkey: Option<u32>,
-    /// The video data received so far from the android auto device
-    android_auto_video_buf: Vec<u8>,
-    /// Is android auto running?
-    android_auto_running: bool,
+    /// Is an android auto frontend running on this radio?
+    #[cfg(feature = "androidauto")]
+    aauto: Option<AndroidAutoServerFrontend>,
 }
 
 impl UobRadio {
@@ -81,13 +115,12 @@ impl UobRadio {
             waiting_for_camera_options: false,
             #[cfg(feature = "bluetooth")]
             bluetooth_handler: Some(false),
-            android_auto_handler: Some(false),
+            #[cfg(feature = "androidauto")]
+            aauto: None,
             #[cfg(feature = "bluetooth")]
             display_passkey: None,
             #[cfg(feature = "bluetooth")]
             confirm_passkey: None,
-            android_auto_video_buf: Vec::new(),
-            android_auto_running: false,
         }
     }
 
@@ -314,17 +347,23 @@ impl UobRadio {
                                         MessageToApp::AndroidAutoMessage(m) => {
                                             match m {
                                                 aauto::AndroidAutoMessageFromPhone::VideoContent(data) => {
-                                                    log::error!("Received android auto video data length {}", data.len());
-                                                    self.android_auto_video_buf.append(&mut data.to_owned());
+                                                    if let Some(aauto) = &mut self.aauto {
+                                                        log::error!("Received android auto video data length {}", data.len());
+                                                        aauto.video_buf.append(&mut data.to_owned());
+                                                    }
                                                 }
                                                 aauto::AndroidAutoMessageFromPhone::Disconnect => {
-                                                    self.android_auto_video_buf.clear();
-                                                    log::error!("Android auto no longer running");
-                                                    self.android_auto_running = false;
+                                                    if let Some(aauto) = &mut self.aauto {
+                                                        log::error!("Android auto no longer running");
+                                                        aauto.video_buf.clear();
+                                                        aauto.running = false;
+                                                    }
                                                 }
                                                 aauto::AndroidAutoMessageFromPhone::Connect => {
-                                                    log::error!("Android auto now running");
-                                                    self.android_auto_running = true;
+                                                    if let Some(aauto) = &mut self.aauto {
+                                                        log::error!("Android auto now running");
+                                                        aauto.running = true;
+                                                    }
                                                 }
                                             }
                                         }
@@ -361,7 +400,9 @@ impl UobRadio {
                                         }
                                         MessageToApp::AndroidAutoHandlerResult(result) => {
                                             log::error!("Android auto result is {}", result);
-                                            self.android_auto_handler = Some(*result);
+                                            if let Some(aauto) = &mut self.aauto {
+                                                aauto.waiting = !*result;
+                                            }
                                         }
                                         MessageToApp::BluetoothHandlerResult(result) => {
                                             log::error!("Bluetooth result is {}", result);
@@ -395,18 +436,10 @@ impl UobRadio {
         Ok(())
     }
 
-    /// Retrieve the data received so far for the android audo video stream and then clear the buffer for new data to be received.
-    pub fn get_android_video_buf(&mut self) -> Option<Vec<u8>> {
-        if Some(true) == self.android_auto_handler {
-            if !self.android_auto_video_buf.is_empty() {
-                let b = self.android_auto_video_buf.clone();
-                log::error!("Retrieved {} bytes of video data", b.len());
-                self.android_auto_video_buf.clear();
-                Some(b)
-            }
-            else {
-                None
-            }
+    /// Attempt to pull all current android auto video data
+    pub fn get_android_auto_video_buf(&mut self) -> Option<Vec<u8>> {
+        if let Some(aauto) = &mut self.aauto {
+            aauto.get_android_video_buf()
         }
         else {
             None
@@ -499,9 +532,10 @@ impl UobRadio {
 
     /// Try to establish self as the handler for android auto. Does nothing if already established as the handler
     pub fn try_get_android_auto(&mut self) {
-        if Some(false) == self.android_auto_handler {
+        if self.aauto.is_none() {
             if self.send_packet(MessageFromApp::RequestAndroidAutoControl).is_ok() {
-                self.android_auto_handler.take();
+                log::error!("Initializing an android auto server frontend");
+                self.aauto.replace(AndroidAutoServerFrontend::new());
             }
         }
     }
@@ -514,7 +548,10 @@ impl UobRadio {
         {
             self.bluetooth_handler = Some(false);
         }
-        self.android_auto_handler = Some(false);
+        #[cfg(feature = "androidauto")]
+        {
+            self.aauto.take();
+        }
         self.waiting_until = None;
     }
 
