@@ -56,69 +56,34 @@ impl SystemSettings {
 /// The structure for starting and stopping the android auto service
 #[cfg(feature = "androidauto")]
 struct AndroidAutoService {
+    /// Determines who deals with the android-auto stuff
+    addr: std::net::SocketAddr,
     /// The task list of tasks running to make the android auto service work
     tasks: tokio::task::JoinSet<Result<(), String>>,
+    /// Used to send messages to the android auto library
+    sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
+    /// Used to receive android auto messages from a users device
+    recv: tokio::sync::mpsc::Receiver<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
+}
+
+impl Drop for AndroidAutoService {
+    fn drop(&mut self) {
+        self.tasks.abort_all();
+    }
 }
 
 impl AndroidAutoService {
     /// Construct and start an android auto service
-    pub fn new() -> Option<Self> {
-        None
-    }
-}
-
-/// The common data for an app user
-pub struct AppUserCommon {
-    #[cfg(feature = "androidauto")]
-    /// The android auto service
-    aauto_service: Option<AndroidAutoService>,
-    /// The system specific (not user set) settings.
-    system: SystemSettings,
-    /// The network details for android auto
-    #[cfg(feature = "androidauto")]
-    aa_network: Option<NetworkInformation>,
-    #[cfg(feature = "wifi")]
-    /// Used for wifi operations
-    wifi: wifi_rs::WiFi,
-    #[cfg(feature = "wifi")]
-    /// The optional wifi hotspot (if enabled by the user)
-    hotspot: Option<wifi_rs::prelude::ManagedWifiHotspot>,
-    #[cfg(feature = "bluetooth")]
-    /// The main bluetooth struct
-    bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
-    #[cfg(feature = "bluetooth")]
-    /// Used to receive messages to the bluetooth host
-    blue_recv: tokio::sync::mpsc::Receiver<bluetooth_rust::MessageToBluetoothHost>,
-    #[cfg(feature = "bluetooth")]
-    /// Determines who deals with the bluetooth stuff
-    blue_addr: Option<std::net::SocketAddr>,
-    /// Determines who deals with the android-auto stuff
-    aauto_addr: Option<std::net::SocketAddr>,
-    /// Used to receive android auto messages from a users device
-    aauto_recv:
-        Option<tokio::sync::mpsc::Receiver<uobradio_comms::aauto::AndroidAutoMessageFromPhone>>,
-    /// The video sources in the system
-    video: Vec<VideoSource>,
-    /// The old nonvolatile settings of the radio, used to see if settings should be saved
-    old_settings: NonvolatileSettings,
-    /// The nonvolatile settings of the radio
-    settings: NonvolatileSettings,
-    /// Used to send messages to the android auto library
-    aauto_sender: Option<tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>>,
-    /// The task set for the android auto server
-    aauto_tasks: tokio::task::JoinSet<Result<(), String>>,
-}
-
-impl AppUserCommon {
-    /// Starts up an instance of the android auto server, if one has not already been started
-    async fn start_android_auto(&mut self) -> Result<(), String> {
-        if self.aa_network.is_none() {
+    pub async fn new(com: &AppUserCommon, addr: std::net::SocketAddr) -> Result<Self, String> {
+        if com.aa_network.is_none() {
             return Err("No wireless network details defined".to_string());
         }
 
+        let mut tasks = tokio::task::JoinSet::new();
+
         let aautochan = tokio::sync::mpsc::channel(5);
 
-        let blue_addresses: Vec<[u8; 6]> = self.bluetooth.addresses().await;
+        let blue_addresses: Vec<[u8; 6]> = com.bluetooth.addresses().await;
         let bluetooth_address = {
             let b = blue_addresses[0];
             format!(
@@ -150,28 +115,59 @@ impl AppUserCommon {
         };
 
         let aa_chan = tokio::sync::mpsc::channel(10);
-        self.aauto_sender.replace(aa_chan.0.clone());
         let main = AndroidAutoStuff::new(
             aautochan.0,
             aa_chan.1,
-            aa_chan.0,
-            self.bluetooth.clone(),
-            self.aa_network.clone().unwrap(),
+            aa_chan.0.clone(),
+            com.bluetooth.clone(),
+            com.aa_network.clone().unwrap(),
         );
         android_auto_server
-            .run(config, &mut self.aauto_tasks, main)
+            .run(config, &mut tasks, main)
             .await.inspect_err(|_|{
                 log::error!("Failure starting up android auto service");
-                self.stop_android_auto();
+                tasks.abort_all();
             })?;
-        self.aauto_recv.replace(aautochan.1);
-        Ok(())
+        Ok(Self {
+            addr,
+            tasks,
+            sender: aa_chan.0,
+            recv: aautochan.1,
+        })
     }
+}
 
-    /// Stops a running instance of the android auto server, if it is running.
-    fn stop_android_auto(&mut self) {
-        self.aauto_tasks.abort_all();
-    }
+/// The common data for an app user
+pub struct AppUserCommon {
+    #[cfg(feature = "androidauto")]
+    /// The android auto service
+    aauto_service: Option<AndroidAutoService>,
+    /// The system specific (not user set) settings.
+    system: SystemSettings,
+    /// The network details for android auto
+    #[cfg(feature = "androidauto")]
+    aa_network: Option<NetworkInformation>,
+    #[cfg(feature = "wifi")]
+    /// Used for wifi operations
+    wifi: wifi_rs::WiFi,
+    #[cfg(feature = "wifi")]
+    /// The optional wifi hotspot (if enabled by the user)
+    hotspot: Option<wifi_rs::prelude::ManagedWifiHotspot>,
+    #[cfg(feature = "bluetooth")]
+    /// The main bluetooth struct
+    bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
+    #[cfg(feature = "bluetooth")]
+    /// Used to receive messages to the bluetooth host
+    blue_recv: tokio::sync::mpsc::Receiver<bluetooth_rust::MessageToBluetoothHost>,
+    #[cfg(feature = "bluetooth")]
+    /// Determines who deals with the bluetooth stuff
+    blue_addr: Option<std::net::SocketAddr>,
+    /// The video sources in the system
+    video: Vec<VideoSource>,
+    /// The old nonvolatile settings of the radio, used to see if settings should be saved
+    old_settings: NonvolatileSettings,
+    /// The nonvolatile settings of the radio
+    settings: NonvolatileSettings,
 }
 
 /// Performs the creation of a managed wifi hotspot, and also starts it up.
@@ -249,13 +245,14 @@ pub async fn process_app(
                     uobradio_comms::aauto::AndroidAutoMessageToPhone::Test => todo!(),
                     uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(m) => {
                         let mut common2 = common.lock().await;
-                        if Some(addr) == common2.aauto_addr {
-                            if let Some(aas) = &mut common2.aauto_sender {
-                                if let Err(e) = aas.send(m).await {
+                        if let Some(aauto) = &common2.aauto_service {
+                            if addr == aauto.addr {
+                                if let Err(e) = aauto.sender.send(m).await {
                                     log::error!("Closing android auto sender now: {:?}", e);
-                                    common2.aauto_addr.take();
-                                    common2.stop_android_auto();
-                                    let _ = common2.start_android_auto().await;
+                                    common2.aauto_service.take();
+                                    let m = uobradio_comms::aauto::AndroidAutoMessageFromPhone::Disconnect;
+                                    let packet = MessageToApp::AndroidAutoMessage(m);
+                                    packet.send_to_stream(&mut stream).await?;
                                 }
                             }
                         }
@@ -263,10 +260,10 @@ pub async fn process_app(
                 },
                 uobradio_comms::MessageFromApp::RequestAndroidAutoControl => {
                     let mut common = common.lock().await;
-                    let r = if common.aauto_addr.is_none() {
+                    let r = if common.aauto_service.is_none() {
                         println!("Setting {:?} as android auto master", addr);
-                        common.aauto_addr = Some(addr);
-                        true
+                        common.aauto_service = AndroidAutoService::new(&common, addr).await.ok();
+                        common.aauto_service.is_some()
                     } else {
                         false
                     };
@@ -357,10 +354,8 @@ pub async fn process_app(
                     packet.send_to_stream(&mut stream).await?;
                 }
                 uobradio_comms::MessageFromApp::Ping(id) => {
-                    log::info!("Sending ping reply");
                     let packet = uobradio_comms::MessageToApp::PingReply(id);
                     packet.send_to_stream(&mut stream).await?;
-                    log::info!("Sent ping reply");
                 }
                 uobradio_comms::MessageFromApp::RequestCamera(index) => {
                     let common2 = common.lock().await;
@@ -393,12 +388,10 @@ pub async fn process_app(
             }
             {
                 let mut common2 = common.lock().await;
-                if common2.aauto_addr.is_some() {
-                    if let Some(aar) = &mut common2.aauto_recv {
-                        while let Ok(m) = aar.try_recv() {
-                            let packet = MessageToApp::AndroidAutoMessage(m);
-                            packet.send_to_stream(&mut stream).await?;
-                        }
+                if let Some(aauto) = &mut common2.aauto_service {
+                    while let Ok(m) = aauto.recv.try_recv() {
+                        let packet = MessageToApp::AndroidAutoMessage(m);
+                        packet.send_to_stream(&mut stream).await?;
                     }
                 }
             }
@@ -454,9 +447,11 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
                         log::info!("Setting {:?} as no longer the bluetooth master", addr);
                         common3.blue_addr.take();
                     }
-                    if Some(addr) == common3.aauto_addr {
-                        log::info!("Setting {:?} as no longer the android auto master", addr);
-                        common3.aauto_addr.take();
+                    if let Some(aauto) = &common3.aauto_service {
+                        if addr == aauto.addr {
+                            log::info!("Setting {:?} as no longer the android auto master", addr);
+                            common3.aauto_service.take();
+                        }
                     }
                     log::info!("Completed handling user {:?}", r);
                     r
@@ -646,6 +641,8 @@ async fn smain() {
             interface: Some(&sys.wifi_name),
         })),
         #[cfg(feature = "androidauto")]
+        aauto_service: None,
+        #[cfg(feature = "androidauto")]
         aa_network: network,
         system: sys,
         #[cfg(feature = "wifi")]
@@ -656,13 +653,9 @@ async fn smain() {
         blue_recv: bluechan.1,
         #[cfg(feature = "bluetooth")]
         blue_addr: None,
-        aauto_addr: None,
-        aauto_recv: None,
         video: vs,
         old_settings: s.clone(),
         settings: s.clone(),
-        aauto_sender: None,
-        aauto_tasks: tokio::task::JoinSet::new(),
     }));
 
     {
@@ -686,11 +679,6 @@ async fn smain() {
             .await
             .inspect_err(|a| log::error!("Radio tcp listener ended: {:?}", a))
     });
-
-    {
-        let mut common2 = common.lock().await;
-        common2.start_android_auto().await.unwrap();
-    }
 
     tokio::select! {
         r = tasks.join_next() => {
