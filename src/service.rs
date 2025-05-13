@@ -6,7 +6,8 @@
 
 use std::{io::Read, sync::Arc};
 
-use android_auto::HeadUnitInfo;
+use android_auto::{AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation};
+use bluetooth_rust::BluetoothAdapterTrait;
 use tokio::io::AsyncReadExt;
 use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings};
 use video_service::VideoSource;
@@ -52,10 +53,30 @@ impl SystemSettings {
     }
 }
 
+/// The structure for starting and stopping the android auto service
+#[cfg(feature = "androidauto")]
+struct AndroidAutoService {
+    /// The task list of tasks running to make the android auto service work
+    tasks: tokio::task::JoinSet<Result<(), String>>,
+}
+
+impl AndroidAutoService {
+    /// Construct and start an android auto service
+    pub fn new() -> Option<Self> {
+        None
+    }
+}
+
 /// The common data for an app user
 pub struct AppUserCommon {
+    #[cfg(feature = "androidauto")]
+    /// The android auto service
+    aauto_service: Option<AndroidAutoService>,
     /// The system specific (not user set) settings.
     system: SystemSettings,
+    /// The network details for android auto
+    #[cfg(feature = "androidauto")]
+    aa_network: Option<NetworkInformation>,
     #[cfg(feature = "wifi")]
     /// Used for wifi operations
     wifi: wifi_rs::WiFi,
@@ -64,7 +85,7 @@ pub struct AppUserCommon {
     hotspot: Option<wifi_rs::prelude::ManagedWifiHotspot>,
     #[cfg(feature = "bluetooth")]
     /// The main bluetooth struct
-    bluetooth: bluetooth_rust::BluetoothHandler,
+    bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
     #[cfg(feature = "bluetooth")]
     /// Used to receive messages to the bluetooth host
     blue_recv: tokio::sync::mpsc::Receiver<bluetooth_rust::MessageToBluetoothHost>,
@@ -90,19 +111,26 @@ pub struct AppUserCommon {
 
 impl AppUserCommon {
     /// Starts up an instance of the android auto server, if one has not already been started
-    async fn start_android_auto(
-        &mut self,
-        network: &android_auto::NetworkInformation,
-        bluetooth_address: String,
-    ) {
+    async fn start_android_auto(&mut self) -> Result<(), String> {
+        if self.aa_network.is_none() {
+            return Err("No wireless network details defined".to_string());
+        }
+
         let aautochan = tokio::sync::mpsc::channel(5);
 
-        #[cfg(all(feature = "bluetooth", feature = "androidauto"))]
-        let android_auto_bluetooth_server =
-            android_auto::AndriodAutoBluettothServer::new(&mut self.bluetooth).await;
+        let blue_addresses: Vec<[u8; 6]> = self.bluetooth.addresses().await;
+        let bluetooth_address = {
+            let b = blue_addresses[0];
+            format!(
+                "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                b[0], b[1], b[2], b[3], b[4], b[5]
+            )
+        };
+
+        #[cfg(feature = "androidauto")]
+        let android_auto_server = android_auto::AndroidAutoServer::new().await;
 
         let config = android_auto::AndroidAutoConfiguration {
-            network: network.clone(),
             bluetooth: android_auto::BluetoothInformation {
                 address: bluetooth_address,
             },
@@ -120,24 +148,24 @@ impl AppUserCommon {
                 hide_clock: Some(false),
             },
         };
-        let net2 = network.clone();
+
         let aa_chan = tokio::sync::mpsc::channel(10);
         self.aauto_sender.replace(aa_chan.0.clone());
-        let aauto_bt_task = self.aauto_tasks.spawn(async move {
-            android_auto_bluetooth_server
-                .expect("Failed to setup bluetooth server")
-                .bluetooth_listen(net2)
-                .await
-        });
-        let main = AndroidAutoStuff {
-            sendr: aautochan.0,
-            recvr: Some(aa_chan.1),
-            frame_sender: aa_chan.0,
-        };
+        let main = AndroidAutoStuff::new(
+            aautochan.0,
+            aa_chan.1,
+            aa_chan.0,
+            self.bluetooth.clone(),
+            self.aa_network.clone().unwrap(),
+        );
+        android_auto_server
+            .run(config, &mut self.aauto_tasks, main)
+            .await.inspect_err(|_|{
+                log::error!("Failure starting up android auto service");
+                self.stop_android_auto();
+            })?;
         self.aauto_recv.replace(aautochan.1);
-        self.aauto_tasks.spawn(async move {
-            android_auto::AndriodAutoBluettothServer::wifi_listen(config, main).await
-        });
+        Ok(())
     }
 
     /// Stops a running instance of the android auto server, if it is running.
@@ -227,7 +255,7 @@ pub async fn process_app(
                                     log::error!("Closing android auto sender now: {:?}", e);
                                     common2.aauto_addr.take();
                                     common2.stop_android_auto();
-                                    todo!();
+                                    let _ = common2.start_android_auto().await;
                                 }
                             }
                         }
@@ -262,7 +290,8 @@ pub async fn process_app(
                 uobradio_comms::MessageFromApp::SetBluetoothDiscovery(val) => {
                     let mut common2 = common.lock().await;
                     if Some(addr) == common2.blue_addr {
-                        common2.bluetooth.set_discoverable(val).await;
+                        todo!();
+                        //common2.bluetooth.set_discoverable(val).await;
                         let a = uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val);
                         let packet = uobradio_comms::MessageToApp::BluetoothMessage(a);
                         packet.send_to_stream(&mut stream).await?;
@@ -328,8 +357,10 @@ pub async fn process_app(
                     packet.send_to_stream(&mut stream).await?;
                 }
                 uobradio_comms::MessageFromApp::Ping(id) => {
+                    log::info!("Sending ping reply");
                     let packet = uobradio_comms::MessageToApp::PingReply(id);
                     packet.send_to_stream(&mut stream).await?;
+                    log::info!("Sent ping reply");
                 }
                 uobradio_comms::MessageFromApp::RequestCamera(index) => {
                     let common2 = common.lock().await;
@@ -416,17 +447,18 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
             if let Ok((stream, addr)) = tcp.accept().await {
                 let common2 = common.clone();
                 tokio::task::spawn(async move {
+                    log::info!("Got a tcp client {:?}", addr);
                     let r = process_app(stream, addr, common2.clone()).await;
                     let mut common3 = common2.lock().await;
                     if Some(addr) == common3.blue_addr {
-                        println!("Setting {:?} as no longer the bluetooth master", addr);
+                        log::info!("Setting {:?} as no longer the bluetooth master", addr);
                         common3.blue_addr.take();
                     }
                     if Some(addr) == common3.aauto_addr {
-                        println!("Setting {:?} as no longer the android auto master", addr);
+                        log::info!("Setting {:?} as no longer the android auto master", addr);
                         common3.aauto_addr.take();
                     }
-                    println!("Completed handling user {:?}", r);
+                    log::info!("Completed handling user {:?}", r);
                     r
                 });
             }
@@ -436,8 +468,7 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     }
 }
 
-/// Stores communication links for android auto
-struct AndroidAutoStuff {
+struct InternalAndroidAutoStuff {
     /// Used internally to relay android auto messages from the users phone
     sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
     /// Temporary storage for the android auto crate to use to send us messages
@@ -446,48 +477,101 @@ struct AndroidAutoStuff {
     frame_sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
 }
 
+/// Stores communication links for android auto
+#[derive(Clone)]
+struct AndroidAutoStuff {
+    /// The protected internals
+    inner: Arc<tokio::sync::Mutex<InternalAndroidAutoStuff>>,
+    /// The bluetooth reference
+    bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
+    /// The network information
+    network: Arc<android_auto::NetworkInformation>,
+}
+
+impl AndroidAutoStuff {
+    pub fn new(
+        sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
+        recvr: tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>,
+        frame_sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
+        bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
+        network: android_auto::NetworkInformation,
+    ) -> Self {
+        let inner = InternalAndroidAutoStuff {
+            sendr,
+            recvr: Some(recvr),
+            frame_sender,
+        };
+        Self {
+            inner: Arc::new(tokio::sync::Mutex::new(inner)),
+            bluetooth,
+            network: Arc::new(network),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl android_auto::AndroidAutoWirelessTrait for AndroidAutoStuff {
+    async fn setup_bluetooth_profile(
+        &self,
+        suggestions: &bluetooth_rust::BluetoothRfcommProfileSettings,
+    ) -> Result<bluetooth_rust::BluetoothRfcommProfile, String> {
+        self.bluetooth
+            .register_rfcomm_profile(suggestions.clone())
+            .await
+    }
+
+    fn get_wifi_details(&self) -> android_auto::NetworkInformation {
+        self.network.as_ref().to_owned()
+    }
+}
+
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
-    fn supports_video(&mut self) -> Option<&mut dyn android_auto::AndroidAutoVideoChannelTrait> {
+    fn supports_video(&self) -> Option<&dyn android_auto::AndroidAutoVideoChannelTrait> {
         Some(self)
     }
 
-    fn get_receiver(
-        &mut self,
+    fn supports_wireless(&self) -> Option<Arc<dyn AndroidAutoWirelessTrait>> {
+        Some(Arc::new(self.clone()))
+    }
+
+    async fn get_receiver(
+        &self,
     ) -> Option<tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>> {
-        self.recvr.take()
+        let mut s = self.inner.lock().await;
+        s.recvr.take()
     }
 
-    async fn connect(&mut self) {
-        let _ = self.sendr.send(AndroidAutoMessageFromPhone::Connect).await;
+    async fn connect(&self) {
+        let s = self.inner.lock().await;
+        let _ = s.sendr.send(AndroidAutoMessageFromPhone::Connect).await;
     }
 
-    async fn disconnect(&mut self) {
-        let _ = self
-            .sendr
-            .send(AndroidAutoMessageFromPhone::Disconnect)
-            .await;
+    async fn disconnect(&self) {
+        let s = self.inner.lock().await;
+        let _ = s.sendr.send(AndroidAutoMessageFromPhone::Disconnect).await;
     }
 }
 
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
-    async fn receive_video(&mut self, data: Vec<u8>, _timestamp: Option<u64>) {
-        let _ = self
+    async fn receive_video(&self, data: Vec<u8>, _timestamp: Option<u64>) {
+        let s = self.inner.lock().await;
+        let _ = s
             .sendr
             .send(AndroidAutoMessageFromPhone::VideoContent(data))
             .await;
     }
 
-    async fn setup_video(&mut self) -> Result<(), ()> {
+    async fn setup_video(&self) -> Result<(), ()> {
         Ok(())
     }
 
-    async fn teardown_video(&mut self) {}
+    async fn teardown_video(&self) {}
 
-    async fn wait_for_focus(&mut self) {}
+    async fn wait_for_focus(&self) {}
 
-    async fn set_focus(&mut self, _focus: bool) {}
+    async fn set_focus(&self, _focus: bool) {}
 }
 
 /// The main function for the service
@@ -498,6 +582,8 @@ async fn smain() {
             service::log::debug!("Panic {:?}", p);
         }))
     }
+
+    android_auto::setup();
 
     let f = tokio::fs::File::open("./service.toml").await;
     let settings = if let Ok(mut f) = f {
@@ -527,11 +613,9 @@ async fn smain() {
     let sys = SystemSettings::load();
     #[cfg(feature = "bluetooth")]
     let bluechan = tokio::sync::mpsc::channel(5);
-    let mut bluetooth = bluetooth_rust::BluetoothHandler::new(bluechan.0)
-        .await
-        .expect("Could not open bluetooth");
-
-    let blue_addresses = bluetooth.addresses().await;
+    let mut bluetooth = bluetooth_rust::BluetoothAdapterBuilder::new();
+    bluetooth.with_sender(bluechan.0);
+    let bluetooth = Arc::new(bluetooth.build().await.expect("Could not open bluetooth"));
 
     use network_interface::NetworkInterfaceConfig;
     let network_interfaces = network_interface::NetworkInterface::show().unwrap();
@@ -542,16 +626,32 @@ async fn smain() {
         }
     }
 
+    let network = {
+        s.hotspot_enabled
+            .as_ref()
+            .map(|a| android_auto::NetworkInformation {
+                ssid: a.0.clone(),
+                psk: a.1.clone(),
+                mac_addr: wifi_mac,
+                ip: "10.42.0.1".to_string(),
+                port: 5277,
+                security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
+                ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
+            })
+    };
+
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
             interface: Some(&sys.wifi_name),
         })),
+        #[cfg(feature = "androidauto")]
+        aa_network: network,
         system: sys,
         #[cfg(feature = "wifi")]
         hotspot: None,
         #[cfg(feature = "bluetooth")]
-        bluetooth,
+        bluetooth: bluetooth.clone(),
         #[cfg(feature = "bluetooth")]
         blue_recv: bluechan.1,
         #[cfg(feature = "bluetooth")]
@@ -575,38 +675,21 @@ async fn smain() {
 
     let mut tasks: tokio::task::JoinSet<Result<(), String>> = tokio::task::JoinSet::new();
     let common2 = common.clone();
-    tasks.spawn(async move { udp_listener(common2).await });
+    tasks.spawn(async move {
+        udp_listener(common2)
+            .await
+            .inspect_err(|a| log::error!("Radio tcp listener ended: {:?}", a))
+    });
     let common2 = common.clone();
-    tasks.spawn(async move { tcp_listener(common2).await });
+    tasks.spawn(async move {
+        tcp_listener(common2)
+            .await
+            .inspect_err(|a| log::error!("Radio tcp listener ended: {:?}", a))
+    });
 
-    let network = {
-        let common2 = common.lock().await;
-        common2
-            .settings
-            .hotspot_enabled
-            .as_ref()
-            .map(|a| android_auto::NetworkInformation {
-                ssid: a.0.clone(),
-                psk: a.1.clone(),
-                mac_addr: wifi_mac,
-                ip: "10.42.0.1".to_string(),
-                port: 5277,
-                security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
-                ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
-            })
-    };
-
-    let bluetooth_address = {
-        let b = blue_addresses[0].0;
-        format!(
-            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-            b[0], b[1], b[2], b[3], b[4], b[5]
-        )
-    };
-
-    if let Some(n) = &network {
+    {
         let mut common2 = common.lock().await;
-        common2.start_android_auto(n, bluetooth_address).await;
+        common2.start_android_auto().await.unwrap();
     }
 
     tokio::select! {
@@ -622,7 +705,7 @@ async fn smain() {
 
 service::ServiceAsyncMacro!(service_starter, smain, u64);
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<(), u32> {
     let service = service::Service::new("uobradio".to_string());
     service.new_log(service::LogLevel::Debug);

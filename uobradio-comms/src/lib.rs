@@ -261,7 +261,7 @@ impl UobRadio {
                 let mut got_length = None;
                 if let RadioReceiveStatus::WaitForLength(time, l, i) = &mut self.status {
                     if std::time::Instant::now() > *time {
-                        return Err("Timeout".to_string());
+                        return Err("Timeout waiting for length".to_string());
                     }
                     match stream.read(&mut l[*i as usize..]) {
                         Ok(a) => {
@@ -291,7 +291,7 @@ impl UobRadio {
                 let mut go_idle = false;
                 if let RadioReceiveStatus::WaitForPacket(time, packet, length, l) = &mut self.status {
                     if std::time::Instant::now() > *time {
-                        return Err("Timeout".to_string());
+                        return Err("Timeout waiting for packet".to_string());
                     }
                     match stream.read(&mut packet[*l as usize..]) {
                         Ok(a) => {
@@ -435,12 +435,14 @@ impl UobRadio {
         let blue_waiting = self.confirm_passkey.is_some() || self.display_passkey.is_some();
         if let Some(comms) = &mut self.comms {
             if time {
+                log::info!("Sending a ping to the radio");
                 let packet = MessageFromApp::Ping(1);
                 packet.send_to_stream(comms)?;
                 if blue_waiting {
                     let packet = MessageFromApp::BluetoothMessage(MessageFromBluetoothHost::PasskeyMessage(bluetooth_rust::ResponseToPasskey::Waiting));
                     packet.send_to_stream(comms)?;
                 }
+                log::info!("Success ping");
                 self.update_ping_time();
             }
             Ok(())
