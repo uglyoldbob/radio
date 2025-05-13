@@ -158,72 +158,7 @@ impl eframe::App for MyEguiApp {
                 }
             }
         }
-        egui::SidePanel::right("AndroidAutoPanel").show(ctx, |ui| {
-            let size = ui.available_size();
-            if let Some(t) = &self.common.android_auto_texture {
-                let isize = t.size()[1];
-                let zoom = isize as f32 / size.y;
-                let dsize = t.size_vec2() / zoom;
-                let p = ui.cursor();
-                let r = ui.add(
-                    egui::Image::from_texture(egui::load::SizedTexture {
-                        id: t.id(),
-                        size: dsize,
-                    })
-                    .sense(egui::Sense::drag()),
-                );
-                let o = if let Some(mut o) = r.interact_pointer_pos() {
-                    o.x -= p.left();
-                    o.y -= p.top();
-                    o.x *= zoom;
-                    o.y *= zoom;
-                    Some(o)
-                } else if let Some(mut o) = r.hover_pos() {
-                    o.x -= p.left();
-                    o.y -= p.top();
-                    o.x *= zoom;
-                    o.y *= zoom;
-                    Some(o)
-                } else {
-                    None
-                };
-                if let Some(o) = o {
-                    let mut i_event = android_auto::Wifi::InputEventIndication::new();
-                    i_event.set_timestamp(1); // pretend the input was a REALLY long time ago
-                    let mut te = android_auto::Wifi::TouchEvent::new();
-                    let mut tl = android_auto::Wifi::TouchLocation::new();
-                    tl.set_x(o.x as u32);
-                    tl.set_y(o.y as u32);
-                    tl.set_pointer_id(0);
-                    te.touch_location = vec![tl];
-                    let mut do_touch = true;
-                    if r.drag_started() {
-                        te.set_touch_action(android_auto::Wifi::touch_action::Enum::PRESS);
-                        log::error!("A drag started at {:?} {:?}", o, r);
-                    } else if r.drag_stopped() {
-                        te.set_touch_action(android_auto::Wifi::touch_action::Enum::RELEASE);
-                        log::error!("A drag stopped at {:?} {:?}", o, r);
-                    } else if r.dragged() {
-                        te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
-                        log::error!("A drag at {:?} {:?}", o, r);
-                    } else if r.hovered() {
-                        te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
-                    } else {
-                        do_touch = false;
-                    }
-                    if do_touch {
-                        i_event.touch_event = android_auto::protobuf::MessageField::some(te);
-                        let e = android_auto::AndroidAutoMessage::Input(i_event);
-                        let m2 =
-                            uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(e.sendable());
-                        let _ = self
-                            .common
-                            .radio
-                            .send_packet(uobradio_comms::MessageFromApp::AndroidAutoMessage(m2));
-                    }
-                }
-            }
-        });
+
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
             uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
             uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}
@@ -300,78 +235,147 @@ impl eframe::App for MyEguiApp {
             });
         }
 
-        egui::TopBottomPanel::bottom("Bottom Icons")
-            .min_height(74.0)
-            .max_height(74.0)
-            .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    if let Some(cameras) = self.common.radio.cameras() {
-                        if !cameras.is_empty()
-                            && ui
+        if self.common.radio.android_auto_frontend() {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let size = ui.available_size();
+                if let Some(t) = &self.common.android_auto_texture {
+                    let isize = t.size()[1];
+                    let zoom = isize as f32 / size.y;
+                    let dsize = t.size_vec2() / zoom;
+                    let p = ui.cursor();
+                    let r = ui.add(
+                        egui::Image::from_texture(egui::load::SizedTexture {
+                            id: t.id(),
+                            size: dsize,
+                        })
+                        .sense(egui::Sense::drag()),
+                    );
+                    let o = if let Some(mut o) = r.interact_pointer_pos() {
+                        o.x -= p.left();
+                        o.y -= p.top();
+                        o.x *= zoom;
+                        o.y *= zoom;
+                        Some(o)
+                    } else if let Some(mut o) = r.hover_pos() {
+                        o.x -= p.left();
+                        o.y -= p.top();
+                        o.x *= zoom;
+                        o.y *= zoom;
+                        Some(o)
+                    } else {
+                        None
+                    };
+                    if let Some(o) = o {
+                        let mut i_event = android_auto::Wifi::InputEventIndication::new();
+                        i_event.set_timestamp(1); // pretend the input was a REALLY long time ago
+                        let mut te = android_auto::Wifi::TouchEvent::new();
+                        let mut tl = android_auto::Wifi::TouchLocation::new();
+                        tl.set_x(o.x as u32);
+                        tl.set_y(o.y as u32);
+                        tl.set_pointer_id(0);
+                        te.touch_location = vec![tl];
+                        let mut do_touch = true;
+                        if r.drag_started() {
+                            te.set_touch_action(android_auto::Wifi::touch_action::Enum::PRESS);
+                            log::error!("A drag started at {:?} {:?}", o, r);
+                        } else if r.drag_stopped() {
+                            te.set_touch_action(android_auto::Wifi::touch_action::Enum::RELEASE);
+                            log::error!("A drag stopped at {:?} {:?}", o, r);
+                        } else if r.dragged() {
+                            te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
+                            log::error!("A drag at {:?} {:?}", o, r);
+                        } else if r.hovered() {
+                            te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
+                        } else {
+                            do_touch = false;
+                        }
+                        if do_touch {
+                            i_event.touch_event = android_auto::protobuf::MessageField::some(te);
+                            let e = android_auto::AndroidAutoMessage::Input(i_event);
+                            let m2 = uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(
+                                e.sendable(),
+                            );
+                            let _ = self.common.radio.send_packet(
+                                uobradio_comms::MessageFromApp::AndroidAutoMessage(m2),
+                            );
+                        }
+                    }
+                }
+            });
+        } else {
+            egui::TopBottomPanel::bottom("Bottom Icons")
+                .min_height(74.0)
+                .max_height(74.0)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if let Some(cameras) = self.common.radio.cameras() {
+                            if !cameras.is_empty()
+                                && ui
+                                    .button(
+                                        eframe::egui::RichText::new("V")
+                                            .font(eframe::egui::FontId::proportional(64.0)),
+                                    )
+                                    .clicked()
+                            {
+                                self.subwindow = Subwindow::Video(video::Video::new());
+                            }
+                        }
+                        #[cfg(feature = "wifi")]
+                        {
+                            if ui
                                 .button(
-                                    eframe::egui::RichText::new("V")
+                                    eframe::egui::RichText::new("W")
                                         .font(eframe::egui::FontId::proportional(64.0)),
                                 )
                                 .clicked()
-                        {
-                            self.subwindow = Subwindow::Video(video::Video::new());
+                            {
+                                self.subwindow = Subwindow::Wifi(wifi::Screen::new());
+                            }
                         }
-                    }
-                    #[cfg(feature = "wifi")]
-                    {
                         if ui
                             .button(
-                                eframe::egui::RichText::new("W")
+                                eframe::egui::RichText::new("B")
                                     .font(eframe::egui::FontId::proportional(64.0)),
                             )
                             .clicked()
                         {
-                            self.subwindow = Subwindow::Wifi(wifi::Screen::new());
+                            self.subwindow =
+                                Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
                         }
-                    }
-                    if ui
-                        .button(
-                            eframe::egui::RichText::new("B")
-                                .font(eframe::egui::FontId::proportional(64.0)),
-                        )
-                        .clicked()
-                    {
-                        self.subwindow =
-                            Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
-                    }
-                    if ui
-                        .add(
-                            egui::Image::new(egui::include_image!("../refresh.png"))
-                                .maintain_aspect_ratio(true)
-                                .fit_to_exact_size(Vec2 { x: 64.0, y: 64.0 })
-                                .max_height(64.0)
-                                .sense(egui::Sense::click()),
-                        )
-                        .clicked()
-                    {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                    if ui
-                        .button(
-                            eframe::egui::RichText::new("S")
-                                .font(eframe::egui::FontId::proportional(64.0)),
-                        )
-                        .clicked()
-                    {
-                        self.subwindow = Subwindow::Settings(settings::Settings::new());
-                    }
-                    ui.label(format!("Focus: {:?}", ui.input(|r| r.viewport().focused)));
-                    if self.check {
-                        ui.label("LABEL");
-                        self.check = false;
-                    } else {
-                        ui.label("POTATO");
-                        self.check = true;
-                    }
-                })
-            });
-        if let Some(sub) = self.subwindow.update(ctx, frame, &mut self.common) {
-            self.subwindow = sub;
+                        if ui
+                            .add(
+                                egui::Image::new(egui::include_image!("../refresh.png"))
+                                    .maintain_aspect_ratio(true)
+                                    .fit_to_exact_size(Vec2 { x: 64.0, y: 64.0 })
+                                    .max_height(64.0)
+                                    .sense(egui::Sense::click()),
+                            )
+                            .clicked()
+                        {
+                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                        if ui
+                            .button(
+                                eframe::egui::RichText::new("S")
+                                    .font(eframe::egui::FontId::proportional(64.0)),
+                            )
+                            .clicked()
+                        {
+                            self.subwindow = Subwindow::Settings(settings::Settings::new());
+                        }
+                        ui.label(format!("Focus: {:?}", ui.input(|r| r.viewport().focused)));
+                        if self.check {
+                            ui.label("LABEL");
+                            self.check = false;
+                        } else {
+                            ui.label("POTATO");
+                            self.check = true;
+                        }
+                    })
+                });
+            if let Some(sub) = self.subwindow.update(ctx, frame, &mut self.common) {
+                self.subwindow = sub;
+            }
         }
     }
 }

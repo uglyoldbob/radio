@@ -50,6 +50,11 @@ impl AndroidAutoServerFrontend {
         }
     }
 
+    /// Should the frontend be running?
+    pub fn is_running(&self) -> bool {
+        self.running
+    }
+
     /// Retrieve the data received so far for the android audo video stream and then clear the buffer for new data to be received.
     pub fn get_android_video_buf(&mut self) -> Option<Vec<u8>> {
         if !self.video_buf.is_empty() {
@@ -282,6 +287,11 @@ impl MessageToApp {
 }
 
 impl UobRadio {
+    /// Is the android auto frontend running?
+    pub fn android_auto_frontend(&self) -> bool {
+        self.aauto.as_ref().map(|a| a.is_running()).unwrap_or(false)
+    }
+
     /// Call this to prcess received packets. The closure allows the user to specify additional processing for any packets received.
     pub fn process_received<F: FnMut(&MessageToApp)>(
         &mut self,
@@ -468,14 +478,12 @@ impl UobRadio {
         let blue_waiting = self.confirm_passkey.is_some() || self.display_passkey.is_some();
         if let Some(comms) = &mut self.comms {
             if time {
-                log::info!("Sending a ping to the radio");
                 let packet = MessageFromApp::Ping(1);
                 packet.send_to_stream(comms)?;
                 if blue_waiting {
                     let packet = MessageFromApp::BluetoothMessage(MessageFromBluetoothHost::PasskeyMessage(bluetooth_rust::ResponseToPasskey::Waiting));
                     packet.send_to_stream(comms)?;
                 }
-                log::info!("Success ping");
                 self.update_ping_time();
             }
             Ok(())

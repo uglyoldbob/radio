@@ -124,7 +124,8 @@ impl AndroidAutoService {
         );
         android_auto_server
             .run(config, &mut tasks, main)
-            .await.inspect_err(|_|{
+            .await
+            .inspect_err(|_| {
                 log::error!("Failure starting up android auto service");
                 tasks.abort_all();
             })?;
@@ -249,10 +250,12 @@ pub async fn process_app(
                             if addr == aauto.addr {
                                 if let Err(e) = aauto.sender.send(m).await {
                                     log::error!("Closing android auto sender now: {:?}", e);
-                                    common2.aauto_service.take();
                                     let m = uobradio_comms::aauto::AndroidAutoMessageFromPhone::Disconnect;
                                     let packet = MessageToApp::AndroidAutoMessage(m);
                                     packet.send_to_stream(&mut stream).await?;
+                                    common2.aauto_service.take();
+                                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                                    common2.aauto_service = AndroidAutoService::new(&common2, addr).await.ok();
                                 }
                             }
                         }
