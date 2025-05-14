@@ -99,6 +99,8 @@ impl AndroidAutoService {
             bluetooth: android_auto::BluetoothInformation {
                 address: bluetooth_address,
             },
+            touchscreen: Some((800, 480)),
+            keycodes_supported: vec![1,2,3,4,5],
             unit: HeadUnitInfo {
                 name: "UobRadio".to_string(),
                 car_model: "Cherokee".to_string(),
@@ -111,6 +113,11 @@ impl AndroidAutoService {
                 sw_version: "1".to_string(),
                 native_media: true,
                 hide_clock: Some(false),
+            },
+            video: android_auto::VideoConfiguration {
+                resolution: android_auto::Wifi::video_resolution::Enum::_480p,
+                fps: android_auto::Wifi::video_fps::Enum::_30,
+                dpi: 300,
             },
         };
 
@@ -504,6 +511,36 @@ impl AndroidAutoStuff {
             bluetooth,
             network: Arc::new(network),
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
+    async fn open_channel(&self, _t: android_auto::AudioChannelType) -> Result<(), ()> {
+        Ok(())
+    }
+
+    async fn close_channel(&self, _t: android_auto::AudioChannelType) -> Result<(), ()> {
+        Ok(())
+    }
+
+    async fn receive_audio(&self, _t: android_auto::AudioChannelType, _data: Vec<u8>) {
+
+    }
+
+    async fn start_audio(&self, _t: android_auto::AudioChannelType) {
+
+    }
+
+    async fn stop_audio(&self, _t: android_auto::AudioChannelType) {
+
+    }
+}
+
+#[async_trait::async_trait]
+impl android_auto::AndroidAutoInputChannelTrait for AndroidAutoStuff {
+    async fn binding_request(&self, _code: u32) -> Result<(), ()> {
+        Ok(())
     }
 }
 
