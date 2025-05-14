@@ -99,8 +99,6 @@ impl AndroidAutoService {
             bluetooth: android_auto::BluetoothInformation {
                 address: bluetooth_address,
             },
-            touchscreen: Some((800, 480)),
-            keycodes_supported: vec![1,2,3,4,5],
             unit: HeadUnitInfo {
                 name: "UobRadio".to_string(),
                 car_model: "Cherokee".to_string(),
@@ -113,11 +111,6 @@ impl AndroidAutoService {
                 sw_version: "1".to_string(),
                 native_media: true,
                 hide_clock: Some(false),
-            },
-            video: android_auto::VideoConfiguration {
-                resolution: android_auto::Wifi::video_resolution::Enum::_480p,
-                fps: android_auto::Wifi::video_fps::Enum::_60,
-                dpi: 111,
             },
         };
 
@@ -491,6 +484,10 @@ struct AndroidAutoStuff {
     bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
     /// The network information
     network: Arc<android_auto::NetworkInformation>,
+    /// The input channel config
+    input_config: android_auto::InputConfiguration,
+    /// The video channel config
+    video_config: android_auto::VideoConfiguration,
 }
 
 impl AndroidAutoStuff {
@@ -510,6 +507,15 @@ impl AndroidAutoStuff {
             inner: Arc::new(tokio::sync::Mutex::new(inner)),
             bluetooth,
             network: Arc::new(network),
+            input_config: android_auto::InputConfiguration {
+                touchscreen: Some((800, 480)),
+                keycodes: vec![1,2,3,4,5],
+            },
+            video_config: android_auto::VideoConfiguration { 
+                resolution: android_auto::Wifi::video_resolution::Enum::_480p,
+                fps: android_auto::Wifi::video_fps::Enum::_60, 
+                dpi: 111,
+            },
         }
     }
 }
@@ -548,6 +554,10 @@ impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
 impl android_auto::AndroidAutoInputChannelTrait for AndroidAutoStuff {
     async fn binding_request(&self, _code: u32) -> Result<(), ()> {
         Ok(())
+    }
+
+    fn retrieve_input_configuration(&self) -> &android_auto::InputConfiguration {
+        &self.input_config
     }
 }
 
@@ -622,6 +632,10 @@ impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
     async fn wait_for_focus(&self) {}
 
     async fn set_focus(&self, _focus: bool) {}
+
+    fn retrieve_video_configuration(&self) -> &android_auto::VideoConfiguration {
+        &self.video_config
+    }
 }
 
 /// The main function for the service

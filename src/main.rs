@@ -196,7 +196,7 @@ impl MyEguiApp {
                         }
                     }
                     if let Some(mc) = speech_config {
-                        let rb = ringbuf::HeapRb::new(1024);
+                        let rb = ringbuf::HeapRb::new(16000);
                         let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
                         let s = ao.build_output_stream(&mc.config(), move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
                             let mut index = 0;
