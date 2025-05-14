@@ -6,7 +6,7 @@
 
 use std::{io::Read, sync::Arc};
 
-use android_auto::{AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation};
+use android_auto::{AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait, AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation};
 use bluetooth_rust::BluetoothAdapterTrait;
 use tokio::io::AsyncReadExt;
 use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings};
@@ -116,8 +116,8 @@ impl AndroidAutoService {
             },
             video: android_auto::VideoConfiguration {
                 resolution: android_auto::Wifi::video_resolution::Enum::_480p,
-                fps: android_auto::Wifi::video_fps::Enum::_30,
-                dpi: 300,
+                fps: android_auto::Wifi::video_fps::Enum::_60,
+                dpi: 111,
             },
         };
 
@@ -516,24 +516,31 @@ impl AndroidAutoStuff {
 
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
-    async fn open_channel(&self, _t: android_auto::AudioChannelType) -> Result<(), ()> {
+    async fn open_channel(&self, t: android_auto::AudioChannelType) -> Result<(), ()> {
+        let s = self.inner.lock().await;
+        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioChannelOpen(t)).await;
         Ok(())
     }
 
-    async fn close_channel(&self, _t: android_auto::AudioChannelType) -> Result<(), ()> {
+    async fn close_channel(&self, t: android_auto::AudioChannelType) -> Result<(), ()> {
+        let s = self.inner.lock().await;
+        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioChannelClose(t)).await;
         Ok(())
     }
 
-    async fn receive_audio(&self, _t: android_auto::AudioChannelType, _data: Vec<u8>) {
-
+    async fn receive_audio(&self, t: android_auto::AudioChannelType, data: Vec<u8>) {
+        let s = self.inner.lock().await;
+        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioContent(t, data)).await;
     }
 
-    async fn start_audio(&self, _t: android_auto::AudioChannelType) {
-
+    async fn start_audio(&self, t: android_auto::AudioChannelType) {
+        let s = self.inner.lock().await;
+        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioChannelStart(t)).await;
     }
 
-    async fn stop_audio(&self, _t: android_auto::AudioChannelType) {
-
+    async fn stop_audio(&self, t: android_auto::AudioChannelType) {
+        let s = self.inner.lock().await;
+        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioChannelStop(t)).await;
     }
 }
 
@@ -568,6 +575,14 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
 
     fn supports_wireless(&self) -> Option<Arc<dyn AndroidAutoWirelessTrait>> {
         Some(Arc::new(self.clone()))
+    }
+
+    fn supports_input(&self) -> Option<&dyn AndroidAutoInputChannelTrait> {
+        Some(self)
+    }
+
+    fn supports_audio_output(&self) -> Option<&dyn AndroidAutoAudioOutputTrait> {
+        Some(self)
     }
 
     async fn get_receiver(

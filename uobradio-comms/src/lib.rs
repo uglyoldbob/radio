@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, io::{Read, Write}};
 pub mod video;
 pub mod aauto;
 
+use android_auto::AudioChannelType;
 #[cfg(target_os = "linux")]
 pub use v4l;
 
@@ -30,10 +31,23 @@ pub enum RadioReceiveStatus {
 /// The port to listen to for udp communication
 const UDP_PORT: u16 = 13456;
 
+/// The commands that can be issued for an audio channel
+#[derive(Debug)]
+pub enum PendingAudioCommand {
+    /// Start the audio channel
+    Start,
+    /// Stop the audio channel
+    Stop,
+}
+
 /// Manages the user facing aspects of an android auto server
 pub struct AndroidAutoServerFrontend {
     /// The video data received so far from the android auto device, h264 encoded video packets
     video_buf: Vec<u8>,
+    /// The audio channel data received so far
+    audio_bufs: [Vec<u8>; 3],
+    /// Audio channel data for pending commands
+    audio_commands: [Option<PendingAudioCommand>; 3],
     /// Waiting on acceptance for android auto server frontend
     waiting: bool,
     /// Frontend is running now
@@ -45,6 +59,8 @@ impl AndroidAutoServerFrontend {
     pub fn new() -> Self {
         Self {
             video_buf: Vec::new(),
+            audio_bufs: [Vec::new(), Vec::new(), Vec::new()],
+            audio_commands: [const { None }; 3],
             waiting: true,
             running: false,
         }
@@ -356,9 +372,43 @@ impl UobRadio {
                                     match &packet {
                                         MessageToApp::AndroidAutoMessage(m) => {
                                             match m {
+                                                aauto::AndroidAutoMessageFromPhone::AudioChannelOpen(_) => {
+                                                }
+                                                aauto::AndroidAutoMessageFromPhone::AudioChannelClose(_) => {
+                                                }
+                                                aauto::AndroidAutoMessageFromPhone::AudioChannelStart(c) => {
+                                                    if let Some(aauto) = &mut self.aauto {
+                                                        let i = match c {
+                                                            AudioChannelType::Media => 0,
+                                                            AudioChannelType::Speech => 1,
+                                                            AudioChannelType::System => 2,
+                                                        };
+                                                        aauto.audio_commands[i] = Some(PendingAudioCommand::Start);
+                                                    }
+                                                }
+                                                aauto::AndroidAutoMessageFromPhone::AudioChannelStop(c) => {
+                                                    if let Some(aauto) = &mut self.aauto {
+                                                        let i = match c {
+                                                            AudioChannelType::Media => 0,
+                                                            AudioChannelType::Speech => 1,
+                                                            AudioChannelType::System => 2,
+                                                        };
+                                                        aauto.audio_bufs[i].clear();
+                                                        aauto.audio_commands[i] = Some(PendingAudioCommand::Stop);
+                                                    }
+                                                }
+                                                aauto::AndroidAutoMessageFromPhone::AudioContent(c, data) => {
+                                                    if let Some(aauto) = &mut self.aauto {
+                                                        let i = match c {
+                                                            AudioChannelType::Media => 0,
+                                                            AudioChannelType::System => 1,
+                                                            AudioChannelType::Speech => 2,
+                                                        };
+                                                        aauto.audio_bufs[i].append(&mut data.to_owned());
+                                                    }
+                                                }
                                                 aauto::AndroidAutoMessageFromPhone::VideoContent(data) => {
                                                     if let Some(aauto) = &mut self.aauto {
-                                                        log::error!("Received android auto video data length {}", data.len());
                                                         aauto.video_buf.append(&mut data.to_owned());
                                                     }
                                                 }
@@ -453,6 +503,45 @@ impl UobRadio {
         }
         else {
             None
+        }
+    }
+
+    /// Process any pending commands on audio channels
+    pub fn process_pending_audio_commands<F: FnMut(AudioChannelType, PendingAudioCommand)>(&mut self, mut f: F) {
+        if let Some(aauto) = &mut self.aauto {
+            if let Some(c) = aauto.audio_commands[0].take() {
+                f(AudioChannelType::Media, c);
+            }
+            if let Some(c) = aauto.audio_commands[1].take() {
+                f(AudioChannelType::System, c);
+            }
+            if let Some(c) = aauto.audio_commands[2].take() {
+                f(AudioChannelType::Speech, c);
+            }
+        }
+    }
+
+    /// Process all audio data received with a closure for all channel types, then clear it
+    pub fn process_received_audio<F: FnMut(AudioChannelType, &[i16])>(&mut self, mut f: F) {
+        if let Some(aauto) = &mut self.aauto {
+            if !aauto.audio_bufs[0].is_empty() {
+                let r: &[u8] = aauto.audio_bufs[0].as_ref();
+                let r2: Vec<i16> = r.chunks_exact(2).map(|v| i16::from_le_bytes([v[0], v[1]])).collect();
+                f(AudioChannelType::Media, &r2);
+                aauto.audio_bufs[0].clear();
+            }
+            if !aauto.audio_bufs[1].is_empty() {
+                let r: &[u8] = aauto.audio_bufs[1].as_ref();
+                let r2: Vec<i16> = r.chunks_exact(2).map(|v| i16::from_le_bytes([v[0], v[1]])).collect();
+                f(AudioChannelType::System, &r2);
+                aauto.audio_bufs[1].clear();
+            }
+            if !aauto.audio_bufs[2].is_empty() {
+                let r: &[u8] = aauto.audio_bufs[2].as_ref();
+                let r2: Vec<i16> = r.chunks_exact(2).map(|v| i16::from_le_bytes([v[0], v[1]])).collect();
+                f(AudioChannelType::Speech, &r2);
+                aauto.audio_bufs[2].clear();
+            }
         }
     }
 

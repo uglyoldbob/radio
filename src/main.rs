@@ -5,7 +5,10 @@ mod video;
 #[cfg(feature = "wifi")]
 mod wifi;
 
-use eframe::egui::{self, Vec2};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use eframe::{egui::{self, Vec2}, glow::PACK_COMPRESSED_BLOCK_SIZE};
+use ringbuf::traits::Producer;
+use uobradio_comms::PendingAudioCommand;
 
 #[enum_dispatch::enum_dispatch]
 trait SubwindowTrait {
@@ -99,14 +102,131 @@ struct MyEguiApp {
     subwindow: Subwindow,
     check: bool,
     common: CommonWindowProperties,
+    audio_output: Option<cpal::Device>,
+    audio_input: Option<cpal::Device>,
+    cpal_host: cpal::Host,
+    media_stream: Option<(AudioProducer, cpal::Stream)>,
+    sys_stream: Option<(AudioProducer, cpal::Stream)>,
+    speech_stream: Option<(AudioProducer, cpal::Stream)>,
 }
+
+type AudioProducer = ringbuf::HeapProd<i16>;
 
 impl MyEguiApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        let h = cpal::default_host();
+        let mut ao = h.default_output_device();
+        let ai = h.default_input_device();
+        let mut media_stream = None;
+        let mut sys_stream = None;
+        let mut speech_stream = None;
+        if let Some(ao) = &mut ao {
+            if let Ok(c) = ao.supported_output_configs() {
+                {
+                    let mut media_config = None;
+                    let mut sys_config = None;
+                    let mut speech_config = None;
+                    for c in c {
+                        const MEDIA_RATE : u32 = 48000;
+                        const MEDIA_CHANNELS : u16 = 2;
+                        if c.min_sample_rate().0 <= MEDIA_RATE && c.max_sample_rate().0 >= MEDIA_RATE {
+                            if c.channels() == MEDIA_CHANNELS {
+                                if c.sample_format() == cpal::SampleFormat::I16 {
+                                    media_config = c.try_with_sample_rate(cpal::SampleRate(MEDIA_RATE));
+                                }
+                            }
+                        }
+
+                        const SYS_RATE : u32 = 16000;
+                        const SYS_CHANNELS : u16 = 1;
+                        if c.min_sample_rate().0 <= SYS_RATE && c.max_sample_rate().0 >= SYS_RATE {
+                            if c.channels() == SYS_CHANNELS {
+                                if c.sample_format() == cpal::SampleFormat::I16 {
+                                    sys_config = c.try_with_sample_rate(cpal::SampleRate(SYS_RATE));
+                                }
+                            }
+                        }
+
+                        const SPEECH_RATE : u32 = 16000;
+                        const SPEECH_CHANNELS : u16 = 1;
+                        if c.min_sample_rate().0 <= SPEECH_RATE && c.max_sample_rate().0 >= SPEECH_RATE {
+                            if c.channels() == SPEECH_CHANNELS {
+                                if c.sample_format() == cpal::SampleFormat::I16 {
+                                    speech_config = c.try_with_sample_rate(cpal::SampleRate(SPEECH_RATE));
+                                }
+                            }
+                        }
+                    }
+                    if let Some(mc) = media_config {
+                        let rb = ringbuf::HeapRb::new(48000);
+                        let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
+                        let s = ao.build_output_stream(&mc.config(), move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                            let mut index = 0;
+                            while index < data.len() {
+                                let c = ringbuf::traits::Consumer::pop_slice(&mut consumer, &mut data[index..]);
+                                if c == 0 {
+                                    break;
+                                }
+                                index += c;
+                            }
+                        }, move |err| {
+                            log::error!("Error in media audio output: {:?}", err);
+                        }, None);
+                        if let Ok(s) = s {
+                            media_stream = Some((producer, s));
+                        }
+                    }
+                    if let Some(mc) = sys_config {
+                        let rb = ringbuf::HeapRb::new(16000);
+                        let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
+                        let s = ao.build_output_stream(&mc.config(), move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                            let mut index = 0;
+                            while index < data.len() {
+                                let c = ringbuf::traits::Consumer::pop_slice(&mut consumer, &mut data[index..]);
+                                if c == 0 {
+                                    break;
+                                }
+                                index += c;
+                            }
+                        }, move |err| {
+                            log::error!("Error in media audio output: {:?}", err);
+                        }, None);
+                        if let Ok(s) = s {
+                            sys_stream = Some((producer, s));
+                        }
+                    }
+                    if let Some(mc) = speech_config {
+                        let rb = ringbuf::HeapRb::new(1024);
+                        let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
+                        let s = ao.build_output_stream(&mc.config(), move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                            let mut index = 0;
+                            while index < data.len() {
+                                let c = ringbuf::traits::Consumer::pop_slice(&mut consumer, &mut data[index..]);
+                                if c == 0 {
+                                    break;
+                                }
+                                index += c;
+                            }
+                        }, move |err| {
+                            log::error!("Error in media audio output: {:?}", err);
+                        }, None);
+                        if let Ok(s) = s {
+                            speech_stream = Some((producer, s));
+                        }
+                    }
+                }
+            }
+        }
         Self {
             subwindow: Subwindow::MainPage(MainPage {}),
             check: false,
             common: CommonWindowProperties::new(),
+            audio_output: ao,
+            audio_input: ai,
+            cpal_host: h,
+            media_stream,
+            sys_stream,
+            speech_stream,
         }
     }
 }
@@ -123,8 +243,69 @@ impl eframe::App for MyEguiApp {
         self.common.radio.get_cameras();
         self.common.radio.try_get_bluetooth();
         self.common.radio.try_get_android_auto();
+        self.common.radio.process_pending_audio_commands(|c, cmd| {
+            log::error!("Processing command {:?} for {:?}", cmd, c);
+            match c {
+                android_auto::AudioChannelType::Media => {
+                    if let Some((p, s)) = &mut self.media_stream {
+                        match cmd {
+                            PendingAudioCommand::Start => {
+                                s.play();
+                            }
+                            PendingAudioCommand::Stop => {
+                                s.pause();
+                            }
+                        }
+                    }
+                }
+                android_auto::AudioChannelType::System => {
+                    if let Some((p, s)) = &mut self.sys_stream {
+                        match cmd {
+                            PendingAudioCommand::Start => {
+                                s.play();
+                            }
+                            PendingAudioCommand::Stop => {
+                                s.pause();
+                            }
+                        }
+                    }
+                }
+                android_auto::AudioChannelType::Speech => {
+                    if let Some((p, s)) = &mut self.speech_stream {
+                        match cmd {
+                            PendingAudioCommand::Start => {
+                                s.play();
+                            }
+                            PendingAudioCommand::Stop => {
+                                s.pause();
+                            }
+                        }
+                    }
+                }
+            }
+            log::error!("DONE Processing command {:?} for {:?}", cmd, c);
+        });
+        self.common.radio.process_received_audio(|c, data| {
+            log::error!("Received {} bytes of data for {:?}", data.len(), c);
+            match c {
+                android_auto::AudioChannelType::Media => {
+                    if let Some((p, _s)) = &mut self.media_stream {
+                        p.push_slice(data);
+                    }
+                }
+                android_auto::AudioChannelType::System => {
+                    if let Some((p, _s)) = &mut self.sys_stream {
+                        p.push_slice(data);
+                    }
+                }
+                android_auto::AudioChannelType::Speech => {
+                    if let Some((p, _s)) = &mut self.speech_stream {
+                        p.push_slice(data);
+                    }
+                }
+            }
+        });
         if let Some(vdata) = self.common.radio.get_android_auto_video_buf() {
-            log::error!("Got some video data length {}", vdata.len());
             let mut units = openh264::nal_units(&vdata).peekable();
             while let Some(p) = units.next() {
                 match self.common.android_auto_video_decoder.decode(p) {
@@ -277,13 +458,10 @@ impl eframe::App for MyEguiApp {
                         let mut do_touch = true;
                         if r.drag_started() {
                             te.set_touch_action(android_auto::Wifi::touch_action::Enum::PRESS);
-                            log::error!("A drag started at {:?} {:?}", o, r);
                         } else if r.drag_stopped() {
                             te.set_touch_action(android_auto::Wifi::touch_action::Enum::RELEASE);
-                            log::error!("A drag stopped at {:?} {:?}", o, r);
                         } else if r.dragged() {
                             te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
-                            log::error!("A drag at {:?} {:?}", o, r);
                         } else if r.hovered() {
                             te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
                         } else {
