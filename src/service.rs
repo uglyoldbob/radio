@@ -4,9 +4,9 @@
 
 //! This program is for handling the video and audio components for the radio
 
-use std::{io::Read, sync::Arc};
+use std::{collections::HashSet, io::Read, sync::Arc};
 
-use android_auto::{AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait, AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation};
+use android_auto::{AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait, AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation, SendableAndroidAutoMessage};
 use bluetooth_rust::BluetoothAdapterTrait;
 use tokio::io::AsyncReadExt;
 use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings};
@@ -489,6 +489,8 @@ struct AndroidAutoStuff {
     input_config: android_auto::InputConfiguration,
     /// The video channel config
     video_config: android_auto::VideoConfiguration,
+    /// The sensors config
+    sensors: android_auto::SensorInformation,
 }
 
 impl AndroidAutoStuff {
@@ -504,6 +506,9 @@ impl AndroidAutoStuff {
             recvr: Some(recvr),
             frame_sender,
         };
+        let mut s = HashSet::new();
+        s.insert(android_auto::Wifi::sensor_type::Enum::DRIVING_STATUS);
+        s.insert(android_auto::Wifi::sensor_type::Enum::NIGHT_DATA);
         Self {
             inner: Arc::new(tokio::sync::Mutex::new(inner)),
             bluetooth,
@@ -517,6 +522,9 @@ impl AndroidAutoStuff {
                 fps: android_auto::Wifi::video_fps::Enum::_60, 
                 dpi: 111,
             },
+            sensors: android_auto::SensorInformation {
+                sensors: s,
+            }
         }
     }
 }
@@ -596,6 +604,10 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
         Some(self)
     }
 
+    fn supports_sensors(&self) -> Option<&dyn android_auto::AndroidAutoSensorTrait> {
+        Some(self)
+    }
+
     async fn get_receiver(
         &self,
     ) -> Option<tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>> {
@@ -611,6 +623,40 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     async fn disconnect(&self) {
         let s = self.inner.lock().await;
         let _ = s.sendr.send(AndroidAutoMessageFromPhone::Disconnect).await;
+    }
+}
+
+#[async_trait::async_trait]
+impl android_auto::AndroidAutoSensorTrait for AndroidAutoStuff {
+    fn get_supported_sensors(&self) ->  &android_auto::SensorInformation {
+        &self.sensors
+    }
+
+    async fn start_sensor(&self, stype: android_auto::Wifi::sensor_type::Enum) -> Result<(), ()> {
+        if self.sensors.sensors.contains(&stype) {
+            let mut m3 = android_auto::Wifi::SensorEventIndication::new();
+            match stype {
+                android_auto::Wifi::sensor_type::Enum::DRIVING_STATUS => {
+                    let mut ds = android_auto::Wifi::DrivingStatus::new();
+                    ds.set_status(android_auto::Wifi::DrivingStatusEnum::UNRESTRICTED as i32);
+                    m3.driving_status.push(ds);
+                }
+                android_auto::Wifi::sensor_type::Enum::NIGHT_DATA => {
+                    let mut ds = android_auto::Wifi::NightMode::new();
+                    ds.set_is_night(false);
+                    m3.night_mode.push(ds);
+                }
+                _ => {
+                    todo!();
+                }
+            }
+            let s = self.inner.lock().await;
+            let m = android_auto::AndroidAutoMessage::Sensor(m3);
+            s.frame_sender.send(m.sendable()).await.map_err(|_|())?;
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 }
 
