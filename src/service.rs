@@ -112,6 +112,7 @@ impl AndroidAutoService {
                 native_media: true,
                 hide_clock: Some(false),
             },
+            custom_certificate: None,
         };
 
         let aa_chan = tokio::sync::mpsc::channel(10);

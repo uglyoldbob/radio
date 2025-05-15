@@ -521,6 +521,21 @@ impl UobRadio {
         }
     }
 
+    /// Transmit the given audio data to the android auto device
+    pub fn transmit_audio(&mut self, data: Vec<i16>) {
+        if self.aauto.is_some() {
+            let timestamp: u64 = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as u64;
+            let data2 = data.iter().map(|e| e.to_le_bytes()).flatten().collect();
+            let p = android_auto::AndroidAutoMessage::Audio(Some(timestamp), data2);
+            let m2 = aauto::AndroidAutoMessageToPhone::Message(
+                p.sendable(),
+            );
+            let _ = self.send_packet(
+                MessageFromApp::AndroidAutoMessage(m2),
+            );
+        }
+    }
+
     /// Process all audio data received with a closure for all channel types, then clear it
     pub fn process_received_audio<F: FnMut(AudioChannelType, &[i16])>(&mut self, mut f: F) {
         if let Some(aauto) = &mut self.aauto {

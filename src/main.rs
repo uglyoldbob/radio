@@ -7,7 +7,7 @@ mod wifi;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::{egui::{self, Vec2}, glow::PACK_COMPRESSED_BLOCK_SIZE};
-use ringbuf::traits::Producer;
+use ringbuf::traits::{Consumer, Observer, Producer};
 use uobradio_comms::PendingAudioCommand;
 
 #[enum_dispatch::enum_dispatch]
@@ -108,18 +108,49 @@ struct MyEguiApp {
     media_stream: Option<(AudioProducer, cpal::Stream)>,
     sys_stream: Option<(AudioProducer, cpal::Stream)>,
     speech_stream: Option<(AudioProducer, cpal::Stream)>,
+    input_stream: Option<(AudioConsumer, cpal::Stream)>,
 }
 
 type AudioProducer = ringbuf::HeapProd<i16>;
+type AudioConsumer = ringbuf::HeapCons<i16>;
 
 impl MyEguiApp {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let h = cpal::default_host();
         let mut ao = h.default_output_device();
-        let ai = h.default_input_device();
+        let mut ai = h.default_input_device();
         let mut media_stream = None;
         let mut sys_stream = None;
         let mut speech_stream = None;
+        let mut input_stream = None;
+        if let Some(ai) = &mut ai {
+            if let Ok(c) = ai.supported_input_configs() {
+                let mut in_config = None;
+                for c in c {
+                    const IN_RATE : u32 = 16000;
+                    const IN_CHANNELS : u16 = 1;
+                    if c.min_sample_rate().0 <= IN_RATE && c.max_sample_rate().0 >= IN_RATE {
+                        if c.channels() == IN_CHANNELS {
+                            if c.sample_format() == cpal::SampleFormat::I16 {
+                                in_config = c.try_with_sample_rate(cpal::SampleRate(IN_RATE));
+                            }
+                        }
+                    }
+                }
+                if let Some(mc) = in_config {
+                    let rb = ringbuf::HeapRb::new(16000);
+                    let (mut producer, consumer) = ringbuf::traits::Split::split(rb);
+                    let s = ai.build_input_stream(&mc.config(), move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                        producer.push_slice(data);
+                    }, move |err| {
+                        log::error!("Error in media audio output: {:?}", err);
+                    }, None);
+                    if let Ok(s) = s {
+                        input_stream = Some((consumer, s));
+                    }
+                }
+            }
+        }
         if let Some(ao) = &mut ao {
             if let Ok(c) = ao.supported_output_configs() {
                 {
@@ -227,6 +258,7 @@ impl MyEguiApp {
             media_stream,
             sys_stream,
             speech_stream,
+            input_stream,
         }
     }
 }
@@ -243,6 +275,14 @@ impl eframe::App for MyEguiApp {
         self.common.radio.get_cameras();
         self.common.radio.try_get_bluetooth();
         self.common.radio.try_get_android_auto();
+        if let Some(ai) = &mut self.input_stream {
+            if !ai.0.is_empty() {
+                let len = ai.0.occupied_len();
+                let mut v = vec![0; len];
+                let olen = ai.0.pop_slice(&mut v);
+                self.common.radio.transmit_audio(v[0..olen].to_vec());
+            }
+        }
         self.common.radio.process_pending_audio_commands(|c, cmd| {
             log::error!("Processing command {:?} for {:?}", cmd, c);
             match c {
@@ -448,7 +488,8 @@ impl eframe::App for MyEguiApp {
                     };
                     if let Some(o) = o {
                         let mut i_event = android_auto::Wifi::InputEventIndication::new();
-                        i_event.set_timestamp(1); // pretend the input was a REALLY long time ago
+                        let timestamp: u64 = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as u64;
+                        i_event.set_timestamp(timestamp);
                         let mut te = android_auto::Wifi::TouchEvent::new();
                         let mut tl = android_auto::Wifi::TouchLocation::new();
                         tl.set_x(o.x as u32);
