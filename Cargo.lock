@@ -204,19 +204,17 @@ dependencies = [
 
 [[package]]
 name = "android-auto"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ddcd902db329bc2f91abb9dd62aa7219c7949f3edc4ecc26424bf111de58394"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "bitfield",
- "bluetooth-rust 0.1.0",
+ "bluetooth-rust",
  "enum_dispatch",
  "futures",
  "log",
  "protobuf",
  "protobuf-codegen",
- "rustls",
+ "rustls 0.23.26",
  "serde",
  "tokio",
  "webpki-roots 0.26.11",
@@ -826,23 +824,6 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "uuid",
-]
-
-[[package]]
-name = "bluetooth-rust"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d902a85a6a6350272f3211f2aaae918b47fb99ce947e5ef5e3cb05a9e8279619"
-dependencies = [
- "bluer",
- "futures",
- "jni",
- "jni-min-helper",
- "log",
- "ouroboros",
- "serde",
- "tokio",
- "winit",
 ]
 
 [[package]]
@@ -3807,7 +3788,7 @@ dependencies = [
  "android-auto",
  "async-trait",
  "bincode",
- "bluetooth-rust 0.2.3",
+ "bluetooth-rust",
  "cpal",
  "eframe",
  "egui_extras",
@@ -4145,16 +4126,30 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "730944ca083c1c233a75c09f199e973ca499344a2b7ba9e755c457e86fb4a321"
+version = "0.23.26"
+source = "git+https://github.com/uglyoldbob/rustls.git#900ac045228a97682ac64acfe00a0dc783373898"
 dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki",
+ "rustls-webpki 0.103.2 (git+https://github.com/uglyoldbob/webpki.git)",
+ "subtle",
+ "zeroize",
+]
+
+[[package]]
+name = "rustls"
+version = "0.23.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "730944ca083c1c233a75c09f199e973ca499344a2b7ba9e755c457e86fb4a321"
+dependencies = [
+ "log",
+ "once_cell",
+ "ring",
+ "rustls-pki-types",
+ "rustls-webpki 0.103.2",
  "subtle",
  "zeroize",
 ]
@@ -4166,6 +4161,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "229a4a4c221013e7e1f1a043678c5cc39fe5171437c88fb47151a21e6f5b5c79"
 dependencies = [
  "zeroize",
+]
+
+[[package]]
+name = "rustls-webpki"
+version = "0.103.2"
+dependencies = [
+ "log",
+ "ring",
+ "rustls-pki-types",
+ "untrusted",
 ]
 
 [[package]]
@@ -4290,7 +4295,6 @@ dependencies = [
 [[package]]
 name = "service"
 version = "0.1.2"
-source = "git+https://github.com/uglyoldbob/service.git#a0dbb30677331f2e6d570e758c723ce065a9a96f"
 dependencies = [
  "cfg-if",
  "eventlog",
@@ -4929,7 +4933,7 @@ version = "0.1.0"
 dependencies = [
  "android-auto",
  "bincode",
- "bluetooth-rust 0.2.3",
+ "bluetooth-rust",
  "egui 0.31.1",
  "ffimage",
  "ffimage_yuv",
@@ -4950,7 +4954,7 @@ dependencies = [
  "flate2",
  "log",
  "once_cell",
- "rustls",
+ "rustls 0.23.27",
  "rustls-pki-types",
  "url",
  "webpki-roots 0.26.11",
@@ -5511,7 +5515,6 @@ checksum = "dd7cf3379ca1aac9eea11fba24fd7e315d621f8dfe35c8d7d2be8b793726e07d"
 [[package]]
 name = "wifi-rs"
 version = "0.2.4"
-source = "git+https://github.com/uglyoldbob/wifi-rs.git#0e2b984ae0ebf708672fd69232c4fc534969430e"
 dependencies = [
  "tempfile",
 ]

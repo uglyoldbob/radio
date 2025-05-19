@@ -25,10 +25,10 @@ simple_logger = "5.0.0"
 tokio = { version = "1.40.0", features = ["full"] }
 toml = "0.8.20"
 uobradio-comms = { path = "./uobradio-comms" }
-wifi-rs = { git = "https://github.com/uglyoldbob/wifi-rs.git", version = "0.2.4", optional = true }
+wifi-rs = { path = "./wifi-rs", version = "0.2.4", optional = true }
 
 [dependencies.service]
-git = "https://github.com/uglyoldbob/service.git"
+path = "./service/service"
 features = ["async", "serde", "prompt", "egui-prompt"]
 
 [[bin]]
@@ -46,4 +46,5 @@ bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]
 androidauto = ["dep:android-auto", "uobradio-comms/androidauto"]
 
 [patch.crates-io]
-rustls-webpki = { git = "https://github.com/uglyoldbob/webpki.git" }
+rustls-webpki = { path = "./webpki" }
+android-auto = { path = "./android-auto" }

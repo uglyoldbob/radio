@@ -4,3 +4,15 @@
 [submodule "radiohw/SV_I2S_RX_CORE"]
 	path = radiohw/SV_I2S_RX_CORE
 	url = https://github.com/rubinsteina13/SV_I2S_RX_CORE.git
+[submodule "webpki"]
+	path = webpki
+	url = https://github.com/uglyoldbob/webpki.git
+[submodule "wifi-rs"]
+	path = wifi-rs
+	url = https://github.com/uglyoldbob/wifi-rs.git
+[submodule "service"]
+	path = service
+	url = https://github.com/uglyoldbob/service.git
+[submodule "android-auto"]
+	path = android-auto
+	url = https://github.com/uglyoldbob/android-auto.git
