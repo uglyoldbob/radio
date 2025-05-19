@@ -214,7 +214,7 @@ dependencies = [
  "log",
  "protobuf",
  "protobuf-codegen",
- "rustls 0.23.26",
+ "rustls",
  "serde",
  "tokio",
  "webpki-roots 0.26.11",
@@ -4126,30 +4126,16 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.26"
-source = "git+https://github.com/uglyoldbob/rustls.git#900ac045228a97682ac64acfe00a0dc783373898"
+version = "0.23.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "730944ca083c1c233a75c09f199e973ca499344a2b7ba9e755c457e86fb4a321"
 dependencies = [
  "aws-lc-rs",
  "log",
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.2 (git+https://github.com/uglyoldbob/webpki.git)",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "rustls"
-version = "0.23.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "730944ca083c1c233a75c09f199e973ca499344a2b7ba9e755c457e86fb4a321"
-dependencies = [
- "log",
- "once_cell",
- "ring",
- "rustls-pki-types",
- "rustls-webpki 0.103.2",
+ "rustls-webpki",
  "subtle",
  "zeroize",
 ]
@@ -4166,17 +4152,6 @@ dependencies = [
 [[package]]
 name = "rustls-webpki"
 version = "0.103.2"
-dependencies = [
- "log",
- "ring",
- "rustls-pki-types",
- "untrusted",
-]
-
-[[package]]
-name = "rustls-webpki"
-version = "0.103.2"
-source = "git+https://github.com/uglyoldbob/webpki.git#db46d20b66268724c29b1fdf41801438350f0f79"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -4954,7 +4929,7 @@ dependencies = [
  "flate2",
  "log",
  "once_cell",
- "rustls 0.23.27",
+ "rustls",
  "rustls-pki-types",
  "url",
  "webpki-roots 0.26.11",
