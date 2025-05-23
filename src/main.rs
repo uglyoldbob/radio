@@ -6,7 +6,10 @@ mod video;
 mod wifi;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use eframe::{egui::{self, Vec2}, glow::PACK_COMPRESSED_BLOCK_SIZE};
+use eframe::{
+    egui::{self, Vec2},
+    glow::PACK_COMPRESSED_BLOCK_SIZE,
+};
 use ringbuf::traits::{Consumer, Observer, Producer};
 use uobradio_comms::PendingAudioCommand;
 
@@ -127,8 +130,8 @@ impl MyEguiApp {
             if let Ok(c) = ai.supported_input_configs() {
                 let mut in_config = None;
                 for c in c {
-                    const IN_RATE : u32 = 16000;
-                    const IN_CHANNELS : u16 = 1;
+                    const IN_RATE: u32 = 16000;
+                    const IN_CHANNELS: u16 = 1;
                     if c.min_sample_rate().0 <= IN_RATE && c.max_sample_rate().0 >= IN_RATE {
                         if c.channels() == IN_CHANNELS {
                             if c.sample_format() == cpal::SampleFormat::I16 {
@@ -140,11 +143,16 @@ impl MyEguiApp {
                 if let Some(mc) = in_config {
                     let rb = ringbuf::HeapRb::new(16000);
                     let (mut producer, consumer) = ringbuf::traits::Split::split(rb);
-                    let s = ai.build_input_stream(&mc.config(), move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                        producer.push_slice(data);
-                    }, move |err| {
-                        log::error!("Error in media audio output: {:?}", err);
-                    }, None);
+                    let s = ai.build_input_stream(
+                        &mc.config(),
+                        move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                            producer.push_slice(data);
+                        },
+                        move |err| {
+                            log::error!("Error in media audio output: {:?}", err);
+                        },
+                        None,
+                    );
                     if let Ok(s) = s {
                         input_stream = Some((consumer, s));
                     }
@@ -158,18 +166,21 @@ impl MyEguiApp {
                     let mut sys_config = None;
                     let mut speech_config = None;
                     for c in c {
-                        const MEDIA_RATE : u32 = 48000;
-                        const MEDIA_CHANNELS : u16 = 2;
-                        if c.min_sample_rate().0 <= MEDIA_RATE && c.max_sample_rate().0 >= MEDIA_RATE {
+                        const MEDIA_RATE: u32 = 48000;
+                        const MEDIA_CHANNELS: u16 = 2;
+                        if c.min_sample_rate().0 <= MEDIA_RATE
+                            && c.max_sample_rate().0 >= MEDIA_RATE
+                        {
                             if c.channels() == MEDIA_CHANNELS {
                                 if c.sample_format() == cpal::SampleFormat::I16 {
-                                    media_config = c.try_with_sample_rate(cpal::SampleRate(MEDIA_RATE));
+                                    media_config =
+                                        c.try_with_sample_rate(cpal::SampleRate(MEDIA_RATE));
                                 }
                             }
                         }
 
-                        const SYS_RATE : u32 = 16000;
-                        const SYS_CHANNELS : u16 = 1;
+                        const SYS_RATE: u32 = 16000;
+                        const SYS_CHANNELS: u16 = 1;
                         if c.min_sample_rate().0 <= SYS_RATE && c.max_sample_rate().0 >= SYS_RATE {
                             if c.channels() == SYS_CHANNELS {
                                 if c.sample_format() == cpal::SampleFormat::I16 {
@@ -178,12 +189,15 @@ impl MyEguiApp {
                             }
                         }
 
-                        const SPEECH_RATE : u32 = 16000;
-                        const SPEECH_CHANNELS : u16 = 1;
-                        if c.min_sample_rate().0 <= SPEECH_RATE && c.max_sample_rate().0 >= SPEECH_RATE {
+                        const SPEECH_RATE: u32 = 16000;
+                        const SPEECH_CHANNELS: u16 = 1;
+                        if c.min_sample_rate().0 <= SPEECH_RATE
+                            && c.max_sample_rate().0 >= SPEECH_RATE
+                        {
                             if c.channels() == SPEECH_CHANNELS {
                                 if c.sample_format() == cpal::SampleFormat::I16 {
-                                    speech_config = c.try_with_sample_rate(cpal::SampleRate(SPEECH_RATE));
+                                    speech_config =
+                                        c.try_with_sample_rate(cpal::SampleRate(SPEECH_RATE));
                                 }
                             }
                         }
@@ -191,18 +205,26 @@ impl MyEguiApp {
                     if let Some(mc) = media_config {
                         let rb = ringbuf::HeapRb::new(48000);
                         let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
-                        let s = ao.build_output_stream(&mc.config(), move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                            let mut index = 0;
-                            while index < data.len() {
-                                let c = ringbuf::traits::Consumer::pop_slice(&mut consumer, &mut data[index..]);
-                                if c == 0 {
-                                    break;
+                        let s = ao.build_output_stream(
+                            &mc.config(),
+                            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                                let mut index = 0;
+                                while index < data.len() {
+                                    let c = ringbuf::traits::Consumer::pop_slice(
+                                        &mut consumer,
+                                        &mut data[index..],
+                                    );
+                                    if c == 0 {
+                                        break;
+                                    }
+                                    index += c;
                                 }
-                                index += c;
-                            }
-                        }, move |err| {
-                            log::error!("Error in media audio output: {:?}", err);
-                        }, None);
+                            },
+                            move |err| {
+                                log::error!("Error in media audio output: {:?}", err);
+                            },
+                            None,
+                        );
                         if let Ok(s) = s {
                             media_stream = Some((producer, s));
                         }
@@ -210,18 +232,26 @@ impl MyEguiApp {
                     if let Some(mc) = sys_config {
                         let rb = ringbuf::HeapRb::new(16000);
                         let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
-                        let s = ao.build_output_stream(&mc.config(), move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                            let mut index = 0;
-                            while index < data.len() {
-                                let c = ringbuf::traits::Consumer::pop_slice(&mut consumer, &mut data[index..]);
-                                if c == 0 {
-                                    break;
+                        let s = ao.build_output_stream(
+                            &mc.config(),
+                            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                                let mut index = 0;
+                                while index < data.len() {
+                                    let c = ringbuf::traits::Consumer::pop_slice(
+                                        &mut consumer,
+                                        &mut data[index..],
+                                    );
+                                    if c == 0 {
+                                        break;
+                                    }
+                                    index += c;
                                 }
-                                index += c;
-                            }
-                        }, move |err| {
-                            log::error!("Error in media audio output: {:?}", err);
-                        }, None);
+                            },
+                            move |err| {
+                                log::error!("Error in media audio output: {:?}", err);
+                            },
+                            None,
+                        );
                         if let Ok(s) = s {
                             sys_stream = Some((producer, s));
                         }
@@ -229,18 +259,26 @@ impl MyEguiApp {
                     if let Some(mc) = speech_config {
                         let rb = ringbuf::HeapRb::new(16000);
                         let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
-                        let s = ao.build_output_stream(&mc.config(), move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                            let mut index = 0;
-                            while index < data.len() {
-                                let c = ringbuf::traits::Consumer::pop_slice(&mut consumer, &mut data[index..]);
-                                if c == 0 {
-                                    break;
+                        let s = ao.build_output_stream(
+                            &mc.config(),
+                            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                                let mut index = 0;
+                                while index < data.len() {
+                                    let c = ringbuf::traits::Consumer::pop_slice(
+                                        &mut consumer,
+                                        &mut data[index..],
+                                    );
+                                    if c == 0 {
+                                        break;
+                                    }
+                                    index += c;
                                 }
-                                index += c;
-                            }
-                        }, move |err| {
-                            log::error!("Error in media audio output: {:?}", err);
-                        }, None);
+                            },
+                            move |err| {
+                                log::error!("Error in media audio output: {:?}", err);
+                            },
+                            None,
+                        );
                         if let Ok(s) = s {
                             speech_stream = Some((producer, s));
                         }
@@ -488,7 +526,10 @@ impl eframe::App for MyEguiApp {
                     };
                     if let Some(o) = o {
                         let mut i_event = android_auto::Wifi::InputEventIndication::new();
-                        let timestamp: u64 = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as u64;
+                        let timestamp: u64 = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_micros() as u64;
                         i_event.set_timestamp(timestamp);
                         let mut te = android_auto::Wifi::TouchEvent::new();
                         let mut tl = android_auto::Wifi::TouchLocation::new();

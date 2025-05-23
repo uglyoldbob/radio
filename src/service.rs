@@ -6,7 +6,10 @@
 
 use std::{collections::HashSet, io::Read, sync::Arc};
 
-use android_auto::{AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait, AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation, SendableAndroidAutoMessage};
+use android_auto::{
+    AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait, AndroidAutoWirelessTrait,
+    HeadUnitInfo, NetworkInformation,
+};
 use bluetooth_rust::BluetoothAdapterTrait;
 use tokio::io::AsyncReadExt;
 use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings};
@@ -22,8 +25,7 @@ struct MainConfiguration {
 
 /// System specific settings (not set by the user)
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
-struct SystemSettings {
-}
+struct SystemSettings {}
 
 impl SystemSettings {
     /// Load the system settings from the current directory
@@ -86,9 +88,7 @@ impl AndroidAutoService {
                 "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
                 b[0], b[1], b[2], b[3], b[4], b[5]
             );
-            android_auto::BluetoothInformation {
-                address: a,
-            }
+            android_auto::BluetoothInformation { address: a }
         });
 
         #[cfg(feature = "androidauto")]
@@ -179,9 +179,21 @@ fn create_hotspot(
     use wifi_rs::prelude::ManagedWifiHotspotTrait;
     let configuration = wifi_rs::prelude::HotspotConfig::new(None, None);
     log::info!("Attempting to create hotspot {:?} {:?}", name, password);
-    let mut a = wifi
-        .create_managed_hotspot(name, password, Some(&configuration))
-        .ok();
+    let mut a = None;
+    let mut times = 0;
+    loop {
+        a = wifi
+            .create_managed_hotspot(name, password, Some(&configuration))
+            .ok();
+        if a.is_some() {
+            break;
+        }
+        times += 1;
+        if times == 5 {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
     if let Some(a) = &mut a {
         a.start_hotspot().ok()?;
     }
@@ -253,7 +265,8 @@ pub async fn process_app(
                                     packet.send_to_stream(&mut stream).await?;
                                     common2.aauto_service.take();
                                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                                    common2.aauto_service = AndroidAutoService::new(&common2, addr).await.ok();
+                                    common2.aauto_service =
+                                        AndroidAutoService::new(&common2, addr).await.ok();
                                 }
                             }
                         }
@@ -515,16 +528,14 @@ impl AndroidAutoStuff {
             network: Arc::new(network),
             input_config: android_auto::InputConfiguration {
                 touchscreen: Some((800, 480)),
-                keycodes: vec![1,2,3,4,5],
+                keycodes: vec![1, 2, 3, 4, 5],
             },
-            video_config: android_auto::VideoConfiguration { 
+            video_config: android_auto::VideoConfiguration {
                 resolution: android_auto::Wifi::video_resolution::Enum::_480p,
-                fps: android_auto::Wifi::video_fps::Enum::_60, 
+                fps: android_auto::Wifi::video_fps::Enum::_60,
                 dpi: 111,
             },
-            sensors: android_auto::SensorInformation {
-                sensors: s,
-            },
+            sensors: android_auto::SensorInformation { sensors: s },
             bluetooth_config,
         }
     }
@@ -534,29 +545,44 @@ impl AndroidAutoStuff {
 impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
     async fn open_channel(&self, t: android_auto::AudioChannelType) -> Result<(), ()> {
         let s = self.inner.lock().await;
-        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioChannelOpen(t)).await;
+        let _ = s
+            .sendr
+            .send(AndroidAutoMessageFromPhone::AudioChannelOpen(t))
+            .await;
         Ok(())
     }
 
     async fn close_channel(&self, t: android_auto::AudioChannelType) -> Result<(), ()> {
         let s = self.inner.lock().await;
-        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioChannelClose(t)).await;
+        let _ = s
+            .sendr
+            .send(AndroidAutoMessageFromPhone::AudioChannelClose(t))
+            .await;
         Ok(())
     }
 
     async fn receive_audio(&self, t: android_auto::AudioChannelType, data: Vec<u8>) {
         let s = self.inner.lock().await;
-        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioContent(t, data)).await;
+        let _ = s
+            .sendr
+            .send(AndroidAutoMessageFromPhone::AudioContent(t, data))
+            .await;
     }
 
     async fn start_audio(&self, t: android_auto::AudioChannelType) {
         let s = self.inner.lock().await;
-        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioChannelStart(t)).await;
+        let _ = s
+            .sendr
+            .send(AndroidAutoMessageFromPhone::AudioChannelStart(t))
+            .await;
     }
 
     async fn stop_audio(&self, t: android_auto::AudioChannelType) {
         let s = self.inner.lock().await;
-        let _ = s.sendr.send(AndroidAutoMessageFromPhone::AudioChannelStop(t)).await;
+        let _ = s
+            .sendr
+            .send(AndroidAutoMessageFromPhone::AudioChannelStop(t))
+            .await;
     }
 }
 
@@ -647,7 +673,7 @@ impl android_auto::AndroidAutoBluetoothTrait for AndroidAutoStuff {
 
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoSensorTrait for AndroidAutoStuff {
-    fn get_supported_sensors(&self) ->  &android_auto::SensorInformation {
+    fn get_supported_sensors(&self) -> &android_auto::SensorInformation {
         &self.sensors
     }
 
@@ -671,7 +697,7 @@ impl android_auto::AndroidAutoSensorTrait for AndroidAutoStuff {
             }
             let s = self.inner.lock().await;
             let m = android_auto::AndroidAutoMessage::Sensor(m3);
-            s.frame_sender.send(m.sendable()).await.map_err(|_|())?;
+            s.frame_sender.send(m.sendable()).await.map_err(|_| ())?;
             Ok(())
         } else {
             Err(())
@@ -715,11 +741,22 @@ async fn smain() {
 
     android_auto::setup();
 
-    let wifis = wifi_manage::get_wifi_adapters().unwrap();
-    println!("Wifi NAMES:");
-    for w in &wifis {
-        println!("NAME: {}", w);
-    }
+    let mut times_wifi = 0;
+    let wifis = loop {
+        let wifis = wifi_manage::get_wifi_adapters().unwrap();
+        println!("Wifi NAMES:");
+        for w in &wifis {
+            println!("NAME: {}", w);
+        }
+        if !wifis.is_empty() {
+            break wifis;
+        }
+        times_wifi += 1;
+        if times_wifi == 5 {
+            break Vec::new();
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    };
     let main_wifi = wifis.get(0);
 
     let f = tokio::fs::File::open("./service.toml").await;
