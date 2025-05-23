@@ -23,9 +23,6 @@ struct MainConfiguration {
 /// System specific settings (not set by the user)
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 struct SystemSettings {
-    /// The name of the wifi adapter to use for wifi operations
-    #[cfg(feature = "wifi")]
-    wifi_name: String,
 }
 
 impl SystemSettings {
@@ -84,21 +81,20 @@ impl AndroidAutoService {
         let aautochan = tokio::sync::mpsc::channel(5);
 
         let blue_addresses: Vec<[u8; 6]> = com.bluetooth.addresses().await;
-        let bluetooth_address = {
-            let b = blue_addresses[0];
-            format!(
+        let bluetooth_address = blue_addresses.get(0).map(|b| {
+            let a = format!(
                 "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
                 b[0], b[1], b[2], b[3], b[4], b[5]
-            )
-        };
+            );
+            android_auto::BluetoothInformation {
+                address: a,
+            }
+        });
 
         #[cfg(feature = "androidauto")]
         let android_auto_server = android_auto::AndroidAutoServer::new().await;
 
         let config = android_auto::AndroidAutoConfiguration {
-            bluetooth: android_auto::BluetoothInformation {
-                address: bluetooth_address,
-            },
             unit: HeadUnitInfo {
                 name: "UobRadio".to_string(),
                 car_model: "Cherokee".to_string(),
@@ -122,6 +118,7 @@ impl AndroidAutoService {
             aa_chan.0.clone(),
             com.bluetooth.clone(),
             com.aa_network.clone().unwrap(),
+            bluetooth_address,
         );
         android_auto_server
             .run(config, &mut tasks, main)
@@ -483,6 +480,8 @@ struct AndroidAutoStuff {
     inner: Arc<tokio::sync::Mutex<InternalAndroidAutoStuff>>,
     /// The bluetooth reference
     bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
+    /// This is defined if there is actually a bluetooth adapter present
+    bluetooth_config: Option<android_auto::BluetoothInformation>,
     /// The network information
     network: Arc<android_auto::NetworkInformation>,
     /// The input channel config
@@ -500,6 +499,7 @@ impl AndroidAutoStuff {
         frame_sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
         bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
         network: android_auto::NetworkInformation,
+        bluetooth_config: Option<android_auto::BluetoothInformation>,
     ) -> Self {
         let inner = InternalAndroidAutoStuff {
             sendr,
@@ -524,7 +524,8 @@ impl AndroidAutoStuff {
             },
             sensors: android_auto::SensorInformation {
                 sensors: s,
-            }
+            },
+            bluetooth_config,
         }
     }
 }
@@ -592,6 +593,14 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
         Some(self)
     }
 
+    fn supports_bluetooth(&self) -> Option<&dyn android_auto::AndroidAutoBluetoothTrait> {
+        if self.bluetooth_config.is_some() {
+            Some(self)
+        } else {
+            None
+        }
+    }
+
     fn supports_wireless(&self) -> Option<Arc<dyn AndroidAutoWirelessTrait>> {
         Some(Arc::new(self.clone()))
     }
@@ -623,6 +632,16 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     async fn disconnect(&self) {
         let s = self.inner.lock().await;
         let _ = s.sendr.send(AndroidAutoMessageFromPhone::Disconnect).await;
+    }
+}
+
+#[async_trait::async_trait]
+impl android_auto::AndroidAutoBluetoothTrait for AndroidAutoStuff {
+    async fn do_stuff(&self) {}
+    /// This is probably fine because the supports_bluetooth function already checked this
+    /// Removing the bluetooth adapter while the code is running might be problematic here
+    fn get_config(&self) -> &android_auto::BluetoothInformation {
+        self.bluetooth_config.as_ref().unwrap()
     }
 }
 
@@ -696,6 +715,13 @@ async fn smain() {
 
     android_auto::setup();
 
+    let wifis = wifi_manage::get_wifi_adapters().unwrap();
+    println!("Wifi NAMES:");
+    for w in &wifis {
+        println!("NAME: {}", w);
+    }
+    let main_wifi = wifis.get(0);
+
     let f = tokio::fs::File::open("./service.toml").await;
     let settings = if let Ok(mut f) = f {
         let mut config_raw = Vec::new();
@@ -731,9 +757,11 @@ async fn smain() {
     use network_interface::NetworkInterfaceConfig;
     let network_interfaces = network_interface::NetworkInterface::show().unwrap();
     let mut wifi_mac = String::new();
-    for i in network_interfaces {
-        if i.name == sys.wifi_name {
-            wifi_mac = i.mac_addr.unwrap();
+    if let Some(wn) = &main_wifi {
+        for i in network_interfaces {
+            if i.name == **wn {
+                wifi_mac = i.mac_addr.unwrap();
+            }
         }
     }
 
@@ -754,7 +782,7 @@ async fn smain() {
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
-            interface: Some(&sys.wifi_name),
+            interface: main_wifi.map(|x| x.as_str()),
         })),
         #[cfg(feature = "androidauto")]
         aauto_service: None,
