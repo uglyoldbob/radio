@@ -299,13 +299,16 @@ pub async fn process_app(
                     }
                 }
                 uobradio_comms::MessageFromApp::SetBluetoothDiscovery(val) => {
-                    let mut common2 = common.lock().await;
+                    let common2 = common.lock().await;
                     if Some(addr) == common2.blue_addr {
-                        todo!();
-                        //common2.bluetooth.set_discoverable(val).await;
-                        let a = uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val);
-                        let packet = uobradio_comms::MessageToApp::BluetoothMessage(a);
-                        packet.send_to_stream(&mut stream).await?;
+                        if common2.bluetooth.set_discoverable(val).await.is_ok() {
+                            let a = uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val);
+                            let packet = uobradio_comms::MessageToApp::BluetoothMessage(a);
+                            packet.send_to_stream(&mut stream).await?;
+                        }
+                        else {
+                            log::error!("Failed to change bluetooth discoverable to {}", val);
+                        }
                     }
                 }
                 uobradio_comms::MessageFromApp::RequestBluetoothControl => {
