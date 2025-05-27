@@ -369,6 +369,7 @@ impl UobRadio {
                                         );
                                         return Err("Invalid packet received".to_string());
                                     }
+                                    log::info!("Parsing packet {:?}", packet);
                                     match &packet {
                                         MessageToApp::AndroidAutoMessage(m) => {
                                             match m {
@@ -530,9 +531,9 @@ impl UobRadio {
             let m2 = aauto::AndroidAutoMessageToPhone::Message(
                 p.sendable(),
             );
-            let _ = self.send_packet(
-                MessageFromApp::AndroidAutoMessage(m2),
-            );
+            //let _ = self.send_packet(
+            //    MessageFromApp::AndroidAutoMessage(m2),
+            //);
         }
     }
 
@@ -754,17 +755,27 @@ pub struct NonvolatileSettings {
 
 impl NonvolatileSettings {
     /// Save the non-volatile settings to the current directory
-    pub fn save(&self) {
+    pub fn save(&self, path_override: &Option<std::path::PathBuf>) {
         let d = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
-        let f = std::fs::File::create("./settings.bin");
+        let f = if let Some(p) = path_override {
+            std::fs::File::create(p)
+        }
+        else {
+            std::fs::File::create("./settings.bin")
+        };
         if let Ok(mut f) = f {
             let _ = f.write_all(&d);
         }
     }
 
     /// Load the nonvolatile settings from the current directory
-    pub fn load() -> Self {
-        let f = std::fs::File::open("./settings.bin");
+    pub fn load(path_override: &Option<std::path::PathBuf>) -> Self {
+        let f = if let Some(p) = path_override {
+            std::fs::File::open(p)
+        }
+        else {
+            std::fs::File::open("./settings.bin")
+        };
         if let Ok(mut f) = f {
             let mut contents = Vec::new();
             let _ = f.read_to_end(&mut contents);
@@ -773,10 +784,12 @@ impl NonvolatileSettings {
                 s
             }
             else {
+                log::error!("Failure reading nonvolatile settings");
                 Self::default()
             }
         }
         else {
+            log::error!("Nonvolatile settings do not exist");
             Self::default()
         }
     }

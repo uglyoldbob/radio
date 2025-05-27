@@ -8,7 +8,6 @@ mod wifi;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::{
     egui::{self, Vec2},
-    glow::PACK_COMPRESSED_BLOCK_SIZE,
 };
 use ringbuf::traits::{Consumer, Observer, Producer};
 use uobradio_comms::PendingAudioCommand;
@@ -398,6 +397,7 @@ impl eframe::App for MyEguiApp {
                             image.write_rgb8(&mut rgb_raw);
                             let (w, h) = image.dimensions_uv();
                             let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
+                            log::info!("Received image size {}x{}", w, h);
                             let image = egui::ColorImage {
                                 size: [w * 2usize, h * 2usize],
                                 pixels: ei.get_egui(),

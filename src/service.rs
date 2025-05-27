@@ -4,11 +4,10 @@
 
 //! This program is for handling the video and audio components for the radio
 
-use std::{collections::HashSet, io::Read, sync::Arc};
+use std::{collections::HashSet, io::Read, path::PathBuf, sync::Arc};
 
 use android_auto::{
-    AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait, AndroidAutoWirelessTrait,
-    HeadUnitInfo, NetworkInformation,
+    AndroidAutoAudioInputTrait, AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait, AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation
 };
 use bluetooth_rust::BluetoothAdapterTrait;
 use tokio::io::AsyncReadExt;
@@ -22,6 +21,15 @@ struct MainConfiguration {
     /// The desired minimum debug level
     debug_level: Option<service::LogLevel>,
 }
+
+/// The optional command line arguments for the service
+#[derive(clap::Parser, Debug)]
+struct Arguments {
+    /// Specify the actual location for the non-volatile configuratio file
+    #[arg(long)]
+    nvconfig: Option<PathBuf>,
+}
+
 
 /// System specific settings (not set by the user)
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
@@ -138,6 +146,8 @@ impl AndroidAutoService {
 
 /// The common data for an app user
 pub struct AppUserCommon {
+    /// The command line arguments specify any additional options required
+    args: Arguments,
     #[cfg(feature = "androidauto")]
     /// The android auto service
     aauto_service: Option<AndroidAutoService>,
@@ -212,7 +222,7 @@ pub async fn process_app(
     use tokio::io::AsyncReadExt;
     use uobradio_comms::MessageToApp;
 
-    println!("Processing an app at {:?}", addr);
+    log::info!("Processing an app at {:?}", addr);
 
     let mut send_passkey_response = None;
 
@@ -222,10 +232,11 @@ pub async fn process_app(
             .await
             .map_err(|e| format!("Error reading packet length: {}", e))?;
         let mut packet = vec![0; length as usize];
-        stream
-            .read_exact(&mut packet)
-            .await
-            .map_err(|e| format!("Error reading packet of length {}: {}", length, e))?;
+        let mut index = 0;
+        while index < length {
+            let l = stream.read(&mut packet[index as usize..]).await.map_err(|e| format!("Error reading packet data: {}", e))?;
+            index += l as u32;
+        }
         let packet: Result<(uobradio_comms::MessageFromApp, usize), bincode::error::DecodeError> =
             bincode::serde::decode_from_slice(&packet, bincode::config::standard());
         if let Ok((packet, _length)) = packet {
@@ -241,13 +252,13 @@ pub async fn process_app(
                                 send_passkey_response = Some(sender.clone());
                             }
                             bluetooth_rust::MessageToBluetoothHost::CancelDisplayPasskey => {
-                                println!("Cancel display passkey");
+                                log::info!("Cancel display passkey");
                                 send_passkey_response.take();
                             }
                         }
                         let packet = MessageToApp::BluetoothMessage(m.into());
                         packet.send_to_stream(&mut stream).await?;
-                        println!("Sent bluetooth message to bluetooth master");
+                        log::info!("Sent bluetooth message to bluetooth master");
                     }
                 }
             }
@@ -259,7 +270,6 @@ pub async fn process_app(
                         if let Some(aauto) = &common2.aauto_service {
                             if addr == aauto.addr {
                                 if let Err(e) = aauto.sender.send(m).await {
-                                    log::error!("Closing android auto sender now: {:?}", e);
                                     let m = uobradio_comms::aauto::AndroidAutoMessageFromPhone::Disconnect;
                                     let packet = MessageToApp::AndroidAutoMessage(m);
                                     packet.send_to_stream(&mut stream).await?;
@@ -275,8 +285,12 @@ pub async fn process_app(
                 uobradio_comms::MessageFromApp::RequestAndroidAutoControl => {
                     let mut common = common.lock().await;
                     let r = if common.aauto_service.is_none() {
-                        println!("Setting {:?} as android auto master", addr);
-                        common.aauto_service = AndroidAutoService::new(&common, addr).await.ok();
+                        log::info!("Setting {:?} as android auto master", addr);
+                        let r = AndroidAutoService::new(&common, addr).await;
+                        if let Err(e) = &r {
+                            log::error!("Error starting android auto service: {}", e);
+                        }
+                        common.aauto_service = r.ok();
                         common.aauto_service.is_some()
                     } else {
                         false
@@ -314,13 +328,14 @@ pub async fn process_app(
                 uobradio_comms::MessageFromApp::RequestBluetoothControl => {
                     let mut common = common.lock().await;
                     let r = if common.blue_addr.is_none() {
-                        println!("Setting {:?} as bluetooth master", addr);
+                        log::info!("Setting {:?} as bluetooth master", addr);
                         common.blue_addr = Some(addr);
                         true
                     } else {
                         false
                     };
                     let packet = uobradio_comms::MessageToApp::BluetoothHandlerResult(r);
+                    log::info!("Sending bluetooth response {:?}", packet);
                     packet.send_to_stream(&mut stream).await?;
                 }
                 uobradio_comms::MessageFromApp::RequestSettings => {
@@ -334,7 +349,7 @@ pub async fn process_app(
                     #[cfg(feature = "wifi")]
                     let mut change_hotspot = false;
                     common2.settings = s;
-                    common2.settings.save();
+                    common2.settings.save(&common2.args.nvconfig);
                     #[cfg(feature = "wifi")]
                     if common2.old_settings.hotspot_enabled != common2.settings.hotspot_enabled {
                         common2.old_settings.hotspot_enabled =
@@ -387,19 +402,19 @@ pub async fn process_app(
                 }
                 uobradio_comms::MessageFromApp::GpioControl(gpio) => match gpio {
                     uobradio_comms::Gpio::WinchControl(f, r) => {
-                        println!("Winch control {} {}", f, r)
+                        log::info!("Winch control {} {}", f, r)
                     }
                     uobradio_comms::Gpio::CameraLedControl(i, s) => {
-                        println!("Camera led {} to {}", i, s)
+                        log::info!("Camera led {} to {}", i, s)
                     }
                     uobradio_comms::Gpio::LockDoors => {
-                        println!("Received request to lock all doors")
+                        log::info!("Received request to lock all doors")
                     }
                     uobradio_comms::Gpio::UnlockDoors => {
-                        println!("Recieved request to unlock all doors")
+                        log::info!("Recieved request to unlock all doors")
                     }
                     uobradio_comms::Gpio::WindowControl { id, up, down } => {
-                        println!("Window {} {}/{}", id, up, down)
+                        log::info!("Window {} {}/{}", id, up, down)
                     }
                 },
             }
@@ -413,7 +428,7 @@ pub async fn process_app(
                 }
             }
         } else {
-            println!("Failed to process packet");
+            log::error!("Failed to process packet");
             return Err("Received bad packet".to_string());
         }
     }
@@ -422,17 +437,17 @@ pub async fn process_app(
 /// Start the udp listener, responsible for making a radio discoverable on the network.
 async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let socket = tokio::net::UdpSocket::bind("0.0.0.0:13456").await.unwrap();
-    println!("Starting radio listener");
+    log::info!("Starting radio listener");
     let mut response = vec![0; 1500];
     loop {
         log::info!("Waiting for a udp client");
         while let Ok((n, addr)) = socket.recv_from(&mut response).await {
-            println!("Got request from {:?} {} {:x?}", addr, n, &response[0..n]);
+            log::info!("Got request from {:?} {} {:x?}", addr, n, &response[0..n]);
             let packet =
                 bincode::serde::decode_from_slice(&response[0..n], bincode::config::standard());
             if let Ok((packet, _len)) = packet {
                 if let uobradio_comms::MessageFromApp::Ping(val) = packet {
-                    println!("got ping packet {}", val);
+                    log::info!("got ping packet {}", val);
                     let response = bincode::serde::encode_to_vec(
                         uobradio_comms::MessageToApp::PingReply(13457),
                         bincode::config::standard(),
@@ -441,7 +456,7 @@ async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result
                     let _ = socket.send_to(&response, addr).await;
                 }
             } else {
-                println!("invalid packet received {:x?}", response);
+                log::info!("invalid packet received {:x?}", response);
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -451,12 +466,13 @@ async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result
 /// Run the tcp listener for a radio, reporting an error if anything went wront setting up the service
 async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
+    let mut set = tokio::task::JoinSet::new();
     if let Ok(tcp) = tcp {
         loop {
             log::info!("Waiting for a tcp client");
             if let Ok((stream, addr)) = tcp.accept().await {
                 let common2 = common.clone();
-                tokio::task::spawn(async move {
+                set.spawn(async move {
                     log::info!("Got a tcp client {:?}", addr);
                     let r = process_app(stream, addr, common2.clone()).await;
                     let mut common3 = common2.lock().await;
@@ -601,6 +617,22 @@ impl android_auto::AndroidAutoInputChannelTrait for AndroidAutoStuff {
 }
 
 #[async_trait::async_trait]
+impl android_auto::AndroidAutoAudioInputTrait for AndroidAutoStuff {
+    async fn open_channel(&self) -> Result<(), ()> {
+        Ok(())
+    }
+    async fn close_channel(&self) -> Result<(), ()> {
+        Ok(())
+    }
+    async fn start_audio(&self) {
+        log::error!("Start audio input channel");
+    }
+    async fn stop_audio(&self) {
+        log::error!("Stop audio input channel");
+    }
+}
+
+#[async_trait::async_trait]
 impl android_auto::AndroidAutoWirelessTrait for AndroidAutoStuff {
     async fn setup_bluetooth_profile(
         &self,
@@ -639,6 +671,10 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     }
 
     fn supports_audio_output(&self) -> Option<&dyn AndroidAutoAudioOutputTrait> {
+        Some(self)
+    }
+
+    fn supports_audio_input(&self) -> Option<&dyn AndroidAutoAudioInputTrait> {
         Some(self)
     }
 
@@ -742,14 +778,15 @@ async fn smain() {
         }))
     }
 
+    let args = <Arguments as clap::Parser>::parse();
     android_auto::setup();
 
     let mut times_wifi = 0;
     let wifis = loop {
         let wifis = wifi_manage::get_wifi_adapters().unwrap();
-        println!("Wifi NAMES:");
+        log::info!("Wifi NAMES:");
         for w in &wifis {
-            println!("NAME: {}", w);
+            log::info!("NAME: {}", w);
         }
         if !wifis.is_empty() {
             break wifis;
@@ -786,7 +823,7 @@ async fn smain() {
     if let Ok(d) = uobradio_comms::v4l::Device::new(0) {
         vs.push(video_service::Video::video_start(d));
     }
-    let s = NonvolatileSettings::load();
+    let s = NonvolatileSettings::load(&args.nvconfig);
     let sys = SystemSettings::load();
     #[cfg(feature = "bluetooth")]
     let bluechan = tokio::sync::mpsc::channel(5);
@@ -797,6 +834,11 @@ async fn smain() {
     use network_interface::NetworkInterfaceConfig;
     let network_interfaces = network_interface::NetworkInterface::show().unwrap();
     let mut wifi_mac = String::new();
+    if let Some(wn) = &main_wifi {
+        for i in &network_interfaces {
+            log::info!("Mac address of {} is {:?}", i.name, i.mac_addr);
+        }
+    }
     if let Some(wn) = &main_wifi {
         for i in network_interfaces {
             if i.name == **wn {
@@ -820,6 +862,7 @@ async fn smain() {
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
+        args,
         #[cfg(feature = "wifi")]
         wifi: wifi_rs::WiFi::new(Some(wifi_rs::prelude::Config {
             interface: main_wifi.map(|x| x.as_str()),
