@@ -473,6 +473,14 @@
     [
       "4b0e38f8-0545-4630-a4e7-b4bc971d69db",
       "ComExpressCarrier"
+    ],
+    [
+      "149be431-6bcf-47f2-89b6-841603a90e62",
+      "audio"
+    ],
+    [
+      "272ea5e2-5c94-4003-b4e8-57cdd589f977",
+      "4GCard"
     ]
   ],
   "text_variables": {}
