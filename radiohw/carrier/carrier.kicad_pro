@@ -483,6 +483,10 @@
       "4GCard"
     ],
     [
+      "33517bd9-e7dd-44fa-ac2e-77584ec837ef",
+      "DualAudioSpeakerDriver1"
+    ],
+    [
       "a39aa4ab-ebe8-4aa2-a7a0-3c4c2590bc70",
       "wireless"
     ],
@@ -493,6 +497,14 @@
     [
       "698ba119-27a8-42a1-b2fe-6b0b56beeebe",
       "storage"
+    ],
+    [
+      "a717103a-e0e2-4e93-871e-33d7706ddd8a",
+      "DualAudioSpeakerDriver"
+    ],
+    [
+      "fe8c9a0a-8930-4681-a5fc-90e0f6ddd711",
+      "DualAudioSpeakerDriver2"
     ]
   ],
   "text_variables": {}
