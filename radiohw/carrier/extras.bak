@@ -12,6 +12,9 @@
     (property "Datasheet" "" (at -2.54 0 0)
       (effects (font (size 1.27 1.27)) hide)
     )
+    (property "ki_description" "ESD Protection Diode Array, 5-Line" (at 0 0 0)
+      (effects (font (size 1.27 1.27)) hide)
+    )
     (symbol "ONSEMI-SZSMF12CT1G_0_1"
       (polyline
         (pts

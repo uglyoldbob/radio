@@ -481,6 +481,18 @@
     [
       "272ea5e2-5c94-4003-b4e8-57cdd589f977",
       "4GCard"
+    ],
+    [
+      "a39aa4ab-ebe8-4aa2-a7a0-3c4c2590bc70",
+      "wireless"
+    ],
+    [
+      "a42a7049-6570-4c00-b4c9-98c1e7b290e8",
+      "GPIO"
+    ],
+    [
+      "698ba119-27a8-42a1-b2fe-6b0b56beeebe",
+      "storage"
     ]
   ],
   "text_variables": {}
