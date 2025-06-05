@@ -99,7 +99,7 @@ impl Video {
             })
             .collect();
         std::thread::spawn(move || {
-            let mut grab_images = true;
+            let mut grab_images = false;
             fmt.width = 320;
             fmt.height = 240;
             fmt.fourcc = FourCC::new(b"YUYV");

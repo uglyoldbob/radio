@@ -4,14 +4,14 @@
 
 //! This program is for handling the video and audio components for the radio
 
-use std::{collections::HashSet, io::Read, path::PathBuf, sync::Arc};
+use std::{collections::{BTreeMap, HashSet}, io::Read, path::PathBuf, sync::Arc};
 
 use android_auto::{
     AndroidAutoAudioInputTrait, AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait, AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation
 };
 use bluetooth_rust::BluetoothAdapterTrait;
 use tokio::io::AsyncReadExt;
-use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings};
+use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings, WifiConfig};
 use video_service::VideoSource;
 
 mod video_service;
@@ -33,7 +33,14 @@ struct Arguments {
 
 /// System specific settings (not set by the user)
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
-struct SystemSettings {}
+struct SystemSettings {
+    /// The gpio setup for all the lights in the system
+    lights: Vec<(String, u32)>,
+    /// The gpio setup for auxilliary outputs
+    aux_outs: Vec<(String, u32)>,
+    /// The gpio setup for auxilliary inputs
+    aux_ins: Vec<(String, u32)>,
+}
 
 impl SystemSettings {
     /// Load the system settings from the current directory
@@ -160,8 +167,8 @@ pub struct AppUserCommon {
     /// Used for wifi operations
     wifi: wifi_rs::WiFi,
     #[cfg(feature = "wifi")]
-    /// The optional wifi hotspot (if enabled by the user)
-    hotspot: Option<wifi_rs::prelude::ManagedWifiHotspot>,
+    /// The wifi setup
+    wifi_setup: Option<uobradio_comms::WifiMode>,
     #[cfg(feature = "bluetooth")]
     /// The main bluetooth struct
     bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
@@ -263,6 +270,17 @@ pub async fn process_app(
                 }
             }
             match packet {
+                uobradio_comms::MessageFromApp::ExternalRadio(rc) => match rc {
+                    uobradio_comms::RadioCommand::StartTransmission => {
+                        log::info!("Start external radio transmission");
+                    }
+                    uobradio_comms::RadioCommand::StopTransmission => {
+                        log::info!("Stop external radio transmission");
+                    }
+                    uobradio_comms::RadioCommand::TransmissionDataPartial(d) => {
+                        log::info!("Process {} bytes of radio transmission data", d.len());
+                    }
+                }
                 uobradio_comms::MessageFromApp::AndroidAutoMessage(m) => match m {
                     uobradio_comms::aauto::AndroidAutoMessageToPhone::Test => todo!(),
                     uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(m) => {
@@ -346,23 +364,19 @@ pub async fn process_app(
                 }
                 uobradio_comms::MessageFromApp::NewSettings(s) => {
                     let mut common2 = common.lock().await;
-                    #[cfg(feature = "wifi")]
-                    let mut change_hotspot = false;
                     common2.settings = s;
                     common2.settings.save(&common2.args.nvconfig);
                     #[cfg(feature = "wifi")]
                     if common2.old_settings.hotspot_enabled != common2.settings.hotspot_enabled {
                         common2.old_settings.hotspot_enabled =
                             common2.settings.hotspot_enabled.clone();
-                        change_hotspot = true;
-                    }
-                    #[cfg(feature = "wifi")]
-                    if change_hotspot {
-                        let hotspot = common2.settings.hotspot_enabled.clone();
-                        if let Some((n, p)) = hotspot {
-                            common2.hotspot = create_hotspot(&mut common2.wifi, &n, &p);
-                        } else {
-                            common2.hotspot = None;
+                        if let WifiConfig::Hotspot = common2.settings.wifi_config {
+                            let hotspot = common2.settings.hotspot_enabled.clone();
+                            if let Some((n, p)) = hotspot {
+                                common2.wifi_setup = create_hotspot(&mut common2.wifi, &n, &p).map(|a| uobradio_comms::WifiMode::Hotspot(a));
+                            } else {
+                                common2.wifi_setup = None;
+                            }
                         }
                     }
                 }
@@ -401,6 +415,18 @@ pub async fn process_app(
                     }
                 }
                 uobradio_comms::MessageFromApp::GpioControl(gpio) => match gpio {
+                    uobradio_comms::Gpio::AuxOutput(id, v) => {
+                        log::info!("Set aux output {} to {}", id, v);
+                    }
+                    uobradio_comms::Gpio::GetAuxInput(id) => {
+                        log::info!("Request for aux input {}", id);
+                    }
+                    uobradio_comms::Gpio::InverterPower(p) => {
+                        log::info!("Set inverter power to {}", p);
+                    }
+                    uobradio_comms::Gpio::LightControl(id, v) => {
+                        log::info!("Set light output {} to {}", id, v);
+                    }
                     uobradio_comms::Gpio::WinchControl(f, r) => {
                         log::info!("Winch control {} {}", f, r)
                     }
@@ -551,7 +577,7 @@ impl AndroidAutoStuff {
             },
             video_config: android_auto::VideoConfiguration {
                 resolution: android_auto::Wifi::video_resolution::Enum::_480p,
-                fps: android_auto::Wifi::video_fps::Enum::_60,
+                fps: android_auto::Wifi::video_fps::Enum::_30,
                 dpi: 111,
             },
             sensors: android_auto::SensorInformation { sensors: s },
@@ -873,7 +899,7 @@ async fn smain() {
         aa_network: network,
         system: sys,
         #[cfg(feature = "wifi")]
-        hotspot: None,
+        wifi_setup: None,
         #[cfg(feature = "bluetooth")]
         bluetooth: bluetooth.clone(),
         #[cfg(feature = "bluetooth")]
@@ -887,9 +913,21 @@ async fn smain() {
 
     {
         let mut common2 = common.lock().await;
-        let hotspot = common2.settings.hotspot_enabled.clone();
-        if let Some((n, p)) = hotspot {
-            common2.hotspot = create_hotspot(&mut common2.wifi, &n, &p);
+        match common2.settings.wifi_config {
+            WifiConfig::Hotspot => {
+                let hotspot = common2.settings.hotspot_enabled.clone();
+                if let Some((n, p)) = hotspot {
+                    common2.wifi_setup = create_hotspot(&mut common2.wifi, &n, &p).map(|a| uobradio_comms::WifiMode::Hotspot(a));
+                }
+            }
+            WifiConfig::RegularNetwork => {
+                let c = common2.settings.wifi_network.clone();
+                if let Some((n, p)) = c {
+                    common2.wifi_setup = todo!();
+                }
+            }
+            WifiConfig::Scanning => {}
+            WifiConfig::Disabled => unimplemented!(),
         }
     }
 

@@ -28,6 +28,45 @@ pub enum RadioReceiveStatus {
     GotPacket(Vec<u8>),
 }
 
+/// A managed wifi connection, automatically disconnecting when dropped
+struct ManagedWifiConnection {
+}
+
+impl ManagedWifiConnection {
+    /// Create a new managed wifi connection
+    pub fn new() -> Option<Self> {
+        Some(Self {
+        })
+    }
+}
+
+impl Drop for ManagedWifiConnection {
+    fn drop(&mut self) {
+    }
+}
+
+/// The mode of operation for wifi
+pub enum WifiMode {
+    /// The local wifi devices creates a hotspot
+    Hotspot(wifi_rs::prelude::ManagedWifiHotspot),
+    /// The local wifi adapter connects to an existing wifi network
+    RegularNetwork(ManagedWifiConnection),
+}
+
+/// Specifies what mode the wifi card should be in
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+pub enum WifiConfig {
+    /// Hotspot
+    Hotspot,
+    /// The local wifi adapter connects to an existing wifi network
+    RegularNetwork,
+    /// The wifi card should be scanning
+    Scanning,
+    /// The wifi card shoulde be disabled
+    #[default]
+    Disabled,
+}
+
 /// The port to listen to for udp communication
 const UDP_PORT: u16 = 13456;
 
@@ -197,6 +236,25 @@ pub enum Gpio {
         /// Make the window go down. Up and down at the same time is invalid
         down: bool, 
     },
+    /// Light control (light id and whether to enable or disable the light)
+    LightControl(u8, bool),
+    /// Control inverter main power
+    InverterPower(bool),
+    /// Control an auxiliary output
+    AuxOutput(u8, bool),
+    /// Retrieve the value of an auxiliarry input
+    GetAuxInput(u8),
+}
+
+/// Commands for an external radio attached to the radio
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum RadioCommand {
+    /// Start a transmission
+    StartTransmission,
+    /// Stop a transmission
+    StopTransmission,
+    /// Data to transmit
+    TransmissionDataPartial(Vec<u8>),
 }
 
 /// A message that can be sent from an app. 
@@ -226,6 +284,8 @@ pub enum MessageFromApp {
     BluetoothMessage(bluetooth_rust::MessageFromBluetoothHost),
     /// A generic android auto command to the "phone"
     AndroidAutoMessage(aauto::AndroidAutoMessageToPhone),
+    /// A command to operate the external radio
+    ExternalRadio(RadioCommand),
 }
 
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};
@@ -369,7 +429,6 @@ impl UobRadio {
                                         );
                                         return Err("Invalid packet received".to_string());
                                     }
-                                    log::info!("Parsing packet {:?}", packet);
                                     match &packet {
                                         MessageToApp::AndroidAutoMessage(m) => {
                                             match m {
@@ -379,6 +438,7 @@ impl UobRadio {
                                                 }
                                                 aauto::AndroidAutoMessageFromPhone::AudioChannelStart(c) => {
                                                     if let Some(aauto) = &mut self.aauto {
+                                                        log::info!("Audio channel start {:?}", c);
                                                         let i = match c {
                                                             AudioChannelType::Media => 0,
                                                             AudioChannelType::Speech => 1,
@@ -389,6 +449,7 @@ impl UobRadio {
                                                 }
                                                 aauto::AndroidAutoMessageFromPhone::AudioChannelStop(c) => {
                                                     if let Some(aauto) = &mut self.aauto {
+                                                        log::info!("Audio channel stop {:?}", c);
                                                         let i = match c {
                                                             AudioChannelType::Media => 0,
                                                             AudioChannelType::Speech => 1,
@@ -400,6 +461,7 @@ impl UobRadio {
                                                 }
                                                 aauto::AndroidAutoMessageFromPhone::AudioContent(c, data) => {
                                                     if let Some(aauto) = &mut self.aauto {
+                                                        log::info!("Audio channel data {:?} {}", c, data.len());
                                                         let i = match c {
                                                             AudioChannelType::Media => 0,
                                                             AudioChannelType::System => 1,
@@ -751,6 +813,12 @@ pub struct NonvolatileSettings {
     #[cfg(feature = "wifi")]
     /// Optional wifi name and password for wifi hotspot
     pub hotspot_enabled: Option<(String, String)>,
+    #[cfg(feature = "wifi")]
+    /// Optional wifi name and password for regular wifi network
+    pub wifi_network: Option<(String, String)>,
+    #[cfg(feature = "wifi")]
+    /// The wifi configuration
+    pub wifi_config: WifiConfig,
 }
 
 impl NonvolatileSettings {

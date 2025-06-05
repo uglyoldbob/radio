@@ -5056,6 +5056,7 @@ dependencies = [
  "serde",
  "tokio",
  "v4l",
+ "wifi-rs",
 ]
 
 [[package]]
