@@ -26,8 +26,7 @@ simple_logger = "5.0.0"
 tokio = { version = "1.40.0", features = ["full"] }
 toml = "0.8.20"
 uobradio-comms = { path = "./uobradio-comms" }
-wifi-manage = { path = "./wifi-manage", version = "0.1.0" }
-wifi-rs = { path = "./wifi-rs", version = "0.2.4", optional = true }
+wifi-manage = { path = "./wifi-manage", version = "0.1.0", optional=true }
 
 [dependencies.service]
 path = "./service/service"
@@ -43,7 +42,7 @@ path = "src/main.rs"
 
 [features]
 default = ["wifi", "bluetooth", "androidauto"]
-wifi = ["dep:qrcode", "dep:wifi-rs", "uobradio-comms/wifi"]
+wifi = ["dep:qrcode", "dep:wifi-manage", "uobradio-comms/wifi"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]
 androidauto = ["dep:android-auto", "uobradio-comms/androidauto"]
 

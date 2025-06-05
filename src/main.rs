@@ -6,9 +6,7 @@ mod video;
 mod wifi;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use eframe::{
-    egui::{self, Vec2},
-};
+use eframe::egui::{self, Vec2};
 use ringbuf::traits::{Consumer, Observer, Producer};
 use uobradio_comms::PendingAudioCommand;
 

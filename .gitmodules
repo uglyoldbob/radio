@@ -7,9 +7,6 @@
 [submodule "webpki"]
 	path = webpki
 	url = https://github.com/uglyoldbob/webpki.git
-[submodule "wifi-rs"]
-	path = wifi-rs
-	url = https://github.com/uglyoldbob/wifi-rs.git
 [submodule "service"]
 	path = service
 	url = https://github.com/uglyoldbob/service.git

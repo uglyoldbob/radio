@@ -28,33 +28,16 @@ pub enum RadioReceiveStatus {
     GotPacket(Vec<u8>),
 }
 
-/// A managed wifi connection, automatically disconnecting when dropped
-struct ManagedWifiConnection {
-}
-
-impl ManagedWifiConnection {
-    /// Create a new managed wifi connection
-    pub fn new() -> Option<Self> {
-        Some(Self {
-        })
-    }
-}
-
-impl Drop for ManagedWifiConnection {
-    fn drop(&mut self) {
-    }
-}
-
 /// The mode of operation for wifi
 pub enum WifiMode {
     /// The local wifi devices creates a hotspot
-    Hotspot(wifi_rs::prelude::ManagedWifiHotspot),
+    Hotspot(wifi_manage::WifiHotspot),
     /// The local wifi adapter connects to an existing wifi network
-    RegularNetwork(ManagedWifiConnection),
+    RegularNetwork(wifi_manage::WifiConnection),
 }
 
 /// Specifies what mode the wifi card should be in
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum WifiConfig {
     /// Hotspot
     Hotspot,
