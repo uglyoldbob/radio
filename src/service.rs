@@ -171,7 +171,7 @@ pub struct AppUserCommon {
     aa_network: Option<NetworkInformation>,
     #[cfg(feature = "wifi")]
     /// Used for wifi operations
-    wifi: Option<wifi_manage::WifiAdapter>,
+    wifi: Option<std::sync::Arc<wifi_manage::WifiAdapter>>,
     #[cfg(feature = "wifi")]
     /// The wifi setup
     wifi_setup: Option<uobradio_comms::WifiMode>,
@@ -231,17 +231,21 @@ pub async fn process_app(
 
     log::info!("Processing an app at {:?}", addr);
 
+    let (mut streamr, mut streamw) = stream.into_split();
+
+    let mut streamw = std::sync::Arc::new(tokio::sync::Mutex::new(streamw));
+
     let mut send_passkey_response = None;
 
     loop {
-        let length = stream
+        let length = streamr
             .read_u32()
             .await
             .map_err(|e| format!("Error reading packet length: {}", e))?;
         let mut packet = vec![0; length as usize];
         let mut index = 0;
         while index < length {
-            let l = stream
+            let l = streamr
                 .read(&mut packet[index as usize..])
                 .await
                 .map_err(|e| format!("Error reading packet data: {}", e))?;
@@ -267,7 +271,7 @@ pub async fn process_app(
                             }
                         }
                         let packet = MessageToApp::BluetoothMessage(m.into());
-                        packet.send_to_stream(&mut stream).await?;
+                        packet.send_to_stream(&streamw).await?;
                         log::info!("Sent bluetooth message to bluetooth master");
                     }
                 }
@@ -282,46 +286,83 @@ pub async fn process_app(
                                 let ssid = wifi_hotspot.ssid();
                                 let password = wifi_hotspot.password();
                                 let packet = MessageToApp::WifiDetails { ssid, password };
-                                packet.send_to_stream(&mut stream).await?;
+                                packet.send_to_stream(&streamw).await?;
                             }
                             uobradio_comms::WifiMode::RegularNetwork(wifi_connection) => todo!(),
                         }
                     }
                 }
                 uobradio_comms::MessageFromApp::ConnectToNetwork(ssid, password) => {
-                    let mut common2 = common.lock().await;
-                    common2.wifi_setup.take();
-                    if let Some(wifi) = &common2.wifi {
-                        if let Some(p) = password {
-                            log::info!("Start connect to wifi {}", ssid);
-                            match wifi.connect_to_network(&ssid, &ssid, &p) {
-                                Ok(wifi) => {
-                                    log::info!("Connected to wifi network {}", ssid);
-                                    common2.wifi_setup =
-                                        Some(uobradio_comms::WifiMode::RegularNetwork(wifi));
-                                    let packet = MessageToApp::ConnectedToWifiNetwork { ssid, password: p, };
-                                        packet.send_to_stream(&mut stream).await?;
+                    let wifi = {
+                        let mut common2 = common.lock().await;
+                        common2.wifi_setup.take();
+                        let wifi = 
+                        if let Some(wifi) = &common2.wifi {
+                            Some(wifi.clone())
+                        } else {
+                            None
+                        };
+                        wifi
+                    };
+                    let common2 = common.clone();
+                    let stream2w = streamw.clone();
+                    tokio::task::spawn(async move {
+                        if let Some(wifi) = wifi {
+                            if let Some(p) = password {
+                                log::info!("Start connect to wifi {}", ssid);
+                                let ssid2 = ssid.clone();
+                                let p2 = p.clone();
+                                let a = tokio::task::spawn_blocking(move || {
+                                    wifi.connect_to_network(&ssid2, &ssid2, &p2)
+                                }).await.expect("Failed to run task to connect to wifi");
+                                match a {
+                                    Ok(wifi) => {
+                                        log::info!("Connected to wifi network {}", ssid);
+                                        let mut common2 = common2.lock().await;
+                                        common2.wifi_setup =
+                                            Some(uobradio_comms::WifiMode::RegularNetwork(wifi));
+                                        let packet = MessageToApp::ConnectedToWifiNetwork { ssid, password: p, };
+                                        packet.send_to_stream(&stream2w).await?;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Error connecting to {}: {:?}", ssid, e);
+                                    }
                                 }
-                                Err(e) => {
-                                    log::error!("Error connecting to {}: {:?}", ssid, e);
-                                }
+                            }
+                            else {
+                                log::error!("No password for wifi defined");
                             }
                         }
                         else {
-                            log::error!("No password for wifi defined");
                         }
-                    }
-                    else {
-                        log::error!("No wifi adapter for connection?");
-                    }
+                        Ok::<(), String>(())
+                    });
                 }
                 uobradio_comms::MessageFromApp::ScanForWifiNetworks => {
-                    let common2 = common.lock().await;
-                    if let Some(wifi) = &common2.wifi {
-                        let wifis = wifi.scan_for_networks();
-                        let packet = MessageToApp::WifiList(wifis);
-                        packet.send_to_stream(&mut stream).await?;
-                    }
+                    let wifi = {
+                        let mut common2 = common.lock().await;
+                        common2.wifi_setup.take();
+                        let wifi = 
+                        if let Some(wifi) = &common2.wifi {
+                            Some(wifi.clone())
+                        } else {
+                            None
+                        };
+                        wifi
+                    };
+                    let stream2w = streamw.clone();
+                    tokio::task::spawn(async move {
+                        if let Some(wifi) = wifi {
+                            log::info!("Scanning for wifi networks");
+                            let wifis = tokio::task::spawn_blocking(move || {
+                                wifi.scan_for_networks()
+                            }).await.expect("Failed to run task to scan for wifi");
+                            log::info!("Done scanning for wifi networks");
+                            let packet = MessageToApp::WifiList(wifis);
+                            packet.send_to_stream(&stream2w).await?;
+                        }
+                        Ok::<(), String>(())
+                    });
                 }
                 uobradio_comms::MessageFromApp::ExternalRadio(rc) => match rc {
                     uobradio_comms::RadioCommand::StartTransmission => {
@@ -343,7 +384,7 @@ pub async fn process_app(
                                 if let Err(e) = aauto.sender.send(m).await {
                                     let m = uobradio_comms::aauto::AndroidAutoMessageFromPhone::Disconnect;
                                     let packet = MessageToApp::AndroidAutoMessage(m);
-                                    packet.send_to_stream(&mut stream).await?;
+                                    packet.send_to_stream(&streamw).await?;
                                     common2.aauto_service.take();
                                     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                                     common2.aauto_service =
@@ -367,7 +408,7 @@ pub async fn process_app(
                         false
                     };
                     let packet = uobradio_comms::MessageToApp::AndroidAutoHandlerResult(r);
-                    packet.send_to_stream(&mut stream).await?;
+                    packet.send_to_stream(&streamw).await?;
                 }
                 uobradio_comms::MessageFromApp::BluetoothMessage(m) => {
                     let common2 = common.lock().await;
@@ -377,7 +418,7 @@ pub async fn process_app(
                                 if sender.send(m).await.is_err() {
                                     let m = uobradio_comms::ActualMessageToBluetoothHost::CancelDisplayPasskey;
                                     let packet = MessageToApp::BluetoothMessage(m);
-                                    packet.send_to_stream(&mut stream).await?;
+                                    packet.send_to_stream(&streamw).await?;
                                 }
                             }
                         }
@@ -390,7 +431,7 @@ pub async fn process_app(
                             let a =
                                 uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val);
                             let packet = uobradio_comms::MessageToApp::BluetoothMessage(a);
-                            packet.send_to_stream(&mut stream).await?;
+                            packet.send_to_stream(&streamw).await?;
                         } else {
                             log::error!("Failed to change bluetooth discoverable to {}", val);
                         }
@@ -407,13 +448,13 @@ pub async fn process_app(
                     };
                     let packet = uobradio_comms::MessageToApp::BluetoothHandlerResult(r);
                     log::info!("Sending bluetooth response {:?}", packet);
-                    packet.send_to_stream(&mut stream).await?;
+                    packet.send_to_stream(&streamw).await?;
                 }
                 uobradio_comms::MessageFromApp::RequestSettings => {
                     let common2 = common.lock().await;
                     let packet =
                         uobradio_comms::MessageToApp::NewSettings(common2.settings.clone());
-                    packet.send_to_stream(&mut stream).await?;
+                    packet.send_to_stream(&streamw).await?;
                 }
                 uobradio_comms::MessageFromApp::NewSettings(s) => {
                     let mut common2 = common.lock().await;
@@ -455,11 +496,11 @@ pub async fn process_app(
                         }
                     }
                     let packet = uobradio_comms::MessageToApp::CamerasBtreeMap(map);
-                    packet.send_to_stream(&mut stream).await?;
+                    packet.send_to_stream(&streamw).await?;
                 }
                 uobradio_comms::MessageFromApp::Ping(id) => {
                     let packet = uobradio_comms::MessageToApp::PingReply(id);
-                    packet.send_to_stream(&mut stream).await?;
+                    packet.send_to_stream(&streamw).await?;
                 }
                 uobradio_comms::MessageFromApp::RequestCamera(index) => {
                     let common2 = common.lock().await;
@@ -469,7 +510,7 @@ pub async fn process_app(
                             frame.get_jpeg()
                         };
                         let response = uobradio_comms::MessageToApp::CameraDataJpeg(index, jpeg);
-                        response.send_to_stream(&mut stream).await?;
+                        response.send_to_stream(&streamw).await?;
                     }
                 }
                 uobradio_comms::MessageFromApp::GpioControl(gpio) => match gpio {
@@ -507,7 +548,7 @@ pub async fn process_app(
                 if let Some(aauto) = &mut common2.aauto_service {
                     while let Ok(m) = aauto.recv.try_recv() {
                         let packet = MessageToApp::AndroidAutoMessage(m);
-                        packet.send_to_stream(&mut stream).await?;
+                        packet.send_to_stream(&streamw).await?;
                     }
                 }
             }
@@ -979,7 +1020,7 @@ async fn smain() {
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         args,
         #[cfg(feature = "wifi")]
-        wifi: main_wifi.map(|m| wifi_manage::get_network_adapter(m).expect("Failed to setup wifi")),
+        wifi: main_wifi.map(|m| Arc::new(wifi_manage::get_network_adapter(m).expect("Failed to setup wifi"))),
         #[cfg(feature = "androidauto")]
         aauto_service: None,
         #[cfg(feature = "androidauto")]

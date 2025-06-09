@@ -355,8 +355,9 @@ impl MessageFromApp {
 impl MessageToApp {
     /// Send the message to the given stream.
     #[cfg(not(target_os = "android"))]
-    pub async fn send_to_stream(&self, stream: &mut tokio::net::TcpStream) -> Result<(), String> {
+    pub async fn send_to_stream(&self, stream: &std::sync::Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
+        let mut stream = stream.lock().await;
         let packet = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
         stream
             .write_all(&((packet.len() as u32).to_be_bytes()[0..4]))
