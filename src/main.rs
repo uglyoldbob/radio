@@ -20,7 +20,7 @@ trait SubwindowTrait {
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow>;
     /// Perform and processing required for a received packet
-    fn process_packet(&mut self, packet: &uobradio_comms::MessageToApp);
+    fn process_packet(&mut self, settings: &mut uobradio_comms::NonvolatileSettings, packet: &uobradio_comms::MessageToApp);
 }
 
 struct MainPage {}
@@ -44,7 +44,7 @@ impl SubwindowTrait for MainPage {
         r
     }
 
-    fn process_packet(&mut self, _packet: &uobradio_comms::MessageToApp) {
+    fn process_packet(&mut self, mut _settings: &mut uobradio_comms::NonvolatileSettings, _packet: &uobradio_comms::MessageToApp) {
     }
 }
 
@@ -423,9 +423,14 @@ impl eframe::App for MyEguiApp {
                 }
             }
         }
-
+        let mut settings_changed = false;
         if let Err(e) = self.common.radio.process_received(|packet| {
-            self.subwindow.process_packet(packet);
+            let mut newsettings = self.common.settings.clone();
+            self.subwindow.process_packet(&mut newsettings, packet);
+            if self.common.settings != newsettings {
+                self.common.settings = newsettings;
+                settings_changed = true;
+            }
             match packet {
                 uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password, } => {
                     self.common.wifi_details = Some((ssid.clone(), password.clone()));
@@ -452,6 +457,9 @@ impl eframe::App for MyEguiApp {
         }) {
             log::error!("Reconnecting to radio due to error: {:?}", e);
             self.common.radio.disconnect();
+        }
+        if settings_changed {
+            let _ = self.common.radio.send_packet(uobradio_comms::MessageFromApp::NewSettings { settings: self.common.settings.clone(), wifi_reconnect: settings_changed, });
         }
         egui_extras::install_image_loaders(ctx);
 

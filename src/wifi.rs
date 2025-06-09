@@ -58,7 +58,7 @@ impl Screen {
 
 impl SubwindowTrait for Screen {
 
-    fn process_packet(&mut self, packet: &uobradio_comms::MessageToApp) {
+    fn process_packet(&mut self, settings: &mut uobradio_comms::NonvolatileSettings, packet: &uobradio_comms::MessageToApp) {
         if let uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid: _, password: _, } = packet {
             log::info!("Processing that the wifi is connected now");
             self.wifi_state = WifiConnectStage::Connected;
@@ -90,6 +90,7 @@ impl SubwindowTrait for Screen {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label("This is the wifi page".to_string());
             let mut save = false;
+            let mut reconnect = false;
             ui.label("Wifi mode");
             {
                 if ui
@@ -100,6 +101,7 @@ impl SubwindowTrait for Screen {
                     .clicked()
                 {
                     save = true;
+                    reconnect = true;
                     common.settings.wifi_config = uobradio_comms::WifiConfig::Disabled;
                 }
                 if ui
@@ -110,6 +112,7 @@ impl SubwindowTrait for Screen {
                     .clicked()
                 {
                     save = true;
+                    reconnect = true;
                     common.settings.wifi_config = uobradio_comms::WifiConfig::Hotspot;
                 }
                 if ui
@@ -120,7 +123,11 @@ impl SubwindowTrait for Screen {
                     .clicked()
                 {
                     save = true;
+                    reconnect = true;
                     common.settings.wifi_config = uobradio_comms::WifiConfig::Ready;
+                }
+                if let uobradio_comms::WifiConfig::RegularNetwork(ssid, _) = &common.settings.wifi_config {
+                    ui.label(format!("Connected to {}", ssid));
                 }
             }
             let mut scan = || {
@@ -179,15 +186,18 @@ impl SubwindowTrait for Screen {
                 } else {
                     common.settings.hotspot_enabled = None;
                 }
+                reconnect = true;
                 save = true;
             }
             if let Some(hs) = &mut common.settings.hotspot_enabled {
                 ui.label("Hotspot name");
                 if ui.text_edit_singleline(&mut hs.0).changed() {
+                    reconnect = true;
                     save = true;
                 }
                 ui.label("Hotspot password");
                 if ui.text_edit_singleline(&mut hs.1).changed() {
+                    reconnect = true;
                     save = true;
                 }
             }
@@ -195,9 +205,7 @@ impl SubwindowTrait for Screen {
                 log::info!("Sending new settings: {:?}", common.settings);
                 let _ = common
                     .radio
-                    .send_packet(uobradio_comms::MessageFromApp::NewSettings(
-                        common.settings.clone(),
-                    ));
+                    .send_packet(uobradio_comms::MessageFromApp::NewSettings { settings: common.settings.clone(), wifi_reconnect: reconnect, });
             }
         });
         None

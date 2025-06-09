@@ -18,7 +18,7 @@ impl Settings {
 }
 
 impl SubwindowTrait for Settings {
-    fn process_packet(&mut self, _packet: &uobradio_comms::MessageToApp) {
+    fn process_packet(&mut self, _settings: &mut uobradio_comms::NonvolatileSettings, _packet: &uobradio_comms::MessageToApp) {
         
     }
 

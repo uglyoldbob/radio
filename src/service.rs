@@ -217,10 +217,24 @@ fn create_hotspot(
     a
 }
 
+/// Iterate over all known wifi networks, trying to connect in order if they are detected
+#[cfg(feature = "wifi")]
+fn iterate_over_networks(wifi: &wifi_manage::WifiAdapter, networks: &Vec<(String, String)>) -> Option<wifi_manage::WifiConnection> {
+    let wifis = wifi.scan_for_networks();
+    for (ssid, password) in networks {
+        for w in &wifis {
+            if w.name == *ssid {
+                return wifi.connect_to_network(ssid, ssid, password).ok();
+            }
+        }
+    }
+    None
+}
+
 #[cfg(not(target_os = "android"))]
 /// Processes a tcp connection from an app
 pub async fn process_app(
-    mut stream: tokio::net::TcpStream,
+    stream: tokio::net::TcpStream,
     addr: std::net::SocketAddr,
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
 ) -> Result<(), String> {
@@ -231,9 +245,9 @@ pub async fn process_app(
 
     log::info!("Processing an app at {:?}", addr);
 
-    let (mut streamr, mut streamw) = stream.into_split();
+    let (mut streamr, streamw) = stream.into_split();
 
-    let mut streamw = std::sync::Arc::new(tokio::sync::Mutex::new(streamw));
+    let streamw = std::sync::Arc::new(tokio::sync::Mutex::new(streamw));
 
     let mut send_passkey_response = None;
 
@@ -321,6 +335,8 @@ pub async fn process_app(
                                         let mut common2 = common2.lock().await;
                                         common2.wifi_setup =
                                             Some(uobradio_comms::WifiMode::RegularNetwork(wifi));
+                                        common2.settings.wifi_network.push((ssid.clone(), p.clone()));
+                                        common2.settings.save(&common2.args.nvconfig);
                                         let packet = MessageToApp::ConnectedToWifiNetwork { ssid, password: p, };
                                         packet.send_to_stream(&stream2w).await?;
                                     }
@@ -456,9 +472,9 @@ pub async fn process_app(
                         uobradio_comms::MessageToApp::NewSettings(common2.settings.clone());
                     packet.send_to_stream(&streamw).await?;
                 }
-                uobradio_comms::MessageFromApp::NewSettings(s) => {
+                uobradio_comms::MessageFromApp::NewSettings{ settings, wifi_reconnect } => {
                     let mut common2 = common.lock().await;
-                    common2.settings = s;
+                    common2.settings = settings;
                     common2.settings.save(&common2.args.nvconfig);
                     let mut wifi_changed = false;
                     if common2.old_settings.hotspot_enabled != common2.settings.hotspot_enabled {
@@ -472,7 +488,9 @@ pub async fn process_app(
                     }
                     if common2.old_settings.wifi_network != common2.settings.wifi_network {
                         common2.old_settings.wifi_network = common2.settings.wifi_network.clone();
-                        wifi_changed = true;
+                        if wifi_reconnect {
+                            wifi_changed = true;
+                        }
                     }
                     #[cfg(feature = "wifi")]
                     if wifi_changed {
@@ -911,9 +929,9 @@ fn setup_wifi(mut common2: tokio::sync::MutexGuard<AppUserCommon>) {
                 }
             }
         }
-        WifiConfig::RegularNetwork(ssid, password) => {
+        WifiConfig::RegularNetwork(_ssid, _password) => {
             if let Some(wifi) = &common2.wifi {
-                let w = wifi.connect_to_network(ssid, ssid, password).ok();
+                let w = iterate_over_networks(wifi, &common2.settings.wifi_network);
                 common2.wifi_setup = w.map(|a| uobradio_comms::WifiMode::RegularNetwork(a));
             } else {
                 log::error!("Wifi is not present?");

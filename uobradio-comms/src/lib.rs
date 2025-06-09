@@ -254,7 +254,12 @@ pub enum MessageFromApp {
     /// The camera index with the bincode encoded data for the setting to change
     CameraSettingControl(u8, u8, video::ControlValue),
     /// Update the nonvolatile settings on the radio
-    NewSettings(NonvolatileSettings),
+    NewSettings {
+        /// The new settings
+        settings: NonvolatileSettings, 
+        /// Should the wifi be reconnected?
+        wifi_reconnect: bool,
+    },
     /// Request all nonvolatile settings
     RequestSettings,
     /// Request from the the app user that handles bluetooth pairing stuff
@@ -818,7 +823,7 @@ impl UobRadio {
 }
 
 /// Non-volatile settings that should be saved to nonvolatile storage of some kind
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct NonvolatileSettings {
     #[cfg(feature = "wifi")]
     /// Optional wifi name and password for wifi hotspot
