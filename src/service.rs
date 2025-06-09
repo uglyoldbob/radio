@@ -4,7 +4,12 @@
 
 //! This program is for handling the video and audio components for the radio
 
-use std::{collections::HashSet, io::Read, path::PathBuf, sync::{Arc, MutexGuard}};
+use std::{
+    collections::HashSet,
+    io::Read,
+    path::PathBuf,
+    sync::{Arc, MutexGuard},
+};
 
 use android_auto::{
     AndroidAutoAudioInputTrait, AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait,
@@ -268,6 +273,41 @@ pub async fn process_app(
                 }
             }
             match packet {
+                uobradio_comms::MessageFromApp::GetWifiDetails => {
+                    let common2 = common.lock().await;
+                    if let Some(wifi) = &common2.wifi_setup {
+                        match wifi {
+                            uobradio_comms::WifiMode::Hotspot(wifi_hotspot) => {
+                                use wifi_manage::WifiHotspotTrait;
+                                let ssid = wifi_hotspot.ssid();
+                                let password = wifi_hotspot.password();
+                                let packet = MessageToApp::WifiDetails { ssid, password };
+                                packet.send_to_stream(&mut stream).await?;
+                            }
+                            uobradio_comms::WifiMode::RegularNetwork(wifi_connection) => todo!(),
+                        }
+                    }
+                }
+                uobradio_comms::MessageFromApp::ConnectToNetwork(ssid, password) => {
+                    let mut common2 = common.lock().await;
+                    common2.wifi_setup.take();
+                    if let Some(wifi) = &common2.wifi {
+                        if let Some(p) = password {
+                            if let Ok(wifi) = wifi.connect_to_network(&ssid, &ssid, &p) {
+                                common2.wifi_setup =
+                                    Some(uobradio_comms::WifiMode::RegularNetwork(wifi));
+                            }
+                        }
+                    }
+                }
+                uobradio_comms::MessageFromApp::ScanForWifiNetworks => {
+                    let common2 = common.lock().await;
+                    if let Some(wifi) = &common2.wifi {
+                        let wifis = wifi.scan_for_networks();
+                        let packet = MessageToApp::WifiList(wifis);
+                        packet.send_to_stream(&mut stream).await?;
+                    }
+                }
                 uobradio_comms::MessageFromApp::ExternalRadio(rc) => match rc {
                     uobradio_comms::RadioCommand::StartTransmission => {
                         log::info!("Start external radio transmission");
@@ -800,30 +840,28 @@ impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
 
 fn setup_wifi(mut common2: tokio::sync::MutexGuard<AppUserCommon>) {
     log::info!("Setup wifi with {:?}", common2.settings.wifi_config);
-    match common2.settings.wifi_config {
+    match &common2.settings.wifi_config {
+        WifiConfig::Ready => {
+            common2.wifi_setup.take();
+        }
         WifiConfig::Hotspot => {
             let hotspot = common2.settings.hotspot_enabled.clone();
             if let Some((n, p)) = hotspot {
                 if let Some(wifi) = &common2.wifi {
-                    common2.wifi_setup = create_hotspot(wifi, &n, &p)
-                        .map(|a| uobradio_comms::WifiMode::Hotspot(a));
-                }
-                else {
+                    common2.wifi_setup =
+                        create_hotspot(wifi, &n, &p).map(|a| uobradio_comms::WifiMode::Hotspot(a));
+                } else {
                     log::error!("Wifi is not present?");
                 }
             }
         }
-        WifiConfig::RegularNetwork => {
-            let c = common2.settings.wifi_network.clone();
-            if let Some((n, p)) = c {
-                common2.wifi_setup = todo!();
+        WifiConfig::RegularNetwork(ssid, password) => {
+            if let Some(wifi) = &common2.wifi {
+                let w = wifi.connect_to_network(ssid, ssid, password).ok();
+                common2.wifi_setup = w.map(|a| uobradio_comms::WifiMode::RegularNetwork(a));
+            } else {
+                log::error!("Wifi is not present?");
             }
-            else {
-                common2.wifi_setup = None;
-            }
-        }
-        WifiConfig::Scanning => {
-            common2.wifi_setup = None;
         }
         WifiConfig::Disabled => {
             common2.wifi_setup = None;

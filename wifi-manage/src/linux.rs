@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::{io::BufRead, sync::{Arc, Mutex}};
 
 /// The struct for using nmcli
 pub struct Nmcli {
@@ -38,6 +38,64 @@ impl super::WifiAdapterTrait for Arc<Nmcli> {
         *dd = true;
     }
 
+    fn scan_for_networks(&self) -> Vec<crate::WifiNetwork> {
+        let mut r = Vec::new();
+        let command = vec![
+            "-t".to_string(),
+            "device".to_string(),
+            "wifi".to_string(),
+            "list".to_string(),
+        ];
+        let output = std::process::Command::new("nmcli").args(&command).output();
+        if let Ok(o) = output {
+            let ou = o.stdout;
+            let a: &[u8] = &ou;
+            let br = std::io::BufReader::new(a);
+            for l in br.lines() {
+                if let Ok(l) = l {
+                    let parts : Vec<String> = l.split(':').map(|a| a.to_string()).collect();
+                    let mut actual_parts = Vec::new();
+                    let mut this_part = String::new();
+                    for p in &parts {
+                        let continued = p.ends_with('\\');
+                        if continued {
+                            let mut m = p.clone();
+                            m.pop();
+                            m.push(':');
+                            this_part.push_str(&m);
+                        }
+                        else {
+                            this_part.push_str(p);
+                        }
+                        if !continued {
+                            actual_parts.push(this_part.clone());
+                            this_part.clear();
+                        }
+                    }
+
+                    let speed_str = actual_parts[5].clone();
+                    let speed = if speed_str.contains("Mbit/s") {
+                        let mut a = speed_str.split(' ');
+                        let f = a.next().unwrap();
+                        f.parse::<u32>().unwrap() * 1000000
+                    } else {
+                        todo!()
+                    };
+                    let wifi = super::WifiNetwork {
+                        bssid: actual_parts[1].clone(),
+                        name: actual_parts[2].clone(),
+                        channel: actual_parts[4].parse::<u16>().unwrap(),
+                        speed,
+                        signal: actual_parts[6].parse::<u8>().unwrap(),
+                        security: actual_parts[8].clone(),
+                    };
+                    r.push(wifi);
+                }
+            }
+        }
+        r
+    }
+
     fn build_hotspot(&self, con_name: &str, ssid: &str, password: &str) -> Result<super::WifiHotspot, ()> {
         let command = vec![
             "device".to_string(),
@@ -59,7 +117,7 @@ impl super::WifiAdapterTrait for Arc<Nmcli> {
             .map(|s| s.code() == Some(0))
             .map_err(|_| ())?;
         if output {
-            let wnm = WifiNetworkNmcli { name: con_name.to_string(), _net: self.clone(), };
+            let wnm = WifiNetworkNmcli { name: con_name.to_string(), ssid: ssid.to_string(), password: password.to_string(),_net: self.clone(), };
             Ok(super::WifiHotspot::Nmcli(wnm))
         } else {
             Err(())
@@ -81,7 +139,7 @@ impl super::WifiAdapterTrait for Arc<Nmcli> {
             .output()
             .map_err(|_| ())?;
         if output.status.success() {
-            let cnm = WifiNetworkNmcli { name: con_name.to_string(), _net: self.clone(), };
+            let cnm = WifiNetworkNmcli { name: con_name.to_string(), ssid: ssid.to_string(), password: password.to_string(), _net: self.clone(), };
             Ok(super::WifiConnection::Nmcli(cnm))
         }
         else {
@@ -97,7 +155,19 @@ impl super::WifiAdapterTrait for Arc<Nmcli> {
 /// A struct for managing a connection of a wifi network
 pub struct WifiNetworkNmcli {
     name: String,
+    ssid: String,
+    password: String,
     _net: Arc<Nmcli>,
+}
+
+impl super::WifiHotspotTrait for WifiNetworkNmcli {
+    fn password(&self) -> String {
+        self.password.clone()
+    }
+
+    fn ssid(&self) -> String {
+        self.ssid.clone()
+    }
 }
 
 impl WifiNetworkNmcli {

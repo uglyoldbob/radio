@@ -42,10 +42,10 @@ pub enum WifiConfig {
     /// Hotspot
     Hotspot,
     /// The local wifi adapter connects to an existing wifi network
-    RegularNetwork,
-    /// The wifi card should be scanning
-    Scanning,
-    /// The wifi card shoulde be disabled
+    RegularNetwork(String, String),
+    /// The wifi card should be ready
+    Ready,
+    /// The wifi card should be disabled
     #[default]
     Disabled,
 }
@@ -269,6 +269,12 @@ pub enum MessageFromApp {
     AndroidAutoMessage(aauto::AndroidAutoMessageToPhone),
     /// A command to operate the external radio
     ExternalRadio(RadioCommand),
+    /// Scan for wifi networks with the wifi adapter
+    ScanForWifiNetworks,
+    /// Connect to the specified network
+    ConnectToNetwork(String, Option<String>),
+    /// Get the ssid and password for the current wifi network
+    GetWifiDetails,
 }
 
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};
@@ -316,6 +322,15 @@ pub enum MessageToApp {
     BluetoothMessage(ActualMessageToBluetoothHost),
     /// A generic android auto command from the "phone"
     AndroidAutoMessage(aauto::AndroidAutoMessageFromPhone),
+    /// A list of wifi networks
+    WifiList(Vec<wifi_manage::WifiNetwork>),
+    /// The details for the current wifi network
+    WifiDetails {
+        /// The ssid of the network
+        ssid: String,
+        /// The password of the network
+        password: String
+    },
 }
 
 impl MessageFromApp {
@@ -413,6 +428,9 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::WifiDetails { ssid: _, password: _ } => {}
+                                        MessageToApp::WifiList(_list) => {
+                                        }
                                         MessageToApp::AndroidAutoMessage(m) => {
                                             match m {
                                                 aauto::AndroidAutoMessageFromPhone::AudioChannelOpen(_) => {
@@ -797,8 +815,8 @@ pub struct NonvolatileSettings {
     /// Optional wifi name and password for wifi hotspot
     pub hotspot_enabled: Option<(String, String)>,
     #[cfg(feature = "wifi")]
-    /// Optional wifi name and password for regular wifi network
-    pub wifi_network: Option<(String, String)>,
+    /// List of wifi names and passwords for regular wifi networks, in order of connection priority
+    pub wifi_network: Vec<(String, String)>,
     #[cfg(feature = "wifi")]
     /// The wifi configuration
     pub wifi_config: WifiConfig,

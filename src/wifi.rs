@@ -5,21 +5,54 @@ use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+/// The stage of connecting to a wifi network
+enum WifiConnectStage {
+    /// Prompt the user for the password
+    PasswordPrompt,
+    /// Indicate connecting to the network
+    Connecting,
+}
+
 pub struct Screen {
     /// For the qr code
     texture: Option<egui::TextureHandle>,
+    /// For connecting to a wifi with new credentials
+    wifi_new_connect: Option<usize>,
+    /// The password storage for wifi connection
+    wifi_password: String,
+    /// Connection state for the indicated wifi network (wifi_new_connect)
+    wifi_state: WifiConnectStage,
 }
 
 impl Screen {
     pub fn new() -> Self {
-        Self { texture: None }
+        Self { 
+            texture: None, 
+            wifi_new_connect: None, 
+            wifi_password: String::new(),
+            wifi_state: WifiConnectStage::PasswordPrompt,
+        }
     }
 
-    pub fn make_wifi_qr(&self, wifi_name: &String, wifi_password: &String) -> Vec<u8> {
-        log::info!("Making qr code with {}/{}", wifi_name, wifi_password);
+    fn make_wifi_qr(&self, wifi_name: &String, wifi_password: &String) -> Vec<u8> {
         let a = format!("WIFI:S:{};T:WPA;P:{};H:false;;", wifi_name, wifi_password);
-        log::info!("Qr code contents ->{}", a);
         a.as_bytes().to_vec()
+    }
+
+    fn update_qr_code(&mut self, ctx: &egui::Context, common: &CommonWindowProperties) {
+        if let uobradio_comms::WifiConfig::Disabled = common.settings.wifi_config {
+            self.texture.take();
+        }
+        else if let Some((wn, wp)) = &common.wifi_details {
+            let contents = self.make_wifi_qr(wn, wp);
+            let code = qrcode::QrCode::new(contents).unwrap();
+            let image = code.render::<image::Rgb<u8>>().build();
+            let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
+                image.into();
+            let cimg: egui::ColorImage = img.into();
+            self.texture =
+                Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
+        }
     }
 }
 
@@ -33,20 +66,7 @@ impl SubwindowTrait for Screen {
         let _ = common
             .radio
             .send_packet(uobradio_comms::MessageFromApp::RequestSettings);
-        if self.texture.is_none() {
-            if let Some((wn, wp)) = &common.settings.hotspot_enabled {
-                let contents = self.make_wifi_qr(wn, wp);
-                let code = qrcode::QrCode::new(contents).unwrap();
-                let image = code.render::<image::Rgb<u8>>().build();
-                let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
-                    image.into();
-                let cimg: egui::ColorImage = img.into();
-                self.texture = Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
-            }
-        }
-        if common.settings.hotspot_enabled.is_none() && self.texture.is_some() {
-            self.texture.take();
-        }
+        self.update_qr_code(ctx, common);
         egui::SidePanel::right("Hotspot qr code view").show(ctx, |ui| {
             let size = ui.available_size();
             if let Some(t) = &self.texture {
@@ -86,24 +106,50 @@ impl SubwindowTrait for Screen {
                 }
                 if ui
                     .add(egui::SelectableLabel::new(
-                        common.settings.wifi_config == uobradio_comms::WifiConfig::RegularNetwork,
+                        common.settings.wifi_config == uobradio_comms::WifiConfig::Ready,
                         "Regular network",
                     ))
                     .clicked()
                 {
                     save = true;
-                    common.settings.wifi_config = uobradio_comms::WifiConfig::RegularNetwork;
+                    common.settings.wifi_config = uobradio_comms::WifiConfig::Ready;
                 }
-                if ui
-                    .add(egui::SelectableLabel::new(
-                        common.settings.wifi_config == uobradio_comms::WifiConfig::Scanning,
-                        "Scan for networks",
-                    ))
-                    .clicked()
-                {
-                    save = true;
-                    common.settings.wifi_config = uobradio_comms::WifiConfig::Scanning;
+            }
+            let mut scan = || {
+                if ui.button("Scan for wifi networks").clicked() {
+                    let _ = common
+                        .radio
+                        .send_packet(uobradio_comms::MessageFromApp::ScanForWifiNetworks);
                 }
+                for (i, w) in common.wifi_list.iter().enumerate() {
+                    ui.selectable_value(&mut self.wifi_new_connect, Some(i), format!("{} - {}", w.name.clone(), w.get_speed()));
+                    if Some(i) == self.wifi_new_connect {
+                        match self.wifi_state {
+                            WifiConnectStage::PasswordPrompt => {
+                                ui.label("Password");
+                                ui.text_edit_singleline(&mut self.wifi_password);
+                                if ui.button("Connect").clicked() {
+                                    let _ = common
+                                        .radio
+                                        .send_packet(uobradio_comms::MessageFromApp::ConnectToNetwork(w.name.clone(), Some(self.wifi_password.clone())));
+                                    self.wifi_state = WifiConnectStage::Connecting;
+                                }
+                            }
+                            WifiConnectStage::Connecting => {
+                                ui.label("Connecting to network");
+                            }
+                        }
+                    }
+                }
+            };
+            match &common.settings.wifi_config {
+                uobradio_comms::WifiConfig::RegularNetwork(_ssid, _pw) => {
+                    scan();
+                }
+                uobradio_comms::WifiConfig::Ready => {
+                    scan();
+                }
+                _ => {}
             }
             let mut hotspot = common.settings.hotspot_enabled.is_some();
             if ui.checkbox(&mut hotspot, "Configure hotspot").changed() {
@@ -116,7 +162,6 @@ impl SubwindowTrait for Screen {
                 save = true;
             }
             if let Some(hs) = &mut common.settings.hotspot_enabled {
-                let mut change = false;
                 ui.label("Hotspot name");
                 if ui.text_edit_singleline(&mut hs.0).changed() {
                     save = true;

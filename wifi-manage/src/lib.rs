@@ -33,6 +33,10 @@ pub fn get_wifi_adapters() -> Result<Vec<String>, String> {
 /// The trait for wifi hotspots
 #[enum_dispatch::enum_dispatch]
 pub trait WifiHotspotTrait {
+    /// Retrieve the ssid of the hotspot
+    fn ssid(&self) -> String;
+    /// Retrieve the password of the hotspot
+    fn password(&self) -> String;
 }
 
 /// A connection to an existing wifi network
@@ -48,6 +52,61 @@ pub enum WifiHotspot {
     Nmcli(linux::WifiNetworkNmcli),
 }
 
+/// Represents the simplified form for display to user of wifi speed
+pub enum WifiSpeed {
+    /// The network is ultra slow
+    Bits(u16),
+    /// The network is still pretty slow
+    Kbits(u16),
+    /// This is the normal range
+    Mbits(u16),
+    /// Wow super fast
+    Gbits(u16),
+}
+
+impl std::fmt::Display for WifiSpeed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WifiSpeed::Bits(s) => f.write_str(&format!("{} bits/second", s)),
+            WifiSpeed::Kbits(s) => f.write_str(&format!("{} kilobits/second", s)),
+            WifiSpeed::Mbits(s) => f.write_str(&format!("{} megabits/second", s)),
+            WifiSpeed::Gbits(s) => f.write_str(&format!("{} gigabits/second", s)),
+        }
+    }
+}
+
+/// Represents a wifi network that has been discovered
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct WifiNetwork {
+    /// The bssid of the wifi network
+    pub bssid: String,
+    /// The ssid of the network
+    pub name: String,
+    /// The channel of the network
+    pub channel: u16,
+    /// The potential speed of the network in bytes per second
+    pub speed: u32,
+    /// The signal strength
+    pub signal: u8,
+    /// The security for the network
+    pub security: String,
+}
+
+impl WifiNetwork {
+    /// Get the simplified speed of the network
+    pub fn get_speed(&self) -> WifiSpeed {
+        if self.speed < 1000 {
+            return WifiSpeed::Bits(self.speed as u16);
+        } else if self.speed < 1000000 {
+            return WifiSpeed::Kbits((self.speed / 1000) as u16)
+        } else if self.speed < 1000000000 {
+            return WifiSpeed::Mbits((self.speed / 1000000) as u16)
+        } else {
+            return WifiSpeed::Mbits((self.speed / 1000000000) as u16)
+        }
+    }
+}
+
 /// A trait for operating on a specific wifi adapter
 #[enum_dispatch::enum_dispatch]
 pub trait WifiAdapterTrait {
@@ -59,6 +118,8 @@ pub trait WifiAdapterTrait {
     fn build_hotspot(&self, con_name: &str, ssid: &str, pw: &str) -> Result<WifiHotspot, ()>;
     /// Set the adapter to remain enabled after being dropped
     fn set_stay(&self);
+    /// Scan for networks
+    fn scan_for_networks(&self) -> Vec<WifiNetwork>;
 }
 
 /// Get a network adapter

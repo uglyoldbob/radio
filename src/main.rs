@@ -77,6 +77,9 @@ fn main() {
 struct CommonWindowProperties {
     radio: uobradio_comms::UobRadio,
     pub settings: uobradio_comms::NonvolatileSettings,
+    wifi_list: Vec<wifi_manage::WifiNetwork>,
+    /// The optional details for the wifi network, ssid and password
+    wifi_details: Option<(String, String)>,
     android_auto_video_decoder: openh264::decoder::Decoder,
     android_auto_texture: Option<egui::TextureHandle>,
 }
@@ -86,6 +89,8 @@ impl CommonWindowProperties {
         Self {
             radio: uobradio_comms::UobRadio::localhost(),
             settings: uobradio_comms::NonvolatileSettings::default(),
+            wifi_list: Vec::new(),
+            wifi_details: None,
             android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
             android_auto_texture: None,
         }
@@ -416,6 +421,14 @@ impl eframe::App for MyEguiApp {
         }
 
         if let Err(e) = self.common.radio.process_received(|packet| match packet {
+            uobradio_comms::MessageToApp::WifiList(list) => {
+                let mut list2 = list.clone();
+                list2.sort_by(|a, b| b.speed.cmp(&a.speed));
+                self.common.wifi_list = list2;
+            }
+            uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {
+                self.common.wifi_details = Some((ssid.clone(), password.clone()));
+            }
             uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
             uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}
             uobradio_comms::MessageToApp::BluetoothMessage(_) => {}
