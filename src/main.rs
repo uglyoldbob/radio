@@ -432,6 +432,9 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {
+                    self.common.wifi_details.take();
+                }
                 uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password, } => {
                     self.common.wifi_details = Some((ssid.clone(), password.clone()));
                 }

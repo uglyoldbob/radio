@@ -42,7 +42,7 @@ pub enum WifiConfig {
     /// Hotspot
     Hotspot,
     /// The local wifi adapter connects to an existing wifi network
-    RegularNetwork(String, String),
+    RegularNetwork,
     /// The wifi card should be ready
     Ready,
     /// The wifi card should be disabled
@@ -343,6 +343,11 @@ pub enum MessageToApp {
         /// The password of the network
         password: String,
     },
+    /// Indicates a failure to connect to the indicated wifi network
+    FailedToConnectToWifiNetwork {
+        /// The ssid of the network
+        ssid: String,
+    },
 }
 
 impl MessageFromApp {
@@ -441,6 +446,7 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {}
                                         MessageToApp::ConnectedToWifiNetwork { ssid: _, password: _ } => {}
                                         MessageToApp::WifiDetails { ssid: _, password: _ } => {}
                                         MessageToApp::WifiList(_list) => {

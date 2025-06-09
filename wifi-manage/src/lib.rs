@@ -39,7 +39,17 @@ pub trait WifiHotspotTrait {
     fn password(&self) -> String;
 }
 
+/// The trait for a wifi network connection
+#[enum_dispatch::enum_dispatch]
+pub trait WifiConnectionTrait {
+    /// Retrieve the ssid of the hotspot
+    fn ssid(&self) -> String;
+    /// Retrieve the password of the hotspot
+    fn password(&self) -> String;
+}
+
 /// A connection to an existing wifi network
+#[enum_dispatch::enum_dispatch(WifiConnectionTrait)]
 pub enum WifiConnection {
     /// nmcli on linux connected to the network
     Nmcli(linux::WifiNetworkNmcli),
@@ -76,7 +86,7 @@ impl std::fmt::Display for WifiSpeed {
 }
 
 /// Represents a wifi network that has been discovered
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WifiNetwork {
     /// The bssid of the wifi network
     pub bssid: String,

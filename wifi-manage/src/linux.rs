@@ -160,6 +160,16 @@ pub struct WifiNetworkNmcli {
     _net: Arc<Nmcli>,
 }
 
+impl super::WifiConnectionTrait for WifiNetworkNmcli {
+    fn password(&self) -> String {
+        self.password.clone()
+    }
+
+    fn ssid(&self) -> String {
+        self.ssid.clone()
+    }
+}
+
 impl super::WifiHotspotTrait for WifiNetworkNmcli {
     fn password(&self) -> String {
         self.password.clone()

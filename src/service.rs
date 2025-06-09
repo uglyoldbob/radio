@@ -302,7 +302,13 @@ pub async fn process_app(
                                 let packet = MessageToApp::WifiDetails { ssid, password };
                                 packet.send_to_stream(&streamw).await?;
                             }
-                            uobradio_comms::WifiMode::RegularNetwork(wifi_connection) => todo!(),
+                            uobradio_comms::WifiMode::RegularNetwork(wifi_connection) => {
+                                use wifi_manage::WifiConnectionTrait;
+                                let ssid = wifi_connection.ssid();
+                                let password = wifi_connection.password();
+                                let packet = MessageToApp::WifiDetails { ssid, password };
+                                packet.send_to_stream(&streamw).await?;
+                            }
                         }
                     }
                 }
@@ -342,6 +348,8 @@ pub async fn process_app(
                                     }
                                     Err(e) => {
                                         log::error!("Error connecting to {}: {:?}", ssid, e);
+                                        let packet = MessageToApp::FailedToConnectToWifiNetwork { ssid: ssid, };
+                                        packet.send_to_stream(&stream2w).await?;
                                     }
                                 }
                             }
@@ -929,7 +937,7 @@ fn setup_wifi(mut common2: tokio::sync::MutexGuard<AppUserCommon>) {
                 }
             }
         }
-        WifiConfig::RegularNetwork(_ssid, _password) => {
+        WifiConfig::RegularNetwork => {
             if let Some(wifi) = &common2.wifi {
                 let w = iterate_over_networks(wifi, &common2.settings.wifi_network);
                 common2.wifi_setup = w.map(|a| uobradio_comms::WifiMode::RegularNetwork(a));
