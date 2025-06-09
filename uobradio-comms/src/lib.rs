@@ -329,7 +329,14 @@ pub enum MessageToApp {
         /// The ssid of the network
         ssid: String,
         /// The password of the network
-        password: String
+        password: String,
+    },
+    /// Indicates a new connection to a wifi network
+    ConnectedToWifiNetwork {
+        /// The ssid of the network
+        ssid: String,
+        /// The password of the network
+        password: String,
     },
 }
 
@@ -428,6 +435,7 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::ConnectedToWifiNetwork { ssid: _, password: _ } => {}
                                         MessageToApp::WifiDetails { ssid: _, password: _ } => {}
                                         MessageToApp::WifiList(_list) => {
                                         }

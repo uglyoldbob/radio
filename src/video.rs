@@ -18,6 +18,11 @@ impl Video {
 }
 
 impl SubwindowTrait for Video {
+
+    fn process_packet(&mut self, _packet: &uobradio_comms::MessageToApp) {
+        
+    }
+
     fn update(
         &mut self,
         ctx: &egui::Context,

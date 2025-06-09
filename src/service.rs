@@ -293,11 +293,26 @@ pub async fn process_app(
                     common2.wifi_setup.take();
                     if let Some(wifi) = &common2.wifi {
                         if let Some(p) = password {
-                            if let Ok(wifi) = wifi.connect_to_network(&ssid, &ssid, &p) {
-                                common2.wifi_setup =
-                                    Some(uobradio_comms::WifiMode::RegularNetwork(wifi));
+                            log::info!("Start connect to wifi {}", ssid);
+                            match wifi.connect_to_network(&ssid, &ssid, &p) {
+                                Ok(wifi) => {
+                                    log::info!("Connected to wifi network {}", ssid);
+                                    common2.wifi_setup =
+                                        Some(uobradio_comms::WifiMode::RegularNetwork(wifi));
+                                    let packet = MessageToApp::ConnectedToWifiNetwork { ssid, password: p, };
+                                        packet.send_to_stream(&mut stream).await?;
+                                }
+                                Err(e) => {
+                                    log::error!("Error connecting to {}: {:?}", ssid, e);
+                                }
                             }
                         }
+                        else {
+                            log::error!("No password for wifi defined");
+                        }
+                    }
+                    else {
+                        log::error!("No wifi adapter for connection?");
                     }
                 }
                 uobradio_comms::MessageFromApp::ScanForWifiNetworks => {

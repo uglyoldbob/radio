@@ -12,12 +12,15 @@ use uobradio_comms::PendingAudioCommand;
 
 #[enum_dispatch::enum_dispatch]
 trait SubwindowTrait {
+    /// Show the window, return a new subwindow if the subwindow needs to change
     fn update(
         &mut self,
         ctx: &egui::Context,
         frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow>;
+    /// Perform and processing required for a received packet
+    fn process_packet(&mut self, packet: &uobradio_comms::MessageToApp);
 }
 
 struct MainPage {}
@@ -39,6 +42,9 @@ impl SubwindowTrait for MainPage {
             }
         });
         r
+    }
+
+    fn process_packet(&mut self, _packet: &uobradio_comms::MessageToApp) {
     }
 }
 
@@ -324,7 +330,6 @@ impl eframe::App for MyEguiApp {
             }
         }
         self.common.radio.process_pending_audio_commands(|c, cmd| {
-            log::error!("Processing command {:?} for {:?}", cmd, c);
             match c {
                 android_auto::AudioChannelType::Media => {
                     if let Some((p, s)) = &mut self.media_stream {
@@ -366,7 +371,6 @@ impl eframe::App for MyEguiApp {
             log::error!("DONE Processing command {:?} for {:?}", cmd, c);
         });
         self.common.radio.process_received_audio(|c, data| {
-            log::error!("Received {} bytes of data for {:?}", data.len(), c);
             match c {
                 android_auto::AudioChannelType::Media => {
                     if let Some((p, _s)) = &mut self.media_stream {
@@ -420,24 +424,30 @@ impl eframe::App for MyEguiApp {
             }
         }
 
-        if let Err(e) = self.common.radio.process_received(|packet| match packet {
-            uobradio_comms::MessageToApp::WifiList(list) => {
-                let mut list2 = list.clone();
-                list2.sort_by(|a, b| b.speed.cmp(&a.speed));
-                self.common.wifi_list = list2;
-            }
-            uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {
-                self.common.wifi_details = Some((ssid.clone(), password.clone()));
-            }
-            uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
-            uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}
-            uobradio_comms::MessageToApp::BluetoothMessage(_) => {}
-            uobradio_comms::MessageToApp::BluetoothHandlerResult(_) => {}
-            uobradio_comms::MessageToApp::CamerasBtreeMap(_) => {}
-            uobradio_comms::MessageToApp::PingReply(_) => {}
-            uobradio_comms::MessageToApp::CameraDataJpeg(_index, _jpeg) => {}
-            uobradio_comms::MessageToApp::NewSettings(s) => {
-                self.common.settings = s.clone();
+        if let Err(e) = self.common.radio.process_received(|packet| {
+            self.subwindow.process_packet(packet);
+            match packet {
+                uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password, } => {
+                    self.common.wifi_details = Some((ssid.clone(), password.clone()));
+                }
+                uobradio_comms::MessageToApp::WifiList(list) => {
+                    let mut list2 = list.clone();
+                    list2.sort_by(|a, b| b.speed.cmp(&a.speed));
+                    self.common.wifi_list = list2;
+                }
+                uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {
+                    self.common.wifi_details = Some((ssid.clone(), password.clone()));
+                }
+                uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
+                uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}
+                uobradio_comms::MessageToApp::BluetoothMessage(_) => {}
+                uobradio_comms::MessageToApp::BluetoothHandlerResult(_) => {}
+                uobradio_comms::MessageToApp::CamerasBtreeMap(_) => {}
+                uobradio_comms::MessageToApp::PingReply(_) => {}
+                uobradio_comms::MessageToApp::CameraDataJpeg(_index, _jpeg) => {}
+                uobradio_comms::MessageToApp::NewSettings(s) => {
+                    self.common.settings = s.clone();
+                }
             }
         }) {
             log::error!("Reconnecting to radio due to error: {:?}", e);
