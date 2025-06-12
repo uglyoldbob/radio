@@ -240,6 +240,30 @@ pub enum RadioCommand {
     TransmissionDataPartial(Vec<u8>),
 }
 
+/// An ac control message
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum AcControl {
+    /// Get the temperature (fahrenheit) that is being controlled
+    GetCurrentTemperature,
+    /// Set the target temperature (fahrenheit) for temperature control of the ac
+    SetAcTargetTemperature(f32),
+    /// Set the target temperature (fahrenheit) for temperature control of the heat
+    SetHeatTargetTemperature(f32),
+    /// Set the fan speed
+    SetFanSpeed(u8),
+}
+
+/// An ac control message
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum AcResponse {
+    /// The current temperature if it is known (fahrenheit)
+    CurrentTemperature(Option<f32>),
+    /// Acknowledgement of set target temperature, indicates success or failure of setting hvac temperature setpoint
+    TemperatureSetStatus(bool),
+    /// Acknowledge set fan speed
+    FanSpeedAcknowledge,
+}
+
 /// A message that can be sent from an app. 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum MessageFromApp {
@@ -280,6 +304,8 @@ pub enum MessageFromApp {
     ConnectToNetwork(String, Option<String>),
     /// Get the ssid and password for the current wifi network
     GetWifiDetails,
+    /// Ac control messages
+    Ac(AcControl),
 }
 
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};
@@ -348,6 +374,8 @@ pub enum MessageToApp {
         /// The ssid of the network
         ssid: String,
     },
+    /// A response to an ac control command
+    Ac(AcResponse),
 }
 
 impl MessageFromApp {
@@ -446,6 +474,7 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::Ac(_c) => { }
                                         MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {}
                                         MessageToApp::ConnectedToWifiNetwork { ssid: _, password: _ } => {}
                                         MessageToApp::WifiDetails { ssid: _, password: _ } => {}

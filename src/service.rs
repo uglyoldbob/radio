@@ -104,7 +104,7 @@ impl AndroidAutoService {
         let aautochan = tokio::sync::mpsc::channel(5);
 
         let blue_addresses: Vec<[u8; 6]> = com.bluetooth.addresses().await;
-        let bluetooth_address = blue_addresses.get(0).map(|b| {
+        let bluetooth_address = blue_addresses.first().map(|b| {
             let a = format!(
                 "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
                 b[0], b[1], b[2], b[3], b[4], b[5]
@@ -291,6 +291,24 @@ pub async fn process_app(
                 }
             }
             match packet {
+                uobradio_comms::MessageFromApp::Ac(c) => {
+                    match c {
+                        uobradio_comms::AcControl::GetCurrentTemperature => {
+                            log::info!("Stub for get current ac temperature, faking 72 degrees");
+                            let packet = MessageToApp::Ac(uobradio_comms::AcResponse::CurrentTemperature(Some(72.0)));
+                            packet.send_to_stream(&streamw).await?;
+                        }
+                        uobradio_comms::AcControl::SetAcTargetTemperature(t) => {
+                            log::info!("Set target ac temperature to {}", t);
+                        }
+                        uobradio_comms::AcControl::SetHeatTargetTemperature(t) => {
+                            log::info!("Set target heat temperature to {}", t);
+                        }
+                        uobradio_comms::AcControl::SetFanSpeed(f) => {
+                            log::info!("Set ac fan speed to {}", f);
+                        }
+                    }
+                }
                 uobradio_comms::MessageFromApp::GetWifiDetails => {
                     let common2 = common.lock().await;
                     if let Some(wifi) = &common2.wifi_setup {
@@ -316,13 +334,7 @@ pub async fn process_app(
                     let wifi = {
                         let mut common2 = common.lock().await;
                         common2.wifi_setup.take();
-                        let wifi = 
-                        if let Some(wifi) = &common2.wifi {
-                            Some(wifi.clone())
-                        } else {
-                            None
-                        };
-                        wifi
+                        common2.wifi.as_ref().map(|wifi| wifi.clone())
                     };
                     let common2 = common.clone();
                     let stream2w = streamw.clone();
@@ -358,6 +370,7 @@ pub async fn process_app(
                             }
                         }
                         else {
+                            log::error!("No wifi adapter found?");
                         }
                         Ok::<(), String>(())
                     });
@@ -366,13 +379,7 @@ pub async fn process_app(
                     let wifi = {
                         let mut common2 = common.lock().await;
                         common2.wifi_setup.take();
-                        let wifi = 
-                        if let Some(wifi) = &common2.wifi {
-                            Some(wifi.clone())
-                        } else {
-                            None
-                        };
-                        wifi
+                        common2.wifi.as_ref().map(|wifi| wifi.clone())
                     };
                     let stream2w = streamw.clone();
                     tokio::task::spawn(async move {
@@ -647,6 +654,7 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     }
 }
 
+/// An internally used structure for sending messages between the android auto user and the frontend
 struct InternalAndroidAutoStuff {
     /// Used internally to relay android auto messages from the users phone
     sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
@@ -676,6 +684,14 @@ struct AndroidAutoStuff {
 }
 
 impl AndroidAutoStuff {
+    /// Construct a new self
+    /// #Arguments
+    /// sendr: The channel for sending responses from the user device to the android auto handler
+    /// recvr: The channel that receives android auto messages to be sent back to the phone
+    /// frame_sender: The channel that sends android auto messages to the user device
+    /// bluetooth: The bluetooth adapter to use
+    /// network: The network details to use for android auto
+    /// bluetooth_config: Contains the bluetooth configuration
     pub fn new(
         sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
         recvr: tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>,
@@ -920,6 +936,9 @@ impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
     }
 }
 
+/// Sets up the wifi hardware according to settings
+/// Call this when initially setting up wifi, or when changing wifi settings
+/// Wifi connections will likey drop and reconnect
 fn setup_wifi(mut common2: tokio::sync::MutexGuard<AppUserCommon>) {
     log::info!("Setup wifi with {:?}", common2.settings.wifi_config);
     match &common2.settings.wifi_config {
@@ -929,9 +948,10 @@ fn setup_wifi(mut common2: tokio::sync::MutexGuard<AppUserCommon>) {
         WifiConfig::Hotspot => {
             let hotspot = common2.settings.hotspot_enabled.clone();
             if let Some((n, p)) = hotspot {
+                common2.wifi_setup.take();
                 if let Some(wifi) = &common2.wifi {
                     common2.wifi_setup =
-                        create_hotspot(wifi, &n, &p).map(|a| uobradio_comms::WifiMode::Hotspot(a));
+                        create_hotspot(wifi, &n, &p).map(uobradio_comms::WifiMode::Hotspot);
                 } else {
                     log::error!("Wifi is not present?");
                 }
@@ -940,13 +960,14 @@ fn setup_wifi(mut common2: tokio::sync::MutexGuard<AppUserCommon>) {
         WifiConfig::RegularNetwork => {
             if let Some(wifi) = &common2.wifi {
                 let w = iterate_over_networks(wifi, &common2.settings.wifi_network);
-                common2.wifi_setup = w.map(|a| uobradio_comms::WifiMode::RegularNetwork(a));
+                common2.wifi_setup.take();
+                common2.wifi_setup = w.map(uobradio_comms::WifiMode::RegularNetwork);
             } else {
                 log::error!("Wifi is not present?");
             }
         }
         WifiConfig::Disabled => {
-            common2.wifi_setup = None;
+            common2.wifi_setup.take();
         }
     }
 }
@@ -979,7 +1000,7 @@ async fn smain() {
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     };
-    let main_wifi = wifis.get(0);
+    let main_wifi = wifis.first();
 
     let f = tokio::fs::File::open("./service.toml").await;
     let settings = if let Ok(mut f) = f {
@@ -1067,7 +1088,7 @@ async fn smain() {
 
     {
         let mut common2 = common.lock().await;
-        common2.wifi.as_ref().map(|a| a.set_stay());
+        if let Some(a) = common2.wifi.as_ref() { a.set_stay(); }
         setup_wifi(common2);
     }
 

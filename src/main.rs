@@ -1,4 +1,5 @@
 mod bluetooth;
+mod hvac;
 mod settings;
 mod video;
 
@@ -56,6 +57,7 @@ enum Subwindow {
     #[cfg(feature = "wifi")]
     Wifi(wifi::Screen),
     Settings(settings::Settings),
+    Hvac(hvac::Window),
 }
 
 impl Default for Subwindow {
@@ -432,6 +434,13 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::Ac(c) => {
+                    match c {
+                        uobradio_comms::AcResponse::CurrentTemperature(_) => todo!(),
+                        uobradio_comms::AcResponse::TemperatureSetStatus(_) => todo!(),
+                        uobradio_comms::AcResponse::FanSpeedAcknowledge => todo!(),
+                    }
+                }
                 uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {
                     self.common.wifi_details.take();
                 }
@@ -487,7 +496,7 @@ impl eframe::App for MyEguiApp {
             ctx.show_viewport_immediate(id, builder, |ctx, _class| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
-                        let t = egui::RichText::new(format!("Passkey: {}", pass)).heading();
+                        let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
                         ui.label(t);
                         let min_size = CommonWindowProperties::min_size(ui);
                         if ui
@@ -632,6 +641,16 @@ impl eframe::App for MyEguiApp {
                         {
                             self.subwindow =
                                 Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
+                        }
+                        if ui
+                            .button(
+                                eframe::egui::RichText::new("AIR")
+                                    .font(eframe::egui::FontId::proportional(32.0)),
+                            )
+                            .clicked()
+                        {
+                            self.subwindow =
+                                Subwindow::Hvac(hvac::Window::new());
                         }
                         if ui
                             .add(
