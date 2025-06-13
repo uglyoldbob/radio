@@ -4,12 +4,7 @@
 
 //! This program is for handling the video and audio components for the radio
 
-use std::{
-    collections::HashSet,
-    io::Read,
-    path::PathBuf,
-    sync::{Arc, MutexGuard},
-};
+use std::{collections::HashSet, io::Read, path::PathBuf, sync::Arc};
 
 use android_auto::{
     AndroidAutoAudioInputTrait, AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait,
@@ -17,7 +12,9 @@ use android_auto::{
 };
 use bluetooth_rust::BluetoothAdapterTrait;
 use tokio::io::AsyncReadExt;
-use uobradio_comms::{aauto::AndroidAutoMessageFromPhone, NonvolatileSettings, WifiConfig};
+use uobradio_comms::{
+    aauto::AndroidAutoMessageFromPhone, HvacController, NonvolatileSettings, WifiConfig,
+};
 use video_service::VideoSource;
 use wifi_manage::WifiAdapterTrait;
 
@@ -190,6 +187,8 @@ pub struct AppUserCommon {
     old_settings: NonvolatileSettings,
     /// The nonvolatile settings of the radio
     settings: NonvolatileSettings,
+    /// The hvac controls
+    hvac: HvacController,
 }
 
 /// Performs the creation of a managed wifi hotspot, and also starts it up.
@@ -219,7 +218,10 @@ fn create_hotspot(
 
 /// Iterate over all known wifi networks, trying to connect in order if they are detected
 #[cfg(feature = "wifi")]
-fn iterate_over_networks(wifi: &wifi_manage::WifiAdapter, networks: &Vec<(String, String)>) -> Option<wifi_manage::WifiConnection> {
+fn iterate_over_networks(
+    wifi: &wifi_manage::WifiAdapter,
+    networks: &Vec<(String, String)>,
+) -> Option<wifi_manage::WifiConnection> {
     let wifis = wifi.scan_for_networks();
     for (ssid, password) in networks {
         for w in &wifis {
@@ -292,20 +294,34 @@ pub async fn process_app(
             }
             match packet {
                 uobradio_comms::MessageFromApp::Ac(c) => {
+                    let mut common2 = common.lock().await;
                     match c {
-                        uobradio_comms::AcControl::GetCurrentTemperature => {
-                            log::info!("Stub for get current ac temperature, faking 72 degrees");
-                            let packet = MessageToApp::Ac(uobradio_comms::AcResponse::CurrentTemperature(Some(72.0)));
+                        uobradio_comms::AcControl::SetMode(m) => common2.hvac.set_mode(m),
+                        uobradio_comms::AcControl::GetCurrentVentTemperature => {
+                            let t = common2.hvac.get_hvac_temperature();
+                            let packet = MessageToApp::Ac(
+                                uobradio_comms::AcResponse::CurrentHvacTemperature(Some(t)),
+                            );
+                            packet.send_to_stream(&streamw).await?;
+                        }
+                        uobradio_comms::AcControl::GetCurrentCabinTemperature => {
+                            let t = common2.hvac.get_cabin_temperature();
+                            let packet = MessageToApp::Ac(
+                                uobradio_comms::AcResponse::CurrentHvacTemperature(t),
+                            );
                             packet.send_to_stream(&streamw).await?;
                         }
                         uobradio_comms::AcControl::SetAcTargetTemperature(t) => {
-                            log::info!("Set target ac temperature to {}", t);
+                            common2.hvac.set_ac_setpoint(t);
                         }
                         uobradio_comms::AcControl::SetHeatTargetTemperature(t) => {
-                            log::info!("Set target heat temperature to {}", t);
+                            common2.hvac.set_heat_setpoint(t);
+                        }
+                        uobradio_comms::AcControl::SetAutoTargetTemperature(t) => {
+                            common2.hvac.set_auto_setpoint(t);
                         }
                         uobradio_comms::AcControl::SetFanSpeed(f) => {
-                            log::info!("Set ac fan speed to {}", f);
+                            common2.hvac.set_fan_speed(f);
                         }
                     }
                 }
@@ -346,30 +362,38 @@ pub async fn process_app(
                                 let p2 = p.clone();
                                 let a = tokio::task::spawn_blocking(move || {
                                     wifi.connect_to_network(&ssid2, &ssid2, &p2)
-                                }).await.expect("Failed to run task to connect to wifi");
+                                })
+                                .await
+                                .expect("Failed to run task to connect to wifi");
                                 match a {
                                     Ok(wifi) => {
                                         log::info!("Connected to wifi network {}", ssid);
                                         let mut common2 = common2.lock().await;
                                         common2.wifi_setup =
                                             Some(uobradio_comms::WifiMode::RegularNetwork(wifi));
-                                        common2.settings.wifi_network.push((ssid.clone(), p.clone()));
+                                        common2
+                                            .settings
+                                            .wifi_network
+                                            .push((ssid.clone(), p.clone()));
                                         common2.settings.save(&common2.args.nvconfig);
-                                        let packet = MessageToApp::ConnectedToWifiNetwork { ssid, password: p, };
+                                        let packet = MessageToApp::ConnectedToWifiNetwork {
+                                            ssid,
+                                            password: p,
+                                        };
                                         packet.send_to_stream(&stream2w).await?;
                                     }
                                     Err(e) => {
                                         log::error!("Error connecting to {}: {:?}", ssid, e);
-                                        let packet = MessageToApp::FailedToConnectToWifiNetwork { ssid: ssid, };
+                                        let packet = MessageToApp::FailedToConnectToWifiNetwork {
+                                            ssid: ssid,
+                                        };
                                         packet.send_to_stream(&stream2w).await?;
                                     }
                                 }
-                            }
-                            else {
+                            } else {
                                 log::error!("No password for wifi defined");
                             }
-                        }
-                        else {
+                        } else {
                             log::error!("No wifi adapter found?");
                         }
                         Ok::<(), String>(())
@@ -385,9 +409,10 @@ pub async fn process_app(
                     tokio::task::spawn(async move {
                         if let Some(wifi) = wifi {
                             log::info!("Scanning for wifi networks");
-                            let wifis = tokio::task::spawn_blocking(move || {
-                                wifi.scan_for_networks()
-                            }).await.expect("Failed to run task to scan for wifi");
+                            let wifis =
+                                tokio::task::spawn_blocking(move || wifi.scan_for_networks())
+                                    .await
+                                    .expect("Failed to run task to scan for wifi");
                             log::info!("Done scanning for wifi networks");
                             let packet = MessageToApp::WifiList(wifis);
                             packet.send_to_stream(&stream2w).await?;
@@ -487,7 +512,10 @@ pub async fn process_app(
                         uobradio_comms::MessageToApp::NewSettings(common2.settings.clone());
                     packet.send_to_stream(&streamw).await?;
                 }
-                uobradio_comms::MessageFromApp::NewSettings{ settings, wifi_reconnect } => {
+                uobradio_comms::MessageFromApp::NewSettings {
+                    settings,
+                    wifi_reconnect,
+                } => {
                     let mut common2 = common.lock().await;
                     common2.settings = settings;
                     common2.settings.save(&common2.args.nvconfig);
@@ -1067,7 +1095,8 @@ async fn smain() {
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         args,
         #[cfg(feature = "wifi")]
-        wifi: main_wifi.map(|m| Arc::new(wifi_manage::get_network_adapter(m).expect("Failed to setup wifi"))),
+        wifi: main_wifi
+            .map(|m| Arc::new(wifi_manage::get_network_adapter(m).expect("Failed to setup wifi"))),
         #[cfg(feature = "androidauto")]
         aauto_service: None,
         #[cfg(feature = "androidauto")]
@@ -1084,11 +1113,14 @@ async fn smain() {
         video: vs,
         old_settings: s.clone(),
         settings: s.clone(),
+        hvac: HvacController::new(),
     }));
 
     {
         let mut common2 = common.lock().await;
-        if let Some(a) = common2.wifi.as_ref() { a.set_stay(); }
+        if let Some(a) = common2.wifi.as_ref() {
+            a.set_stay();
+        }
         setup_wifi(common2);
     }
 

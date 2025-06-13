@@ -3,6 +3,9 @@
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 
+mod hvac;
+pub use hvac::*;
+
 use std::{collections::BTreeMap, io::{Read, Write}};
 
 pub mod video;
@@ -238,30 +241,6 @@ pub enum RadioCommand {
     StopTransmission,
     /// Data to transmit
     TransmissionDataPartial(Vec<u8>),
-}
-
-/// An ac control message
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum AcControl {
-    /// Get the temperature (fahrenheit) that is being controlled
-    GetCurrentTemperature,
-    /// Set the target temperature (fahrenheit) for temperature control of the ac
-    SetAcTargetTemperature(f32),
-    /// Set the target temperature (fahrenheit) for temperature control of the heat
-    SetHeatTargetTemperature(f32),
-    /// Set the fan speed
-    SetFanSpeed(u8),
-}
-
-/// An ac control message
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum AcResponse {
-    /// The current temperature if it is known (fahrenheit)
-    CurrentTemperature(Option<f32>),
-    /// Acknowledgement of set target temperature, indicates success or failure of setting hvac temperature setpoint
-    TemperatureSetStatus(bool),
-    /// Acknowledge set fan speed
-    FanSpeedAcknowledge,
 }
 
 /// A message that can be sent from an app. 

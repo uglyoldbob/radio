@@ -61,10 +61,13 @@ impl Screen {
 }
 
 impl SubwindowTrait for Screen {
-
-    fn process_packet(&mut self, _settings: &mut uobradio_comms::NonvolatileSettings, packet: &uobradio_comms::MessageToApp) {
+    fn process_packet(
+        &mut self,
+        _settings: &mut uobradio_comms::NonvolatileSettings,
+        packet: &uobradio_comms::MessageToApp,
+    ) {
         match packet {
-            uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password: _, } => {
+            uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password: _ } => {
                 if let Some((_i, w)) = &self.wifi_new_connect {
                     if w.name == *ssid {
                         self.wifi_state = WifiConnectStage::Connected;
@@ -149,8 +152,7 @@ impl SubwindowTrait for Screen {
                 if let uobradio_comms::WifiConfig::RegularNetwork = &common.settings.wifi_config {
                     if let Some((wn, _wp)) = &common.wifi_details {
                         ui.label(format!("Connected to wifi network {}", wn));
-                    }
-                    else {
+                    } else {
                         ui.label("ConnectPasswordPrompted to a wifi network");
                     }
                 }
@@ -167,18 +169,22 @@ impl SubwindowTrait for Screen {
                 }
                 for (i, w) in common.wifi_list.iter().enumerate() {
                     if let WifiConnectStage::Idle = &self.wifi_state {
-                        if ui.selectable_value(
-                            &mut self.wifi_new_connect,
-                            Some((i, w.clone())),
-                            format!("{} - {}", w.name.clone(), w.get_speed()),
-                        ).clicked() {
+                        if ui
+                            .selectable_value(
+                                &mut self.wifi_new_connect,
+                                Some((i, w.clone())),
+                                format!("{} - {}", w.name.clone(), w.get_speed()),
+                            )
+                            .clicked()
+                        {
                             self.wifi_state = WifiConnectStage::PasswordPrompt;
                         }
                     }
                     let mut password = |ui: &mut egui::Ui, wifi_state: &mut WifiConnectStage| {
                         ui.label(format!("Network {}", w.name));
                         ui.label("Password");
-                        let te = egui::widgets::TextEdit::singleline(&mut self.wifi_password).password(true);
+                        let te = egui::widgets::TextEdit::singleline(&mut self.wifi_password)
+                            .password(true);
                         ui.add(te);
                         if ui.button("Connect").clicked() {
                             let asdf = common.radio.send_packet(
@@ -251,7 +257,10 @@ impl SubwindowTrait for Screen {
                 log::info!("Sending new settings: {:?}", common.settings);
                 let _ = common
                     .radio
-                    .send_packet(uobradio_comms::MessageFromApp::NewSettings { settings: common.settings.clone(), wifi_reconnect: reconnect, });
+                    .send_packet(uobradio_comms::MessageFromApp::NewSettings {
+                        settings: common.settings.clone(),
+                        wifi_reconnect: reconnect,
+                    });
             }
         });
         None
