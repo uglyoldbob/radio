@@ -585,7 +585,7 @@
     (uuid c1efc093-4a4f-4c74-8510-500c3ac5b897)
   )
 
-  (text "TODO\nusb for wireless" (at 88.9 25.4 0)
+  (text "TODO\nusb for wireless" (at 127 24.13 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
     (uuid d906668d-2527-4dd0-ae88-ea5d74b961d6)
   )
@@ -755,6 +755,23 @@
     (instances
       (project "carrier"
         (path "/041ef24b-cd87-4836-be30-e579ff56bff6" (page "4"))
+      )
+    )
+  )
+
+  (sheet (at 111.76 125.73) (size 12.7 5.08) (fields_autoplaced)
+    (stroke (width 0.1524) (type solid))
+    (fill (color 0 0 0 0.0000))
+    (uuid 41745e8a-b8bf-49de-a718-89aca78edefa)
+    (property "Sheetname" "accelerometer" (at 111.76 125.0184 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "accelerometer.kicad_sch" (at 111.76 131.3946 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "carrier"
+        (path "/041ef24b-cd87-4836-be30-e579ff56bff6" (page "11"))
       )
     )
   )

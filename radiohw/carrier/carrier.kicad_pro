@@ -505,6 +505,10 @@
     [
       "fe8c9a0a-8930-4681-a5fc-90e0f6ddd711",
       "DualAudioSpeakerDriver2"
+    ],
+    [
+      "41745e8a-b8bf-49de-a718-89aca78edefa",
+      "accelerometer"
     ]
   ],
   "text_variables": {}
