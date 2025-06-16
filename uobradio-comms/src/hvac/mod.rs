@@ -46,6 +46,8 @@ pub struct HvacController {
     fan_auto_calc: bool,
     /// The pid for the fan speed
     fan_speed_pid: Pid,
+    /// The minimum fan speed
+    min_fan_speed: f32,
 }
 
 impl HvacController {
@@ -66,12 +68,21 @@ impl HvacController {
             heat_pid: Pid::new(PidMode::Increasing, 0.333, 0.2, 5.0),
             fan_auto_calc: true,
             fan_speed_pid: Pid::new(PidMode::Increasing, 0.333, 0.2, 5.0),
+            min_fan_speed: 0.25,
         }
     }
 
     /// Set the mode of the controller
     pub fn set_mode(&mut self, m: HvacMode) {
         self.mode = m;
+        self.fan_speed_pid.reset();
+        let m2 = match m {
+            HvacMode::Off => PidMode::Increasing,
+            HvacMode::AcAuto => PidMode::Decreasing,
+            HvacMode::HeatAuto => PidMode::Increasing,
+            HvacMode::AutoAuto => PidMode::Increasing,
+        };
+        self.fan_speed_pid.change_mode(m2);
     }
 
     /// Declare the humidity of the cabin for control purposes
@@ -144,34 +155,80 @@ impl HvacController {
                 self.ac_enabled_out = false;
                 self.ac_pid.reset();
                 self.heat_pid.reset();
+                self.fan_speed_pid.reset();
+                self.fan_speed_out = 0;
             }
             HvacMode::AcAuto => {
+                self.ac_pid.set_setpoint(self.ac_sp);
                 self.ac_pid.run_calc(self.hvac_vent_temperature);
+                self.fan_speed_pid.set_setpoint(self.ac_sp);
+                self.fan_speed_pid.run_calc(self.hvac_vent_temperature);
                 self.heat_pid.reset();
+                let fs = self.fan_speed_pid.duty_cycle();
+                let fs = if fs < self.min_fan_speed {
+                    0.0
+                } else {
+                    fs
+                };
+                self.fan_speed_out = (fs * 255.0).round() as u8;
             }
             HvacMode::HeatAuto => {
                 self.ac_pid.reset();
+                self.heat_pid.set_setpoint(self.heat_sp);
                 self.heat_pid.run_calc(self.hvac_vent_temperature);
+                self.fan_speed_pid.set_setpoint(self.heat_sp);
+                self.fan_speed_pid.run_calc(self.hvac_vent_temperature);
+                let fs = self.fan_speed_pid.duty_cycle();
+                let fs = if fs < self.min_fan_speed {
+                    0.0
+                } else {
+                    fs
+                };
+                self.fan_speed_out = (fs * 255.0).round() as u8;
             }
             HvacMode::AutoAuto => {
                 if let Some(cabin) = self.cabin_temperature {
                     if (cabin + HYSTERESIS) < self.auto_sp {
+                        self.fan_speed_pid.change_mode(PidMode::Increasing);
                         self.ac_pid.reset();
+                        self.heat_pid.set_setpoint(self.auto_sp);
                         self.heat_pid.run_calc(cabin);
+                        self.fan_speed_pid.set_setpoint(self.auto_sp);
+                        self.fan_speed_pid.run_calc(cabin);
                     } else if (cabin - HYSTERESIS) > self.auto_sp {
+                        self.fan_speed_pid.change_mode(PidMode::Decreasing);
+                        self.ac_pid.run_calc(self.hvac_vent_temperature);
                         self.ac_pid.run_calc(cabin);
                         self.heat_pid.reset();
+                        self.fan_speed_pid.set_setpoint(self.auto_sp);
+                        self.fan_speed_pid.run_calc(cabin);
                     }
                 }
                 else {
                     if (self.hvac_vent_temperature + HYSTERESIS) < self.auto_sp {
+                        self.fan_speed_pid.change_mode(PidMode::Increasing);
                         self.ac_pid.reset();
+                        self.heat_pid.set_setpoint(self.auto_sp);
                         self.heat_pid.run_calc(self.hvac_vent_temperature);
+                        self.fan_speed_pid.set_setpoint(self.auto_sp);
+                        self.fan_speed_pid.run_calc(self.hvac_vent_temperature);
+
                     } else if (self.hvac_vent_temperature - HYSTERESIS) > self.auto_sp {
+                        self.fan_speed_pid.change_mode(PidMode::Decreasing);
+                        self.ac_pid.set_setpoint(self.auto_sp);
                         self.ac_pid.run_calc(self.hvac_vent_temperature);
                         self.heat_pid.reset();
+                        self.fan_speed_pid.set_setpoint(self.auto_sp);
+                        self.fan_speed_pid.run_calc(self.hvac_vent_temperature);
                     }
                 }
+                let fs = self.fan_speed_pid.duty_cycle();
+                let fs = if fs < self.min_fan_speed {
+                    0.0
+                } else {
+                    fs
+                };
+                self.fan_speed_out = (fs * 255.0).round() as u8;
             }
         }
     }
@@ -179,7 +236,7 @@ impl HvacController {
 
 /// An ac control message
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum AcControl {
+pub enum HvacControl {
     /// Get the temperature (fahrenheit) of the hvac vent
     GetCurrentVentTemperature,
     /// Get the temperature (fahrenheit) of the cabin

@@ -293,34 +293,34 @@ pub async fn process_app(
                 }
             }
             match packet {
-                uobradio_comms::MessageFromApp::Ac(c) => {
+                uobradio_comms::MessageFromApp::Hvac(c) => {
                     let mut common2 = common.lock().await;
                     match c {
-                        uobradio_comms::AcControl::SetMode(m) => common2.hvac.set_mode(m),
-                        uobradio_comms::AcControl::GetCurrentVentTemperature => {
+                        uobradio_comms::HvacControl::SetMode(m) => common2.hvac.set_mode(m),
+                        uobradio_comms::HvacControl::GetCurrentVentTemperature => {
                             let t = common2.hvac.get_hvac_temperature();
                             let packet = MessageToApp::Ac(
                                 uobradio_comms::AcResponse::CurrentHvacTemperature(Some(t)),
                             );
                             packet.send_to_stream(&streamw).await?;
                         }
-                        uobradio_comms::AcControl::GetCurrentCabinTemperature => {
+                        uobradio_comms::HvacControl::GetCurrentCabinTemperature => {
                             let t = common2.hvac.get_cabin_temperature();
                             let packet = MessageToApp::Ac(
                                 uobradio_comms::AcResponse::CurrentHvacTemperature(t),
                             );
                             packet.send_to_stream(&streamw).await?;
                         }
-                        uobradio_comms::AcControl::SetAcTargetTemperature(t) => {
+                        uobradio_comms::HvacControl::SetAcTargetTemperature(t) => {
                             common2.hvac.set_ac_setpoint(t);
                         }
-                        uobradio_comms::AcControl::SetHeatTargetTemperature(t) => {
+                        uobradio_comms::HvacControl::SetHeatTargetTemperature(t) => {
                             common2.hvac.set_heat_setpoint(t);
                         }
-                        uobradio_comms::AcControl::SetAutoTargetTemperature(t) => {
+                        uobradio_comms::HvacControl::SetAutoTargetTemperature(t) => {
                             common2.hvac.set_auto_setpoint(t);
                         }
-                        uobradio_comms::AcControl::SetFanSpeed(f) => {
+                        uobradio_comms::HvacControl::SetFanSpeed(f) => {
                             common2.hvac.set_fan_speed(f);
                         }
                     }
@@ -649,7 +649,25 @@ async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result
     }
 }
 
-/// Run the tcp listener for a radio, reporting an error if anything went wront setting up the service
+/// run the control for the hvac on the vehicle
+async fn hvac_control(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
+    loop {
+        {
+            let mut common2 = common.lock().await;
+            common2.hvac.set_hvac_vent_temperature(65.0);
+            common2.hvac.run_controls();
+            let fan_duty = common2.hvac.get_fan_speed();
+            log::info!("Fan speed: {}", fan_duty);
+            let ac_duty = common2.hvac.get_ac_compressor_duty_cycle();
+            log::info!("AC Compressor duty: {:02}", ac_duty * 100.0);
+            let heat_duty = common2.hvac.get_heat_control_duty_cycle();
+            log::info!("Heat duty cycle: {:02}", heat_duty * 100.0);
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+/// Run the tcp listener for a radio, reporting an error if anything went wrong setting up the service
 async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
     let mut set = tokio::task::JoinSet::new();
@@ -1136,6 +1154,12 @@ async fn smain() {
         tcp_listener(common2)
             .await
             .inspect_err(|a| log::error!("Radio tcp listener ended: {:?}", a))
+    });
+    let common2 = common.clone();
+    tasks.spawn(async move {
+        hvac_control(common2)
+            .await
+            .inspect_err(|a| log::error!("Radio hvac control ended: {:?}", a))
     });
 
     tokio::select! {

@@ -284,7 +284,7 @@ pub enum MessageFromApp {
     /// Get the ssid and password for the current wifi network
     GetWifiDetails,
     /// Ac control messages
-    Ac(AcControl),
+    Hvac(HvacControl),
 }
 
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};

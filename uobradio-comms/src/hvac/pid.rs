@@ -1,6 +1,7 @@
 //! PID code for hvac controls
 
 /// The mode for a pid controller
+#[derive(PartialEq)]
 pub enum PidMode {
     /// More duty cycle generally increases the measured value
     Increasing,
@@ -64,20 +65,34 @@ impl Pid {
         self.dc_out = 0.0;
     }
 
+    /// Set the setpoint for the pid algorithm
+    pub fn set_setpoint(&mut self, val: f32) {
+        self.setpoint = val;
+    }
+
+    /// Change the mode of the pid
+    pub fn change_mode(&mut self, mode: PidMode) {
+        if self.mode != mode {
+            self.mode = mode;
+            self.reset();
+        }
+    }
+
     /// Run the duty cycle calculation with the new measurement
     pub fn run_calc(&mut self, val: f32) {
         let error = match self.mode {
-            PidMode::Increasing => val - self.setpoint,
-            PidMode::Decreasing => self.setpoint - val,
+            PidMode::Decreasing => val - self.setpoint,
+            PidMode::Increasing => self.setpoint - val,
         };
         let now = std::time::Instant::now();
         let deltat = now - self.last_update;
         let deltat = deltat.as_nanos() as f32 / 1000000000.0;
         self.last_update = now;
         let derivative = match self.mode {
-            PidMode::Increasing => (val - self.input) / deltat,
-            PidMode::Decreasing => (self.input - val) / deltat,
+            PidMode::Decreasing => (val - self.input) / deltat,
+            PidMode::Increasing => (self.input - val) / deltat,
         };
+        self.input = val;
         let derivative = derivative * self.kd;
         let proportional = error * self.kp;
         self.is += self.ki * error;
@@ -87,6 +102,20 @@ impl Pid {
         if self.is < -1.0 {
             self.is = -1.0;
         }
+        let proportional = if proportional < -1.0 {
+            -1.0
+        } else if proportional > 1.0 {
+            1.0
+        } else {
+            proportional
+        };
+        let derivative = if derivative < -1.0 {
+            -1.0
+        } else if derivative > 1.0 {
+            1.0
+        } else {
+            derivative
+        };
         self.dc_out = proportional + self.is + derivative;
         if self.dc_out > 1.0 {
             self.dc_out = 1.0;
