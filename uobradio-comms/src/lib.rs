@@ -114,6 +114,39 @@ impl Drop for AndroidAutoServerFrontend {
     }
 }
 
+/// Represents all possible sensors on the radio
+#[derive(Default)]
+pub struct Sensors {
+    /// Orientation of the system, left-right, forwards-backwards, both in degrees
+    pub orientation: Option<(f32, f32)>,
+    /// The cabin air temperature
+    pub cabin_temp: Option<f32>,
+    /// The cabin humidity
+    pub cabin_humidity: Option<f32>,
+    /// The engine coolant temperature
+    pub engine_coolant_temp: Option<f32>,
+    /// The engine oil temperature
+    pub engine_oil_temp: Option<f32>,
+    /// The engine exhaust temperature
+    pub engine_exhaust_temp: Option<f32>,
+    /// Front differential temperature
+    pub front_diff_temp: Option<f32>,
+    /// Rear differential temperature
+    pub rear_diff_temp: Option<f32>,
+    /// The engine oil pressure (psi)
+    pub engine_oil_pressure: Option<f32>,
+    /// Transmission temperature
+    pub trans_temp: Option<f32>,
+    /// Transfer case temperature
+    pub transfer_temp: Option<f32>,
+    /// Door open sensor
+    pub door_open: Option<bool>,
+    /// Engine rpm sensor
+    pub engine_rpm: Option<u16>,
+    /// Main system voltage
+    pub main_voltage: Option<f32>,
+}
+
 /// Represents a uob radio connection
 pub struct UobRadio {
     /// Address of where the radio can be contacted
@@ -145,6 +178,8 @@ pub struct UobRadio {
     /// Is an android auto frontend running on this radio?
     #[cfg(feature = "androidauto")]
     aauto: Option<AndroidAutoServerFrontend>,
+    /// The sensors on the system
+    pub sensors: Sensors,
 }
 
 impl UobRadio {
@@ -167,6 +202,7 @@ impl UobRadio {
             display_passkey: None,
             #[cfg(feature = "bluetooth")]
             confirm_passkey: None,
+            sensors: Sensors::default(),
         }
     }
 

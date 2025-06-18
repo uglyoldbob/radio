@@ -1,5 +1,12 @@
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
+#![warn(unused_extern_crates)]
+
+//! The gui portion of the automotive radio solution.
+
 mod bluetooth;
 mod hvac;
+mod offroad;
 mod settings;
 mod video;
 
@@ -66,6 +73,7 @@ enum Subwindow {
     Wifi(wifi::Screen),
     Settings(settings::Settings),
     Hvac(hvac::Window),
+    Offroad(offroad::Window),
 }
 
 impl Default for Subwindow {
@@ -682,6 +690,15 @@ impl eframe::App for MyEguiApp {
                             .clicked()
                         {
                             self.subwindow = Subwindow::Settings(settings::Settings::new());
+                        }
+                        if ui
+                            .button(
+                                eframe::egui::RichText::new("OR")
+                                    .font(eframe::egui::FontId::proportional(64.0)),
+                            )
+                            .clicked()
+                        {
+                            self.subwindow = Subwindow::Offroad(offroad::Window::new());
                         }
                         ui.label(format!("Focus: {:?}", ui.input(|r| r.viewport().focused)));
                         if self.check {
