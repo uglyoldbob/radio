@@ -189,6 +189,8 @@ pub struct AppUserCommon {
     settings: NonvolatileSettings,
     /// The hvac controls
     hvac: HvacController,
+    /// The system sensors
+    sensors: uobradio_comms::Sensors,
 }
 
 /// Performs the creation of a managed wifi hotspot, and also starts it up.
@@ -667,6 +669,16 @@ async fn hvac_control(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     }
 }
 
+/// Polls the sensors in the system
+async fn sensor_polling(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
+    loop {
+        {
+            let mut common2 = common.lock().await;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
 /// Run the tcp listener for a radio, reporting an error if anything went wrong setting up the service
 async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
@@ -1132,10 +1144,11 @@ async fn smain() {
         old_settings: s.clone(),
         settings: s.clone(),
         hvac: HvacController::new(),
+        sensors: uobradio_comms::Sensors::default(),
     }));
 
     {
-        let mut common2 = common.lock().await;
+        let common2 = common.lock().await;
         if let Some(a) = common2.wifi.as_ref() {
             a.set_stay();
         }
@@ -1160,6 +1173,12 @@ async fn smain() {
         hvac_control(common2)
             .await
             .inspect_err(|a| log::error!("Radio hvac control ended: {:?}", a))
+    });
+    let common2 = common.clone();
+    tasks.spawn(async move {
+        sensor_polling(common2)
+            .await
+            .inspect_err(|a| log::error!("Sensor polling ended: {:?}", a))
     });
 
     tokio::select! {
