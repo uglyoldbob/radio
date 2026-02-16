@@ -119,10 +119,19 @@ impl Default for Subwindow {
 
 fn main() {
     simple_logger::init_with_level(log::Level::Info).unwrap();
+    let vb = if std::option_env!("AUTO_FULLSCREEN").is_some() {
+        egui::ViewportBuilder::default()
+                .with_fullscreen(true)
+                .with_always_on_top()
+    } else {
+        egui::ViewportBuilder::default()
+        .with_inner_size([800.0, 600.0])
+        .with_decorations(false)
+        .with_resizable(false)
+        .with_position([0.0, 0.0])
+    };
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_fullscreen(true)
-            .with_always_on_top(),
+        viewport: vb,
         ..Default::default()
     };
     eframe::run_native(
