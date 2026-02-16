@@ -31,11 +31,24 @@ trait SubwindowTrait {
     fn process_packet(
         &mut self,
         settings: &mut uobradio_comms::NonvolatileSettings,
+        vsettings: &mut uobradio_comms::VolatileSettings,
         packet: &uobradio_comms::MessageToApp,
     );
+    /// Get the icon for the bottom of the gui
+    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool;
 }
 
+#[derive(Clone, Copy)]
 struct MainPage {}
+
+// Define color scheme - premium automotive dark theme
+const BG_PRIMARY: egui::Color32 = egui::Color32::from_rgb(12, 14, 18);
+const BG_SECONDARY: egui::Color32 = egui::Color32::from_rgb(20, 24, 30);
+const BG_CARD: egui::Color32 = egui::Color32::from_rgb(28, 32, 40);
+const ACCENT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(0, 180, 255);
+const ACCENT_WARM: egui::Color32 = egui::Color32::from_rgb(255, 140, 60);
+const TEXT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(240, 242, 245);
+const TEXT_SECONDARY: egui::Color32 = egui::Color32::from_rgb(160, 165, 175);
 
 impl SubwindowTrait for MainPage {
     fn update(
@@ -56,14 +69,36 @@ impl SubwindowTrait for MainPage {
         r
     }
 
+    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool {
+        let button_color = if active { ACCENT_PRIMARY } else { BG_SECONDARY };
+        let text_color = if active {
+            egui::Color32::WHITE
+        } else {
+            TEXT_SECONDARY
+        };
+
+        let button = egui::Button::new(
+            egui::RichText::new(format!("{}\n{}", "H", "Home"))
+                .size(16.0)
+                .color(text_color),
+        )
+        .fill(button_color)
+        .min_size(egui::vec2(140.0, 70.0))
+        .corner_radius(12.0);
+
+        ui.add(button).clicked()
+    }
+
     fn process_packet(
         &mut self,
-        mut _settings: &mut uobradio_comms::NonvolatileSettings,
+        _settings: &mut uobradio_comms::NonvolatileSettings,
+        _vsettings: &mut uobradio_comms::VolatileSettings,
         _packet: &uobradio_comms::MessageToApp,
     ) {
     }
 }
 
+#[derive(Clone, Copy)]
 #[enum_dispatch::enum_dispatch(SubwindowTrait)]
 enum Subwindow {
     MainPage(MainPage),
@@ -101,6 +136,7 @@ fn main() {
 struct CommonWindowProperties {
     radio: uobradio_comms::UobRadio,
     pub settings: uobradio_comms::NonvolatileSettings,
+    pub vsettings: uobradio_comms::VolatileSettings,
     wifi_list: Vec<wifi_manage::WifiNetwork>,
     /// The optional details for the wifi network, ssid and password
     wifi_details: Option<(String, String)>,
@@ -111,6 +147,7 @@ struct CommonWindowProperties {
 impl CommonWindowProperties {
     pub fn new() -> Self {
         Self {
+            vsettings: uobradio_comms::VolatileSettings::default(),
             radio: uobradio_comms::UobRadio::localhost(),
             settings: uobradio_comms::NonvolatileSettings::default(),
             wifi_list: Vec::new(),
@@ -442,7 +479,8 @@ impl eframe::App for MyEguiApp {
         let mut settings_changed = false;
         if let Err(e) = self.common.radio.process_received(|packet| {
             let mut newsettings = self.common.settings.clone();
-            self.subwindow.process_packet(&mut newsettings, packet);
+            self.subwindow
+                .process_packet(&mut newsettings, &mut self.common.vsettings, packet);
             if self.common.settings != newsettings {
                 self.common.settings = newsettings;
                 settings_changed = true;
@@ -622,91 +660,101 @@ impl eframe::App for MyEguiApp {
                 }
             });
         } else {
+            egui::TopBottomPanel::top("status_bar")
+                .frame(egui::Frame::new().fill(BG_PRIMARY).inner_margin(10.0))
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 20.0;
+
+                        let time = chrono::Local::now().format("%I:%M %p").to_string();
+                        // Time
+                        ui.label(egui::RichText::new(time).size(18.0).color(TEXT_PRIMARY));
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // Temperature
+                            if let Some(t) = &self.common.vsettings.hvac.current_temperature {
+                                ui.label(
+                                    egui::RichText::new(format!("{:.1}°F", t))
+                                        .size(16.0)
+                                        .color(TEXT_SECONDARY),
+                                );
+                            }
+                        });
+                    });
+                });
             egui::TopBottomPanel::bottom("Bottom Icons")
                 .min_height(74.0)
                 .max_height(74.0)
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         if let Some(cameras) = self.common.radio.cameras() {
-                            if !cameras.is_empty()
-                                && ui
-                                    .button(
-                                        eframe::egui::RichText::new("V")
-                                            .font(eframe::egui::FontId::proportional(64.0)),
-                                    )
-                                    .clicked()
-                            {
-                                self.subwindow = Subwindow::Video(video::Video::new());
+                            if !cameras.is_empty() {
+                                let vw = Subwindow::Video(video::Video::new());
+                                let active = if let Subwindow::Video(_) = self.subwindow {
+                                    true
+                                } else {
+                                    false
+                                };
+                                if vw.card(active, ui) {
+                                    self.subwindow = vw;
+                                }
                             }
                         }
                         #[cfg(feature = "wifi")]
                         {
-                            if ui
-                                .button(
-                                    eframe::egui::RichText::new("W")
-                                        .font(eframe::egui::FontId::proportional(64.0)),
-                                )
-                                .clicked()
-                            {
-                                self.subwindow = Subwindow::Wifi(wifi::Screen::new());
+                            let vw = Subwindow::Wifi(wifi::Screen::new());
+                            let active = if let Subwindow::Wifi(_) = self.subwindow {
+                                true
+                            } else {
+                                false
+                            };
+                            if vw.card(active, ui) {
+                                self.subwindow = vw;
                             }
                         }
-                        if ui
-                            .button(
-                                eframe::egui::RichText::new("B")
-                                    .font(eframe::egui::FontId::proportional(64.0)),
-                            )
-                            .clicked()
                         {
-                            self.subwindow =
-                                Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
+                            let vw = Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
+                            let active = if let Subwindow::BluetoothConfig(_) = self.subwindow {
+                                true
+                            } else {
+                                false
+                            };
+                            if vw.card(active, ui) {
+                                self.subwindow = vw;
+                            }
                         }
-                        if ui
-                            .button(
-                                eframe::egui::RichText::new("AIR")
-                                    .font(eframe::egui::FontId::proportional(32.0)),
-                            )
-                            .clicked()
                         {
-                            self.subwindow = Subwindow::Hvac(hvac::Window::new());
+                            let vw = Subwindow::Hvac(hvac::Window::new());
+                            let active = if let Subwindow::Hvac(_) = self.subwindow {
+                                true
+                            } else {
+                                false
+                            };
+                            if vw.card(active, ui) {
+                                self.subwindow = vw;
+                            }
                         }
-                        if ui
-                            .add(
-                                egui::Image::new(egui::include_image!("../refresh.png"))
-                                    .maintain_aspect_ratio(true)
-                                    .fit_to_exact_size(Vec2 { x: 64.0, y: 64.0 })
-                                    .max_height(64.0)
-                                    .sense(egui::Sense::click()),
-                            )
-                            .clicked()
                         {
-                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                            let vw = Subwindow::Offroad(offroad::Window::new());
+                            let active = if let Subwindow::Offroad(_) = self.subwindow {
+                                true
+                            } else {
+                                false
+                            };
+                            if vw.card(active, ui) {
+                                self.subwindow = vw;
+                            }
                         }
-                        if ui
-                            .button(
-                                eframe::egui::RichText::new("S")
-                                    .font(eframe::egui::FontId::proportional(64.0)),
-                            )
-                            .clicked()
                         {
-                            self.subwindow = Subwindow::Settings(settings::Settings::new());
-                        }
-                        if ui
-                            .button(
-                                eframe::egui::RichText::new("OR")
-                                    .font(eframe::egui::FontId::proportional(64.0)),
-                            )
-                            .clicked()
-                        {
-                            self.subwindow = Subwindow::Offroad(offroad::Window::new());
-                        }
-                        ui.label(format!("Focus: {:?}", ui.input(|r| r.viewport().focused)));
-                        if self.check {
-                            ui.label("LABEL");
-                            self.check = false;
-                        } else {
-                            ui.label("POTATO");
-                            self.check = true;
+                            let vw = Subwindow::Settings(settings::Settings::new());
+                            let active = if let Subwindow::Settings(_) = self.subwindow {
+                                true
+                            } else {
+                                false
+                            };
+                            if vw.card(active, ui) {
+                                self.subwindow = vw;
+                            }
                         }
                     })
                 });

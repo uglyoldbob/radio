@@ -3,17 +3,14 @@ use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+#[derive(Clone, Copy)]
 pub struct Settings {
     selected_video: u8,
-    texture: Option<egui::TextureHandle>,
 }
 
 impl Settings {
     pub fn new() -> Self {
-        Self {
-            selected_video: 0,
-            texture: None,
-        }
+        Self { selected_video: 0 }
     }
 }
 
@@ -21,8 +18,33 @@ impl SubwindowTrait for Settings {
     fn process_packet(
         &mut self,
         _settings: &mut uobradio_comms::NonvolatileSettings,
+        _vsettings: &mut uobradio_comms::VolatileSettings,
         _packet: &uobradio_comms::MessageToApp,
     ) {
+    }
+
+    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool {
+        let button_color = if active {
+            super::ACCENT_PRIMARY
+        } else {
+            super::BG_SECONDARY
+        };
+        let text_color = if active {
+            egui::Color32::WHITE
+        } else {
+            super::TEXT_SECONDARY
+        };
+
+        let button = egui::Button::new(
+            egui::RichText::new(format!("{}\n{}", "🚗", "Settings"))
+                .size(16.0)
+                .color(text_color),
+        )
+        .fill(button_color)
+        .min_size(egui::vec2(140.0, 70.0))
+        .corner_radius(12.0);
+
+        ui.add(button).clicked()
     }
 
     fn update(
@@ -78,20 +100,20 @@ impl SubwindowTrait for Settings {
                                         size: [image.width as usize, image.height as usize],
                                         pixels: pd.get_egui(),
                                     };
-                                    if self.texture.is_none() {
-                                        self.texture = Some(ctx.load_texture(
+                                    if common.vsettings.video_texture.is_none() {
+                                        common.vsettings.video_texture = Some(ctx.load_texture(
                                             "camera0",
                                             image,
                                             egui::TextureOptions::LINEAR,
                                         ));
-                                    } else if let Some(t) = &mut self.texture {
+                                    } else if let Some(t) = &mut common.vsettings.video_texture {
                                         t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
                                     }
                                 }
                             }
                         }
                         ui.with_layout(egui::Layout::top_down(egui::Align::TOP), |ui| {
-                            if let Some(t) = &self.texture {
+                            if let Some(t) = &common.vsettings.video_texture {
                                 ui.add(egui::Image::from_texture(egui::load::SizedTexture {
                                     id: t.id(),
                                     size,

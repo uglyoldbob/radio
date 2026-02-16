@@ -3,10 +3,50 @@
 mod pid;
 use pid::*;
 
+/// The settings for the hvac
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
+pub struct Settings {
+    /// The target temperature in fahrenheit
+    pub ac_target: f32,
+    /// The target temperature in fahrenheit
+    pub heat_target: f32,
+    /// The target temperature in fahrenheit
+    pub auto_target: f32,
+    /// The current hvac mode
+    pub current_mode: HvacMode,
+}
+
+/// The volatile settings for the hvac
+#[derive(Clone, Debug)]
+pub struct VolatileSettings {
+    /// The current temperature in fahrenheit
+    pub current_temperature: Option<f32>,
+}
+
+impl Default for VolatileSettings {
+    fn default() -> Self {
+        Self {
+            current_temperature: Some(71.8),
+        }
+    }
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            ac_target: 72.0,
+            heat_target: 75.0,
+            auto_target: 73.0,
+            current_mode: HvacMode::Off,
+        }
+    }
+}
+
 /// The modes that the hvac system can be in
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum HvacMode {
     /// All controls inactive
+    #[default]
     Off,
     /// The ac is active in temperature control
     AcAuto,

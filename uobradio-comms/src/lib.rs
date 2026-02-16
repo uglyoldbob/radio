@@ -872,9 +872,46 @@ impl UobRadio {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+/// The stage of connecting to a wifi network
+pub enum WifiConnectStage {
+    /// Prompt the user for the password
+    PasswordPrompt,
+    /// Indicate connecting to the network
+    Connecting,
+    /// The wifi is connected
+    Connected,
+    /// The wifi failed to connect
+    FailedConnection,
+    /// Doing nothing
+    #[default]
+    Idle,
+}
+
+/// The volatile settings for the radio
+#[derive(Default)]
+pub struct VolatileSettings {
+    /// The image to display for the video screen
+    pub video_texture: Option<egui::TextureHandle>,
+    /// The volatile hvac settings
+    pub hvac: hvac::VolatileSettings,
+    /// Which video stream to look at
+    pub which_video: u8,
+    /// For the qr code
+    pub wifi_texture: Option<egui::TextureHandle>,
+    /// For connecting to a wifi with new credentials
+    pub wifi_new_connect: Option<(usize, wifi_manage::WifiNetwork)>,
+    /// The password storage for wifi connection
+    pub wifi_password: String,
+    /// Connection state for the indicated wifi network (wifi_new_connect)
+    pub wifi_state: WifiConnectStage,
+}
+
 /// Non-volatile settings that should be saved to nonvolatile storage of some kind
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct NonvolatileSettings {
+    /// The hvac settings
+    pub hvac: hvac::Settings,
     #[cfg(feature = "wifi")]
     /// Optional wifi name and password for wifi hotspot
     pub hotspot_enabled: Option<(String, String)>,
