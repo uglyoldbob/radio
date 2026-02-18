@@ -34,9 +34,9 @@ pub enum RadioReceiveStatus {
 /// The mode of operation for wifi
 pub enum WifiMode {
     /// The local wifi devices creates a hotspot
-    Hotspot(wifi_manage::WifiHotspot),
+    Hotspot,
     /// The local wifi adapter connects to an existing wifi network
-    RegularNetwork(wifi_manage::WifiConnection),
+    RegularNetwork,
 }
 
 /// Specifies what mode the wifi card should be in
@@ -369,7 +369,7 @@ pub enum MessageToApp {
     /// A generic android auto command from the "phone"
     AndroidAutoMessage(aauto::AndroidAutoMessageFromPhone),
     /// A list of wifi networks
-    WifiList(Vec<wifi_manage::WifiNetwork>),
+    WifiList(Vec<nmrs::Network>),
     /// The details for the current wifi network
     WifiDetails {
         /// The ssid of the network
@@ -388,6 +388,11 @@ pub enum MessageToApp {
     FailedToConnectToWifiNetwork {
         /// The ssid of the network
         ssid: String,
+    },
+    /// Indicates a failure to scan for wifi networks
+    FailedToScanForWifiNetworks {
+        /// The reason for failure
+        reason: String,
     },
     /// A response to an ac control command
     Ac(AcResponse),
@@ -491,6 +496,9 @@ impl UobRadio {
                                     match &packet {
                                         MessageToApp::Ac(_c) => { }
                                         MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {}
+                                        MessageToApp::FailedToScanForWifiNetworks { reason } => {
+                                            log::error!("Failed to scan for wifi networks: {reason}");
+                                        }
                                         MessageToApp::ConnectedToWifiNetwork { ssid: _, password: _ } => {}
                                         MessageToApp::WifiDetails { ssid: _, password: _ } => {}
                                         MessageToApp::WifiList(_list) => {
@@ -899,8 +907,6 @@ pub struct VolatileSettings {
     pub which_video: u8,
     /// For the qr code
     pub wifi_texture: Option<egui::TextureHandle>,
-    /// For connecting to a wifi with new credentials
-    pub wifi_new_connect: Option<(usize, wifi_manage::WifiNetwork)>,
     /// The password storage for wifi connection
     pub wifi_password: String,
     /// Connection state for the indicated wifi network (wifi_new_connect)

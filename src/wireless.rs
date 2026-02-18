@@ -1,29 +1,26 @@
-//! Code for the wifi configuration on the radio
-
 use super::CommonWindowProperties;
 use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+#[cfg(feature = "wifi")]
 use uobradio_comms::WifiConnectStage;
 
 #[derive(Clone, Copy)]
-pub struct Screen {}
+pub struct Config {}
 
-impl Screen {
+impl Config {
     pub fn new() -> Self {
         Self {}
     }
 
-    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool {
-        false
-    }
-
+    #[cfg(feature = "wifi")]
     fn make_wifi_qr(&self, wifi_name: &String, wifi_password: &String) -> Vec<u8> {
         let a = format!("WIFI:S:{};T:WPA;P:{};H:false;;", wifi_name, wifi_password);
         a.as_bytes().to_vec()
     }
 
+    #[cfg(feature = "wifi")]
     fn update_qr_code(&mut self, ctx: &egui::Context, common: &mut CommonWindowProperties) {
         if let uobradio_comms::WifiConfig::Disabled = common.settings.wifi_config {
             common.vsettings.wifi_texture.take();
@@ -40,7 +37,7 @@ impl Screen {
     }
 }
 
-impl SubwindowTrait for Screen {
+impl SubwindowTrait for Config {
     fn process_packet(
         &mut self,
         _settings: &mut uobradio_comms::NonvolatileSettings,
@@ -48,20 +45,8 @@ impl SubwindowTrait for Screen {
         packet: &uobradio_comms::MessageToApp,
     ) {
         match packet {
-            uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password: _ } => {
-                if let Some((_i, w)) = &vsettings.wifi_new_connect {
-                    if w.name == *ssid {
-                        vsettings.wifi_state = WifiConnectStage::Connected;
-                    }
-                }
-            }
-            uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {
-                if let Some((_i, w)) = &vsettings.wifi_new_connect {
-                    if w.name == *ssid {
-                        vsettings.wifi_state = WifiConnectStage::FailedConnection;
-                    }
-                }
-            }
+            uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password: _ } => {}
+            uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {}
             _ => {}
         }
     }
@@ -79,12 +64,12 @@ impl SubwindowTrait for Screen {
         };
 
         let button = egui::Button::new(
-            egui::RichText::new(format!("{}\n{}", "📱", "Wifi"))
+            egui::RichText::new(format!("{}\n{}", "📱", "Wireless"))
                 .size(16.0)
                 .color(text_color),
         )
         .fill(button_color)
-        .min_size(egui::vec2(140.0, 70.0))
+        .min_size(egui::vec2(70.0, 70.0))
         .corner_radius(12.0);
 
         ui.add(button).clicked()
@@ -116,6 +101,17 @@ impl SubwindowTrait for Screen {
             }
         });
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.label("Future expansion here for bluetooth settings");
+            if ui.button("Enable discovery").clicked() {
+                let _ = common
+                    .radio
+                    .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(true));
+            }
+            if ui.button("Disable discovery").clicked() {
+                let _ = common
+                    .radio
+                    .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(false));
+            }
             ui.label("This is the wifi page".to_string());
             let mut save = false;
             let mut reconnect = false;
@@ -173,59 +169,7 @@ impl SubwindowTrait for Screen {
                         .send_packet(uobradio_comms::MessageFromApp::ScanForWifiNetworks);
                 }
                 for (i, w) in common.wifi_list.iter().enumerate() {
-                    if let WifiConnectStage::Idle = &common.vsettings.wifi_state {
-                        if ui
-                            .selectable_value(
-                                &mut common.vsettings.wifi_new_connect,
-                                Some((i, w.clone())),
-                                format!("{} - {}", w.name.clone(), w.get_speed()),
-                            )
-                            .clicked()
-                        {
-                            common.vsettings.wifi_state = WifiConnectStage::PasswordPrompt;
-                        }
-                    }
-                    let mut password = |ui: &mut egui::Ui, wifi_state: &mut WifiConnectStage| {
-                        ui.label(format!("Network {}", w.name));
-                        ui.label("Password");
-                        let te = egui::widgets::TextEdit::singleline(
-                            &mut common.vsettings.wifi_password,
-                        )
-                        .password(true);
-                        ui.add(te);
-                        if ui.button("Connect").clicked() {
-                            let asdf = common.radio.send_packet(
-                                uobradio_comms::MessageFromApp::ConnectToNetwork(
-                                    w.name.clone(),
-                                    Some(common.vsettings.wifi_password.clone()),
-                                ),
-                            );
-                            log::info!("State of connect message: {:?}", asdf);
-                            *wifi_state = WifiConnectStage::Connecting;
-                        }
-                    };
-                    if let Some((i2, _w)) = &common.vsettings.wifi_new_connect {
-                        if i == *i2 {
-                            match &common.vsettings.wifi_state {
-                                WifiConnectStage::Idle => {
-                                    common.vsettings.wifi_state = WifiConnectStage::PasswordPrompt;
-                                }
-                                WifiConnectStage::PasswordPrompt => {
-                                    password(ui, &mut common.vsettings.wifi_state);
-                                }
-                                WifiConnectStage::Connecting => {
-                                    ui.label("Connecting to network...");
-                                }
-                                WifiConnectStage::Connected => {
-                                    ui.label("Connected");
-                                }
-                                WifiConnectStage::FailedConnection => {
-                                    ui.label("Failed to connect");
-                                    password(ui, &mut common.vsettings.wifi_state);
-                                }
-                            }
-                        }
-                    }
+                    ui.label(format!("Wifi network {}", w.ssid));
                 }
             };
             match &common.settings.wifi_config {

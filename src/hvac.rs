@@ -39,7 +39,7 @@ impl SubwindowTrait for Window {
                 .color(text_color),
         )
         .fill(button_color)
-        .min_size(egui::vec2(140.0, 70.0))
+        .min_size(egui::vec2(70.0, 70.0))
         .corner_radius(12.0);
 
         ui.add(button).clicked()
@@ -51,7 +51,7 @@ impl SubwindowTrait for Window {
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().frame(egui::Frame::new().fill(super::BG_PRIMARY)).show(ctx, |ui| {
             ui.label(egui::RichText::new("Current mode").size(32.0));
             ui.horizontal(|ui| {
                 if ui

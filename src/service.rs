@@ -16,7 +16,6 @@ use uobradio_comms::{
     aauto::AndroidAutoMessageFromPhone, HvacController, NonvolatileSettings, WifiConfig,
 };
 use video_service::VideoSource;
-use wifi_manage::WifiAdapterTrait;
 
 mod video_service;
 
@@ -166,9 +165,9 @@ pub struct AppUserCommon {
     /// The network details for android auto
     #[cfg(feature = "androidauto")]
     aa_network: Option<NetworkInformation>,
-    #[cfg(feature = "wifi")]
+    #[cfg(all(feature = "wifi", target_os = "linux"))]
     /// Used for wifi operations
-    wifi: Option<std::sync::Arc<wifi_manage::WifiAdapter>>,
+    wifi: Option<nmrs::NetworkManager>,
     #[cfg(feature = "wifi")]
     /// The wifi setup
     wifi_setup: Option<uobradio_comms::WifiMode>,
@@ -191,48 +190,6 @@ pub struct AppUserCommon {
     hvac: HvacController,
     /// The system sensors
     sensors: uobradio_comms::Sensors,
-}
-
-/// Performs the creation of a managed wifi hotspot, and also starts it up.
-#[cfg(feature = "wifi")]
-fn create_hotspot(
-    wifi: &wifi_manage::WifiAdapter,
-    name: &String,
-    password: &String,
-) -> Option<wifi_manage::WifiHotspot> {
-    log::info!("Attempting to create hotspot {:?} {:?}", name, password);
-    let mut a = None;
-    let mut times = 0;
-    loop {
-        use wifi_manage::WifiAdapterTrait;
-        a = wifi.build_hotspot("Hotspot", name, password).ok();
-        if a.is_some() {
-            break;
-        }
-        times += 1;
-        if times == 5 {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-    a
-}
-
-/// Iterate over all known wifi networks, trying to connect in order if they are detected
-#[cfg(feature = "wifi")]
-fn iterate_over_networks(
-    wifi: &wifi_manage::WifiAdapter,
-    networks: &Vec<(String, String)>,
-) -> Option<wifi_manage::WifiConnection> {
-    let wifis = wifi.scan_for_networks();
-    for (ssid, password) in networks {
-        for w in &wifis {
-            if w.name == *ssid {
-                return wifi.connect_to_network(ssid, ssid, password).ok();
-            }
-        }
-    }
-    None
 }
 
 #[cfg(not(target_os = "android"))]
@@ -330,22 +287,7 @@ pub async fn process_app(
                 uobradio_comms::MessageFromApp::GetWifiDetails => {
                     let common2 = common.lock().await;
                     if let Some(wifi) = &common2.wifi_setup {
-                        match wifi {
-                            uobradio_comms::WifiMode::Hotspot(wifi_hotspot) => {
-                                use wifi_manage::WifiHotspotTrait;
-                                let ssid = wifi_hotspot.ssid();
-                                let password = wifi_hotspot.password();
-                                let packet = MessageToApp::WifiDetails { ssid, password };
-                                packet.send_to_stream(&streamw).await?;
-                            }
-                            uobradio_comms::WifiMode::RegularNetwork(wifi_connection) => {
-                                use wifi_manage::WifiConnectionTrait;
-                                let ssid = wifi_connection.ssid();
-                                let password = wifi_connection.password();
-                                let packet = MessageToApp::WifiDetails { ssid, password };
-                                packet.send_to_stream(&streamw).await?;
-                            }
-                        }
+                        todo!("Send MessageToApp::WifiDetails to streamw");
                     }
                 }
                 uobradio_comms::MessageFromApp::ConnectToNetwork(ssid, password) => {
@@ -362,17 +304,15 @@ pub async fn process_app(
                                 log::info!("Start connect to wifi {}", ssid);
                                 let ssid2 = ssid.clone();
                                 let p2 = p.clone();
-                                let a = tokio::task::spawn_blocking(move || {
-                                    wifi.connect_to_network(&ssid2, &ssid2, &p2)
-                                })
-                                .await
-                                .expect("Failed to run task to connect to wifi");
+                                let a = wifi
+                                    .connect(&ssid, nmrs::WifiSecurity::WpaPsk { psk: p2 })
+                                    .await;
                                 match a {
                                     Ok(wifi) => {
                                         log::info!("Connected to wifi network {}", ssid);
                                         let mut common2 = common2.lock().await;
                                         common2.wifi_setup =
-                                            Some(uobradio_comms::WifiMode::RegularNetwork(wifi));
+                                            Some(uobradio_comms::WifiMode::RegularNetwork);
                                         common2
                                             .settings
                                             .wifi_network
@@ -408,19 +348,32 @@ pub async fn process_app(
                         common2.wifi.as_ref().map(|wifi| wifi.clone())
                     };
                     let stream2w = streamw.clone();
-                    tokio::task::spawn(async move {
-                        if let Some(wifi) = wifi {
-                            log::info!("Scanning for wifi networks");
-                            let wifis =
-                                tokio::task::spawn_blocking(move || wifi.scan_for_networks())
-                                    .await
-                                    .expect("Failed to run task to scan for wifi");
-                            log::info!("Done scanning for wifi networks");
-                            let packet = MessageToApp::WifiList(wifis);
-                            packet.send_to_stream(&stream2w).await?;
+                    if let Some(wifi) = wifi {
+                        log::info!("Scanning for wifi networks");
+                        let wifis = wifi.scan_networks().await;
+                        match wifis {
+                            Ok(_) => {
+                                let list = wifi.list_networks().await;
+                                /*match list {
+                                    Ok(list) => {
+                                        log::info!("Done scanning for wifi networks");
+                                        let packet = MessageToApp::WifiList(list);
+                                        packet.send_to_stream(&stream2w).await?;
+                                    }
+                                    Err(e) => {
+                                        let packet = MessageToApp::FailedToScanForWifiNetworks { reason: e.to_string() };
+                                        packet.send_to_stream(&stream2w).await?;
+                                    }
+                                }*/
+                            }
+                            Err(e) => {
+                                let packet = MessageToApp::FailedToScanForWifiNetworks {
+                                    reason: e.to_string(),
+                                };
+                                packet.send_to_stream(&stream2w).await?;
+                            }
                         }
-                        Ok::<(), String>(())
-                    });
+                    }
                 }
                 uobradio_comms::MessageFromApp::ExternalRadio(rc) => match rc {
                     uobradio_comms::RadioCommand::StartTransmission => {
@@ -539,7 +492,7 @@ pub async fn process_app(
                     }
                     #[cfg(feature = "wifi")]
                     if wifi_changed {
-                        setup_wifi(common2);
+                        todo!("Change the wifi settings according to the new settings");
                     }
                 }
                 uobradio_comms::MessageFromApp::CameraSettingControl(id, control, data) => {
@@ -682,28 +635,45 @@ async fn sensor_polling(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Resul
 /// Run the tcp listener for a radio, reporting an error if anything went wrong setting up the service
 async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     let tcp = tokio::net::TcpListener::bind("0.0.0.0:13457").await;
-    let mut set = tokio::task::JoinSet::new();
     if let Ok(tcp) = tcp {
         loop {
             log::info!("Waiting for a tcp client");
             if let Ok((stream, addr)) = tcp.accept().await {
                 let common2 = common.clone();
-                set.spawn(async move {
-                    log::info!("Got a tcp client {:?}", addr);
-                    let r = process_app(stream, addr, common2.clone()).await;
-                    let mut common3 = common2.lock().await;
-                    if Some(addr) == common3.blue_addr {
-                        log::info!("Setting {:?} as no longer the bluetooth master", addr);
-                        common3.blue_addr.take();
-                    }
-                    if let Some(aauto) = &common3.aauto_service {
-                        if addr == aauto.addr {
-                            log::info!("Setting {:?} as no longer the android auto master", addr);
-                            common3.aauto_service.take();
-                        }
-                    }
-                    log::info!("Completed handling user {:?}", r);
-                    r
+                std::thread::spawn(move || {
+                    //this is required becuase some of the nmrs futures are not send
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+
+                    let local = tokio::task::LocalSet::new();
+
+                    rt.block_on(local.run_until(async move {
+                        let a = tokio::task::spawn_local(async move {
+                            log::info!("Got a tcp client {:?}", addr);
+                            let r = process_app(stream, addr, common2.clone()).await;
+                            let mut common3 = common2.lock().await;
+                            if Some(addr) == common3.blue_addr {
+                                log::info!("Setting {:?} as no longer the bluetooth master", addr);
+                                common3.blue_addr.take();
+                            }
+                            if let Some(aauto) = &common3.aauto_service {
+                                if addr == aauto.addr {
+                                    log::info!(
+                                        "Setting {:?} as no longer the android auto master",
+                                        addr
+                                    );
+                                    common3.aauto_service.take();
+                                }
+                            }
+                            log::info!("Completed handling user {:?}", r);
+                            r
+                        })
+                        .await
+                        .unwrap();
+                        log::error!("tcp finished with {:?}", a);
+                    }));
                 });
             }
         }
@@ -994,42 +964,6 @@ impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
     }
 }
 
-/// Sets up the wifi hardware according to settings
-/// Call this when initially setting up wifi, or when changing wifi settings
-/// Wifi connections will likey drop and reconnect
-fn setup_wifi(mut common2: tokio::sync::MutexGuard<AppUserCommon>) {
-    log::info!("Setup wifi with {:?}", common2.settings.wifi_config);
-    match &common2.settings.wifi_config {
-        WifiConfig::Ready => {
-            common2.wifi_setup.take();
-        }
-        WifiConfig::Hotspot => {
-            let hotspot = common2.settings.hotspot_enabled.clone();
-            if let Some((n, p)) = hotspot {
-                common2.wifi_setup.take();
-                if let Some(wifi) = &common2.wifi {
-                    common2.wifi_setup =
-                        create_hotspot(wifi, &n, &p).map(uobradio_comms::WifiMode::Hotspot);
-                } else {
-                    log::error!("Wifi is not present?");
-                }
-            }
-        }
-        WifiConfig::RegularNetwork => {
-            if let Some(wifi) = &common2.wifi {
-                let w = iterate_over_networks(wifi, &common2.settings.wifi_network);
-                common2.wifi_setup.take();
-                common2.wifi_setup = w.map(uobradio_comms::WifiMode::RegularNetwork);
-            } else {
-                log::error!("Wifi is not present?");
-            }
-        }
-        WifiConfig::Disabled => {
-            common2.wifi_setup.take();
-        }
-    }
-}
-
 /// The main function for the service
 async fn smain() {
     #[cfg(target_family = "windows")]
@@ -1041,24 +975,6 @@ async fn smain() {
 
     let args = <Arguments as clap::Parser>::parse();
     android_auto::setup();
-
-    let mut times_wifi = 0;
-    let wifis = loop {
-        let wifis = wifi_manage::get_wifi_adapters().unwrap();
-        log::info!("Wifi NAMES:");
-        for w in &wifis {
-            log::info!("NAME: {}", w);
-        }
-        if !wifis.is_empty() {
-            break wifis;
-        }
-        times_wifi += 1;
-        if times_wifi == 5 {
-            break Vec::new();
-        }
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    };
-    let main_wifi = wifis.first();
 
     let f = tokio::fs::File::open("./service.toml").await;
     let settings = if let Ok(mut f) = f {
@@ -1092,29 +1008,13 @@ async fn smain() {
     bluetooth.with_sender(bluechan.0);
     let bluetooth = Arc::new(bluetooth.build().await.expect("Could not open bluetooth"));
 
-    use network_interface::NetworkInterfaceConfig;
-    let network_interfaces = network_interface::NetworkInterface::show().unwrap();
-    let mut wifi_mac = String::new();
-    if let Some(wn) = &main_wifi {
-        for i in &network_interfaces {
-            log::info!("Mac address of {} is {:?}", i.name, i.mac_addr);
-        }
-    }
-    if let Some(wn) = &main_wifi {
-        for i in network_interfaces {
-            if i.name == **wn {
-                wifi_mac = i.mac_addr.unwrap();
-            }
-        }
-    }
-
     let network = {
         s.hotspot_enabled
             .as_ref()
             .map(|a| android_auto::NetworkInformation {
                 ssid: a.0.clone(),
                 psk: a.1.clone(),
-                mac_addr: wifi_mac,
+                mac_addr: todo!(),
                 ip: "10.42.0.1".to_string(),
                 port: 5277,
                 security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
@@ -1125,8 +1025,7 @@ async fn smain() {
     let common = Arc::new(tokio::sync::Mutex::new(AppUserCommon {
         args,
         #[cfg(feature = "wifi")]
-        wifi: main_wifi
-            .map(|m| Arc::new(wifi_manage::get_network_adapter(m).expect("Failed to setup wifi"))),
+        wifi: nmrs::NetworkManager::new().await.ok(),
         #[cfg(feature = "androidauto")]
         aauto_service: None,
         #[cfg(feature = "androidauto")]
@@ -1146,14 +1045,6 @@ async fn smain() {
         hvac: HvacController::new(),
         sensors: uobradio_comms::Sensors::default(),
     }));
-
-    {
-        let common2 = common.lock().await;
-        if let Some(a) = common2.wifi.as_ref() {
-            a.set_stay();
-        }
-        setup_wifi(common2);
-    }
 
     let mut tasks: tokio::task::JoinSet<Result<(), String>> = tokio::task::JoinSet::new();
     let common2 = common.clone();

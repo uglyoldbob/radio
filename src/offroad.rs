@@ -39,7 +39,7 @@ impl SubwindowTrait for Window {
                 .color(text_color),
         )
         .fill(button_color)
-        .min_size(egui::vec2(140.0, 70.0))
+        .min_size(egui::vec2(70.0, 70.0))
         .corner_radius(12.0);
 
         ui.add(button).clicked()

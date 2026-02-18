@@ -4,17 +4,14 @@
 
 //! The gui portion of the automotive radio solution.
 
-mod bluetooth;
 mod hvac;
 mod offroad;
 mod settings;
 mod video;
-
-#[cfg(feature = "wifi")]
-mod wifi;
+mod wireless;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use eframe::egui::{self, Vec2};
+use eframe::egui::{self};
 use ringbuf::traits::{Consumer, Observer, Producer};
 use uobradio_comms::PendingAudioCommand;
 
@@ -83,7 +80,7 @@ impl SubwindowTrait for MainPage {
                 .color(text_color),
         )
         .fill(button_color)
-        .min_size(egui::vec2(140.0, 70.0))
+        .min_size(egui::vec2(70.0, 70.0))
         .corner_radius(12.0);
 
         ui.add(button).clicked()
@@ -102,13 +99,11 @@ impl SubwindowTrait for MainPage {
 #[enum_dispatch::enum_dispatch(SubwindowTrait)]
 enum Subwindow {
     MainPage(MainPage),
-    BluetoothConfig(bluetooth::BluetoothConfig),
     Video(video::Video),
-    #[cfg(feature = "wifi")]
-    Wifi(wifi::Screen),
     Settings(settings::Settings),
     Hvac(hvac::Window),
     Offroad(offroad::Window),
+    Wireless(wireless::Config),
 }
 
 impl Default for Subwindow {
@@ -121,14 +116,14 @@ fn main() {
     simple_logger::init_with_level(log::Level::Info).unwrap();
     let vb = if std::option_env!("AUTO_FULLSCREEN").is_some() {
         egui::ViewportBuilder::default()
-                .with_fullscreen(true)
-                .with_always_on_top()
+            .with_fullscreen(true)
+            .with_always_on_top()
     } else {
         egui::ViewportBuilder::default()
-        .with_inner_size([800.0, 600.0])
-        .with_decorations(false)
-        .with_resizable(false)
-        .with_position([0.0, 0.0])
+            .with_inner_size([800.0, 600.0])
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_position([0.0, 0.0])
     };
     let options = eframe::NativeOptions {
         viewport: vb,
@@ -146,7 +141,7 @@ struct CommonWindowProperties {
     radio: uobradio_comms::UobRadio,
     pub settings: uobradio_comms::NonvolatileSettings,
     pub vsettings: uobradio_comms::VolatileSettings,
-    wifi_list: Vec<wifi_manage::WifiNetwork>,
+    wifi_list: Vec<nmrs::Network>,
     /// The optional details for the wifi network, ssid and password
     wifi_details: Option<(String, String)>,
     android_auto_video_decoder: openh264::decoder::Decoder,
@@ -495,6 +490,7 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::FailedToScanForWifiNetworks { reason: _ } => {}
                 uobradio_comms::MessageToApp::Ac(c) => match c {
                     uobradio_comms::AcResponse::CurrentHvacTemperature(_) => todo!(),
                     uobradio_comms::AcResponse::TemperatureSetStatus(_) => todo!(),
@@ -509,7 +505,7 @@ impl eframe::App for MyEguiApp {
                 }
                 uobradio_comms::MessageToApp::WifiList(list) => {
                     let mut list2 = list.clone();
-                    list2.sort_by(|a, b| b.speed.cmp(&a.speed));
+                    list2.sort_by(|a, b| b.strength.cmp(&a.strength));
                     self.common.wifi_list = list2;
                 }
                 uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {
@@ -691,28 +687,30 @@ impl eframe::App for MyEguiApp {
                         });
                     });
                 });
-            egui::TopBottomPanel::bottom("Bottom Icons")
-                .min_height(74.0)
-                .max_height(74.0)
+            egui::SidePanel::left("Main Icons")
+                .resizable(false)
+                .frame(
+                    egui::Frame::side_top_panel(&ctx.style())
+                        .fill(BG_PRIMARY)
+                        .inner_margin(10.0)
+                        .outer_margin(0.0)
+                )
                 .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        if let Some(cameras) = self.common.radio.cameras() {
-                            if !cameras.is_empty() {
-                                let vw = Subwindow::Video(video::Video::new());
-                                let active = if let Subwindow::Video(_) = self.subwindow {
-                                    true
-                                } else {
-                                    false
-                                };
-                                if vw.card(active, ui) {
-                                    self.subwindow = vw;
-                                }
-                            }
+                    {
+                        let vw = Subwindow::MainPage(MainPage {});
+                        let active = if let Subwindow::MainPage(_) = self.subwindow {
+                            true
+                        } else {
+                            false
+                        };
+                        if vw.card(active, ui) {
+                            self.subwindow = vw;
                         }
-                        #[cfg(feature = "wifi")]
-                        {
-                            let vw = Subwindow::Wifi(wifi::Screen::new());
-                            let active = if let Subwindow::Wifi(_) = self.subwindow {
+                    }
+                    if let Some(cameras) = self.common.radio.cameras() {
+                        if !cameras.is_empty() {
+                            let vw = Subwindow::Video(video::Video::new());
+                            let active = if let Subwindow::Video(_) = self.subwindow {
                                 true
                             } else {
                                 false
@@ -721,51 +719,51 @@ impl eframe::App for MyEguiApp {
                                 self.subwindow = vw;
                             }
                         }
-                        {
-                            let vw = Subwindow::BluetoothConfig(bluetooth::BluetoothConfig::new());
-                            let active = if let Subwindow::BluetoothConfig(_) = self.subwindow {
-                                true
-                            } else {
-                                false
-                            };
-                            if vw.card(active, ui) {
-                                self.subwindow = vw;
-                            }
+                    }
+                    {
+                        let vw = Subwindow::Wireless(wireless::Config::new());
+                        let active = if let Subwindow::Wireless(_) = self.subwindow {
+                            true
+                        } else {
+                            false
+                        };
+                        if vw.card(active, ui) {
+                            self.subwindow = vw;
                         }
-                        {
-                            let vw = Subwindow::Hvac(hvac::Window::new());
-                            let active = if let Subwindow::Hvac(_) = self.subwindow {
-                                true
-                            } else {
-                                false
-                            };
-                            if vw.card(active, ui) {
-                                self.subwindow = vw;
-                            }
+                    }
+                    {
+                        let vw = Subwindow::Hvac(hvac::Window::new());
+                        let active = if let Subwindow::Hvac(_) = self.subwindow {
+                            true
+                        } else {
+                            false
+                        };
+                        if vw.card(active, ui) {
+                            self.subwindow = vw;
                         }
-                        {
-                            let vw = Subwindow::Offroad(offroad::Window::new());
-                            let active = if let Subwindow::Offroad(_) = self.subwindow {
-                                true
-                            } else {
-                                false
-                            };
-                            if vw.card(active, ui) {
-                                self.subwindow = vw;
-                            }
+                    }
+                    {
+                        let vw = Subwindow::Offroad(offroad::Window::new());
+                        let active = if let Subwindow::Offroad(_) = self.subwindow {
+                            true
+                        } else {
+                            false
+                        };
+                        if vw.card(active, ui) {
+                            self.subwindow = vw;
                         }
-                        {
-                            let vw = Subwindow::Settings(settings::Settings::new());
-                            let active = if let Subwindow::Settings(_) = self.subwindow {
-                                true
-                            } else {
-                                false
-                            };
-                            if vw.card(active, ui) {
-                                self.subwindow = vw;
-                            }
+                    }
+                    {
+                        let vw = Subwindow::Settings(settings::Settings::new());
+                        let active = if let Subwindow::Settings(_) = self.subwindow {
+                            true
+                        } else {
+                            false
+                        };
+                        if vw.card(active, ui) {
+                            self.subwindow = vw;
                         }
-                    })
+                    }
                 });
             if let Some(sub) = self.subwindow.update(ctx, frame, &mut self.common) {
                 self.subwindow = sub;
