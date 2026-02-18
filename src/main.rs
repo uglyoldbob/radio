@@ -490,6 +490,12 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::ServerFileDownloadComplete(success) => {
+                    self.common.vsettings.settings.download_status = Some(*success);
+                }
+                uobradio_comms::MessageToApp::ListOfServerUpdateFiles { files } => {
+                    self.common.vsettings.settings.list = files.to_owned();
+                }
                 uobradio_comms::MessageToApp::FailedToScanForWifiNetworks { reason: _ } => {}
                 uobradio_comms::MessageToApp::Ac(c) => match c {
                     uobradio_comms::AcResponse::CurrentHvacTemperature(_) => todo!(),

@@ -252,6 +252,39 @@ pub async fn process_app(
                 }
             }
             match packet {
+                uobradio_comms::MessageFromApp::DownloadServerFile(url) => {
+                    let files = reqwest::get(url).await;
+                    let mut success = false;
+                    if let Ok(r) = files {
+                        use futures_util::StreamExt;
+                        let mut a = r.bytes_stream();
+                        let fout = std::fs::File::create("/data/update.swu");
+                        if let Ok(mut fout) = fout {
+                            while let Some(Ok(chunk)) = a.next().await {
+                                use std::io::Write;
+                                if fout.write_all(&chunk).is_err() {
+                                    success = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    let packet = MessageToApp::ServerFileDownloadComplete(success);
+                    let _ = packet.send_to_stream(&streamw).await;
+                }
+                uobradio_comms::MessageFromApp::DownloadServerFileList(url) => {
+                    let files = reqwest::get(url).await;
+                    let mut files_out = Vec::new();
+                    if let Ok(r) = files {
+                        if let Ok(list) = r.text().await {
+                            for file in list.lines() {
+                                files_out.push(file.to_string());
+                            }
+                        }
+                    }
+                    let packet = MessageToApp::ListOfServerUpdateFiles { files: files_out };
+                    let _ = packet.send_to_stream(&streamw).await;
+                }
                 uobradio_comms::MessageFromApp::Hvac(c) => {
                     let mut common2 = common.lock().await;
                     match c {

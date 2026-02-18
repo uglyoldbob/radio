@@ -8,6 +8,7 @@ pub use hvac::*;
 
 use std::{collections::BTreeMap, io::{Read, Write}};
 
+pub mod settings;
 pub mod video;
 pub mod aauto;
 
@@ -321,6 +322,10 @@ pub enum MessageFromApp {
     GetWifiDetails,
     /// Ac control messages
     Hvac(HvacControl),
+    /// Download list of update files from update server specified
+    DownloadServerFileList(String),
+    /// Download the firmware file from the update server
+    DownloadServerFile(String),
 }
 
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};
@@ -396,6 +401,13 @@ pub enum MessageToApp {
     },
     /// A response to an ac control command
     Ac(AcResponse),
+    /// The list of files on the remote update server
+    ListOfServerUpdateFiles {
+        /// The files
+        files: Vec<String>,
+    },
+    /// The requested file download successfully completed?
+    ServerFileDownloadComplete(bool),
 }
 
 impl MessageFromApp {
@@ -494,6 +506,8 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::ServerFileDownloadComplete(_) => {}
+                                        MessageToApp::ListOfServerUpdateFiles { files: _ } => {}
                                         MessageToApp::Ac(_c) => { }
                                         MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {}
                                         MessageToApp::FailedToScanForWifiNetworks { reason } => {
@@ -899,6 +913,8 @@ pub enum WifiConnectStage {
 /// The volatile settings for the radio
 #[derive(Default)]
 pub struct VolatileSettings {
+    /// The settings page settings
+    pub settings: settings::Settings,
     /// The image to display for the video screen
     pub video_texture: Option<egui::TextureHandle>,
     /// The volatile hvac settings
