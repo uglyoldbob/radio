@@ -218,6 +218,9 @@ impl SubwindowTrait for Settings {
                     }
                 }
                 uobradio_comms::settings::Subsetting::Update => {
+                    #[cfg(feature = "swupdate")]
+                    ui.label("HAVE SWUPDATE SUPPORT");
+                    #[cfg(feature = "swupdate")]
                     if let Ok(true) = std::fs::exists("/data/update.swu") {
                         let button = egui::Button::new(
                             egui::RichText::new("Install update")

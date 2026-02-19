@@ -253,6 +253,7 @@ pub async fn process_app(
             }
             match packet {
                 uobradio_comms::MessageFromApp::StartUpdate => {
+                    #[cfg(feature = "swupdate")]
                     swupdate_ipc::install_swu("/data/update.swu".into());
                 }
                 uobradio_comms::MessageFromApp::DownloadServerFile(url) => {
