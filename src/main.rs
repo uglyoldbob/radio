@@ -490,13 +490,22 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::UpdateProgress(step, percent) => {
+                    self.common.vsettings.settings.download_status =
+                        uobradio_comms::settings::UpdateStatus::UpdateProgress(*step, *percent);
+                }
                 uobradio_comms::MessageToApp::ServerFileDownloadProgress(p) => {
-                    if !matches!(self.common.vsettings.settings.download_status, uobradio_comms::settings::UpdateStatus::Completed(_)) {
-                        self.common.vsettings.settings.download_status = uobradio_comms::settings::UpdateStatus::Downloading(*p);
+                    if !matches!(
+                        self.common.vsettings.settings.download_status,
+                        uobradio_comms::settings::UpdateStatus::Completed(_)
+                    ) {
+                        self.common.vsettings.settings.download_status =
+                            uobradio_comms::settings::UpdateStatus::Downloading(*p);
                     }
                 }
                 uobradio_comms::MessageToApp::ServerFileDownloadComplete(success) => {
-                    self.common.vsettings.settings.download_status = uobradio_comms::settings::UpdateStatus::Completed(*success);
+                    self.common.vsettings.settings.download_status =
+                        uobradio_comms::settings::UpdateStatus::Completed(*success);
                 }
                 uobradio_comms::MessageToApp::ListOfServerUpdateFiles { files } => {
                     self.common.vsettings.settings.list = files.to_owned();
@@ -704,7 +713,7 @@ impl eframe::App for MyEguiApp {
                     egui::Frame::side_top_panel(&ctx.style())
                         .fill(BG_PRIMARY)
                         .inner_margin(10.0)
-                        .outer_margin(0.0)
+                        .outer_margin(0.0),
                 )
                 .show(ctx, |ui| {
                     {

@@ -26,6 +26,8 @@ pub enum UpdateStatus {
     Completed(bool),
     /// The update process has been started
     UpdateStarted,
+    /// The progress and step for updating
+    UpdateProgress(u8, u8),
 }
 
 /// The settings for the settings page

@@ -253,7 +253,8 @@ pub async fn process_app(
             }
             match packet {
                 uobradio_comms::MessageFromApp::StartUpdate => {
-                    tokio::task::spawn(async {
+                    let stream2w = streamw.clone();
+                    tokio::task::spawn(async move {
                         let url = "ws://127.0.0.1:8080/ws";
                         service::log::error!("Starting update with {url}");
                         match tokio_tungstenite::connect_async(url).await {
@@ -262,11 +263,53 @@ pub async fn process_app(
                                 #[cfg(feature = "swupdate")]
                                 swupdate_ipc::install_swu("/data/update.swu".into());
                                 use futures_util::StreamExt;
-                                let (write, read) = ws_stream.split();
+                                let (write, mut read) = ws_stream.split();
                                 service::log::error!("About to read websocket messages");
-                                read.for_each(|message| async move {
+                                while let Some(Ok(message)) = read.next().await {
                                     service::log::error!("The message received is {:?}", message);
-                                }).await;
+                                    let a = message
+                                        .to_text()
+                                        .map(|a| a.to_string())
+                                        .ok()
+                                        .map(|m| {
+                                            let v: Result<serde_json::Value, serde_json::Error> =
+                                                serde_json::from_str(&m);
+                                            v.ok()
+                                        })
+                                        .flatten();
+                                    if let Some(v) = a {
+                                        let b = v.get("type").map(|a| a.as_str()).flatten();
+                                        match b {
+                                            Some("step") => {
+                                                if let Some(step) =
+                                                    v.get("step").map(|a| a.as_str()).flatten()
+                                                {
+                                                    if let Ok(step) = step.parse::<u8>() {
+                                                        if let Some(percent) = v
+                                                            .get("percent")
+                                                            .map(|a| a.as_str())
+                                                            .flatten()
+                                                        {
+                                                            service::log::error!("The percentage for step {step} is {percent}");
+                                                            if let Ok(p) = percent.parse::<u8>() {
+                                                                let packet =
+                                                                    MessageToApp::UpdateProgress(
+                                                                        step, p,
+                                                                    );
+                                                                let _ = packet
+                                                                    .send_to_stream(
+                                                                        &stream2w.clone(),
+                                                                    )
+                                                                    .await;
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
                                 service::log::error!("Done reading websocket messages");
                             }
                             Err(e) => {

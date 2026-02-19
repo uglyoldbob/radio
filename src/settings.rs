@@ -4,12 +4,11 @@ use super::SubwindowTrait;
 use eframe::egui;
 
 #[derive(Clone, Copy)]
-pub struct Settings {
-}
+pub struct Settings {}
 
 impl Settings {
     pub fn new() -> Self {
-        Self { }
+        Self {}
     }
 }
 
@@ -58,11 +57,12 @@ impl SubwindowTrait for Settings {
                 egui::Frame::side_top_panel(&ctx.style())
                     .fill(super::BG_PRIMARY)
                     .inner_margin(10.0)
-                    .outer_margin(0.0)
+                    .outer_margin(0.0),
             )
             .show(ctx, |ui| {
                 {
-                    let active = common.vsettings.settings.tab == uobradio_comms::settings::Subsetting::General;
+                    let active = common.vsettings.settings.tab
+                        == uobradio_comms::settings::Subsetting::General;
                     let button_color = if active {
                         super::ACCENT_PRIMARY
                     } else {
@@ -84,12 +84,14 @@ impl SubwindowTrait for Settings {
                     .corner_radius(12.0);
 
                     if ui.add(button).clicked() {
-                        common.vsettings.settings.tab = uobradio_comms::settings::Subsetting::General;
+                        common.vsettings.settings.tab =
+                            uobradio_comms::settings::Subsetting::General;
                     }
                 }
                 if let Some(cameras) = common.radio.cameras_mut() {
                     if !cameras.is_empty() {
-                        let active = common.vsettings.settings.tab == uobradio_comms::settings::Subsetting::Video;
+                        let active = common.vsettings.settings.tab
+                            == uobradio_comms::settings::Subsetting::Video;
                         let button_color = if active {
                             super::ACCENT_PRIMARY
                         } else {
@@ -111,12 +113,14 @@ impl SubwindowTrait for Settings {
                         .corner_radius(12.0);
 
                         if ui.add(button).clicked() {
-                            common.vsettings.settings.tab = uobradio_comms::settings::Subsetting::Video;
+                            common.vsettings.settings.tab =
+                                uobradio_comms::settings::Subsetting::Video;
                         }
                     }
                 }
                 {
-                    let active = common.vsettings.settings.tab == uobradio_comms::settings::Subsetting::Update;
+                    let active = common.vsettings.settings.tab
+                        == uobradio_comms::settings::Subsetting::Update;
                     let button_color = if active {
                         super::ACCENT_PRIMARY
                     } else {
@@ -138,15 +142,14 @@ impl SubwindowTrait for Settings {
                     .corner_radius(12.0);
 
                     if ui.add(button).clicked() {
-                        common.vsettings.settings.tab = uobradio_comms::settings::Subsetting::Update;
+                        common.vsettings.settings.tab =
+                            uobradio_comms::settings::Subsetting::Update;
                     }
                 }
             });
         egui::CentralPanel::default().show(ctx, |ui| {
             match common.vsettings.settings.tab {
-                uobradio_comms::settings::Subsetting::General => {
-                    
-                }
+                uobradio_comms::settings::Subsetting::General => {}
                 uobradio_comms::settings::Subsetting::Video => {
                     let mut size = ui.available_size();
                     size.x *= 0.95;
@@ -156,18 +159,27 @@ impl SubwindowTrait for Settings {
                             ui.horizontal(|ui| {
                                 ui.vertical(|ui| {
                                     egui::ComboBox::from_label("Select a camera")
-                                        .selected_text(format!("Camera {}", common.vsettings.settings.selected_video))
+                                        .selected_text(format!(
+                                            "Camera {}",
+                                            common.vsettings.settings.selected_video
+                                        ))
                                         .show_ui(ui, |ui| {
                                             for i in 0..cameras.len() {
                                                 if ui
-                                                    .selectable_label(false, format!("Camera {}", i))
+                                                    .selectable_label(
+                                                        false,
+                                                        format!("Camera {}", i),
+                                                    )
                                                     .clicked()
                                                 {
-                                                    common.vsettings.settings.selected_video = i as u8;
+                                                    common.vsettings.settings.selected_video =
+                                                        i as u8;
                                                 }
                                             }
                                         });
-                                    if let Some(vsrc) = cameras.get_mut(&common.vsettings.settings.selected_video) {
+                                    if let Some(vsrc) =
+                                        cameras.get_mut(&common.vsettings.settings.selected_video)
+                                    {
                                         for c in &mut vsrc.controls {
                                             if c.egui_show(ui) {
                                                 todo!();
@@ -180,7 +192,9 @@ impl SubwindowTrait for Settings {
                                         }
                                     }
                                 });
-                                if let Some(vsrc) = cameras.get_mut(&common.vsettings.settings.selected_video) {
+                                if let Some(vsrc) =
+                                    cameras.get_mut(&common.vsettings.settings.selected_video)
+                                {
                                     if let Some(image) = &vsrc.image {
                                         if let Some(pd) = &image.pixel_data {
                                             let zoom = (size.x / (image.width as f32))
@@ -194,23 +208,29 @@ impl SubwindowTrait for Settings {
                                                 pixels: pd.get_egui(),
                                             };
                                             if common.vsettings.video_texture.is_none() {
-                                                common.vsettings.video_texture = Some(ctx.load_texture(
-                                                    "camera0",
+                                                common.vsettings.video_texture =
+                                                    Some(ctx.load_texture(
+                                                        "camera0",
+                                                        image,
+                                                        egui::TextureOptions::LINEAR,
+                                                    ));
+                                            } else if let Some(t) =
+                                                &mut common.vsettings.video_texture
+                                            {
+                                                t.set_partial(
+                                                    [0, 0],
                                                     image,
                                                     egui::TextureOptions::LINEAR,
-                                                ));
-                                            } else if let Some(t) = &mut common.vsettings.video_texture {
-                                                t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                                                );
                                             }
                                         }
                                     }
                                 }
                                 ui.with_layout(egui::Layout::top_down(egui::Align::TOP), |ui| {
                                     if let Some(t) = &common.vsettings.video_texture {
-                                        ui.add(egui::Image::from_texture(egui::load::SizedTexture {
-                                            id: t.id(),
-                                            size,
-                                        }));
+                                        ui.add(egui::Image::from_texture(
+                                            egui::load::SizedTexture { id: t.id(), size },
+                                        ));
                                     }
                                 });
                             });
@@ -232,10 +252,11 @@ impl SubwindowTrait for Settings {
                         .corner_radius(12.0);
 
                         if ui.add(button).clicked() {
-                            common.vsettings.settings.download_status = uobradio_comms::settings::UpdateStatus::UpdateStarted;
+                            common.vsettings.settings.download_status =
+                                uobradio_comms::settings::UpdateStatus::UpdateStarted;
                             let _ = common
-                            .radio
-                            .send_packet(uobradio_comms::MessageFromApp::StartUpdate);
+                                .radio
+                                .send_packet(uobradio_comms::MessageFromApp::StartUpdate);
                         }
                     }
                     match common.vsettings.settings.download_status {
@@ -252,9 +273,11 @@ impl SubwindowTrait for Settings {
                                 .corner_radius(12.0);
 
                                 if ui.add(button).clicked() {
-                                    let _ = common
-                                        .radio
-                                        .send_packet(uobradio_comms::MessageFromApp::DownloadServerFileList(update_url.to_string()));
+                                    let _ = common.radio.send_packet(
+                                        uobradio_comms::MessageFromApp::DownloadServerFileList(
+                                            update_url.to_string(),
+                                        ),
+                                    );
                                 }
                                 for f in &common.vsettings.settings.list {
                                     let button = egui::Button::new(
@@ -267,11 +290,12 @@ impl SubwindowTrait for Settings {
                                     .corner_radius(12.0);
 
                                     if ui.add(button).clicked() {
-                                        common.vsettings.settings.download_status = uobradio_comms::settings::UpdateStatus::DownloadStarted;
+                                        common.vsettings.settings.download_status =
+                                            uobradio_comms::settings::UpdateStatus::DownloadStarted;
                                         let url = format!("{update_url}/{f}");
-                                        let _ = common
-                                        .radio
-                                        .send_packet(uobradio_comms::MessageFromApp::DownloadServerFile(url));
+                                        let _ = common.radio.send_packet(
+                                            uobradio_comms::MessageFromApp::DownloadServerFile(url),
+                                        );
                                     }
                                 }
                             }
@@ -292,6 +316,15 @@ impl SubwindowTrait for Settings {
                         }
                         uobradio_comms::settings::UpdateStatus::UpdateStarted => {
                             ui.label("Update started");
+                        }
+                        uobradio_comms::settings::UpdateStatus::UpdateProgress(step, percent) => {
+                            let p = percent as f32 / 100.0;
+                            let t = egui::RichText::new(format!("Update Step {step}"))
+                                .size(16.0)
+                                .color(super::TEXT_SECONDARY);
+                            ui.label(t);
+                            let pb = egui::ProgressBar::new(p).corner_radius(5).show_percentage();
+                            ui.add(pb);
                         }
                     }
                 }

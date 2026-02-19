@@ -2902,6 +2902,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "json"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "078e285eafdfb6c4b434e0d31e8cfcb5115b651496faca5749b88fafd4f23bfd"
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4354,6 +4360,7 @@ dependencies = [
  "ffimage_yuv",
  "futures-util",
  "image",
+ "json",
  "log",
  "network-interface",
  "nmrs",
@@ -4362,6 +4369,7 @@ dependencies = [
  "reqwest",
  "ringbuf",
  "serde",
+ "serde_json",
  "service",
  "simple_logger 5.2.0",
  "swupdate-ipc",
