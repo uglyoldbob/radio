@@ -4358,6 +4358,7 @@ dependencies = [
  "serde",
  "service",
  "simple_logger 5.2.0",
+ "swupdate-ipc",
  "tokio",
  "toml",
  "uobradio-comms",
@@ -5278,6 +5279,13 @@ checksum = "6e44e288cd960318917cbd540340968b90becc8bc81f171345d706e7a89d9d70"
 dependencies = [
  "kurbo",
  "siphasher 0.3.11",
+]
+
+[[package]]
+name = "swupdate-ipc"
+version = "0.1.0"
+dependencies = [
+ "bindgen 0.72.1",
 ]
 
 [[package]]
