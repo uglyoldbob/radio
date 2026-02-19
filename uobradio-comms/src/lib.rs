@@ -408,6 +408,8 @@ pub enum MessageToApp {
     },
     /// The requested file download successfully completed?
     ServerFileDownloadComplete(bool),
+    /// The percentage of the file download
+    ServerFileDownloadProgress(f32),
 }
 
 impl MessageFromApp {
@@ -506,6 +508,7 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::ServerFileDownloadProgress(_) => {}
                                         MessageToApp::ServerFileDownloadComplete(_) => {}
                                         MessageToApp::ListOfServerUpdateFiles { files: _ } => {}
                                         MessageToApp::Ac(_c) => { }

@@ -218,49 +218,59 @@ impl SubwindowTrait for Settings {
                     }
                 }
                 uobradio_comms::settings::Subsetting::Update => {
-                    if let Some(update_url) = std::option_env!("UPDATE_SERVER") {
-                        ui.label(update_url);
-                        let button = egui::Button::new(
-                            egui::RichText::new("Check for updates")
-                                .size(16.0)
-                                .color(super::TEXT_SECONDARY),
-                        )
-                        .fill(super::BG_SECONDARY)
-                        .min_size(egui::vec2(70.0, 70.0))
-                        .corner_radius(12.0);
+                    match common.vsettings.settings.download_status {
+                        uobradio_comms::settings::UpdateStatus::Idle => {
+                            if let Some(update_url) = std::option_env!("UPDATE_SERVER") {
+                                ui.label(update_url);
+                                let button = egui::Button::new(
+                                    egui::RichText::new("Check for updates")
+                                        .size(16.0)
+                                        .color(super::TEXT_SECONDARY),
+                                )
+                                .fill(super::BG_SECONDARY)
+                                .min_size(egui::vec2(70.0, 70.0))
+                                .corner_radius(12.0);
 
-                        if ui.add(button).clicked() {
-                            let _ = common
-                                .radio
-                                .send_packet(uobradio_comms::MessageFromApp::DownloadServerFileList(update_url.to_string()));
-                        }
-                        for f in &common.vsettings.settings.list {
-                            let button = egui::Button::new(
-                                egui::RichText::new(f)
-                                    .size(16.0)
-                                    .color(super::TEXT_SECONDARY),
-                            )
-                            .fill(super::BG_SECONDARY)
-                            .min_size(egui::vec2(70.0, 70.0))
-                            .corner_radius(12.0);
+                                if ui.add(button).clicked() {
+                                    let _ = common
+                                        .radio
+                                        .send_packet(uobradio_comms::MessageFromApp::DownloadServerFileList(update_url.to_string()));
+                                }
+                                for f in &common.vsettings.settings.list {
+                                    let button = egui::Button::new(
+                                        egui::RichText::new(f)
+                                            .size(16.0)
+                                            .color(super::TEXT_SECONDARY),
+                                    )
+                                    .fill(super::BG_SECONDARY)
+                                    .min_size(egui::vec2(70.0, 70.0))
+                                    .corner_radius(12.0);
 
-                            if ui.add(button).clicked() {
-                                common.vsettings.settings.download_status = None;
-                                let url = format!("{update_url}/{f}");
-                                let _ = common
-                                .radio
-                                .send_packet(uobradio_comms::MessageFromApp::DownloadServerFile(url));
+                                    if ui.add(button).clicked() {
+                                        common.vsettings.settings.download_status = uobradio_comms::settings::UpdateStatus::DownloadStarted;
+                                        let url = format!("{update_url}/{f}");
+                                        let _ = common
+                                        .radio
+                                        .send_packet(uobradio_comms::MessageFromApp::DownloadServerFile(url));
+                                    }
+                                }
                             }
                         }
-                        if let Some(s) = &common.vsettings.settings.download_status {
-                            if *s {
-                                ui.label("Update ready to install");
+                        uobradio_comms::settings::UpdateStatus::DownloadStarted => {
+                            ui.label("Download started");
+                        }
+                        uobradio_comms::settings::UpdateStatus::Downloading(p) => {
+                            let pb = egui::ProgressBar::new(p).corner_radius(5).show_percentage();
+                            ui.add(pb);
+                        }
+                        uobradio_comms::settings::UpdateStatus::Completed(p) => {
+                            if p {
+                                ui.label("Download complete");
                             } else {
-                                ui.label("Download failed - try again");
+                                ui.label("Download failed");
                             }
                         }
                     }
-                    
                 }
             }
         });

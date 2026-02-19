@@ -490,8 +490,13 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::ServerFileDownloadProgress(p) => {
+                    if !matches!(self.common.vsettings.settings.download_status, uobradio_comms::settings::UpdateStatus::Completed(_)) {
+                        self.common.vsettings.settings.download_status = uobradio_comms::settings::UpdateStatus::Downloading(*p);
+                    }
+                }
                 uobradio_comms::MessageToApp::ServerFileDownloadComplete(success) => {
-                    self.common.vsettings.settings.download_status = Some(*success);
+                    self.common.vsettings.settings.download_status = uobradio_comms::settings::UpdateStatus::Completed(*success);
                 }
                 uobradio_comms::MessageToApp::ListOfServerUpdateFiles { files } => {
                     self.common.vsettings.settings.list = files.to_owned();

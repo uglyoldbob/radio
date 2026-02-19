@@ -12,6 +12,20 @@ pub enum Subsetting {
     Update,
 }
 
+/// The status of the firmware update process
+#[derive(Default)]
+pub enum UpdateStatus {
+    /// Doing nothing
+    #[default]
+    Idle,
+    /// Started download
+    DownloadStarted,
+    /// The download is in process
+    Downloading(f32),
+    /// Completed with a status
+    Completed(bool),
+}
+
 /// The settings for the settings page
 #[derive(Default)]
 pub struct Settings {
@@ -22,5 +36,5 @@ pub struct Settings {
     /// The list of files on the update server
     pub list: Vec<String>,
     /// The status of the download
-    pub download_status: Option<bool>,
+    pub download_status: UpdateStatus,
 }
