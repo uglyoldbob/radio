@@ -253,15 +253,27 @@ pub async fn process_app(
             }
             match packet {
                 uobradio_comms::MessageFromApp::StartUpdate => {
-                    #[cfg(feature = "swupdate")]
-                    swupdate_ipc::install_swu("/data/update.swu".into());
-                    if let Ok((ws_stream, _)) = tokio_tungstenite::connect_async("http://127.0.0.1:8080").await {
-                        use futures_util::StreamExt;
-                        let (write, read) = ws_stream.split();
-                        read.for_each(|message| async move {
-                            log::error!("The message received is {:?}", message);
-                        }).await;
-                    }
+                    tokio::task::spawn(async {
+                        let url = "ws://127.0.0.1:8080/ws";
+                        service::log::error!("Starting update with {url}");
+                        match tokio_tungstenite::connect_async(url).await {
+                            Ok((ws_stream, _)) => {
+                                service::log::error!("Starting update");
+                                #[cfg(feature = "swupdate")]
+                                swupdate_ipc::install_swu("/data/update.swu".into());
+                                use futures_util::StreamExt;
+                                let (write, read) = ws_stream.split();
+                                service::log::error!("About to read websocket messages");
+                                read.for_each(|message| async move {
+                                    service::log::error!("The message received is {:?}", message);
+                                }).await;
+                                service::log::error!("Done reading websocket messages");
+                            }
+                            Err(e) => {
+                                service::log::error!("Failed to open websocket {:?}", e);
+                            }
+                        }
+                    });
                 }
                 uobradio_comms::MessageFromApp::DownloadServerFile(url) => {
                     let files = reqwest::get(url).await;
