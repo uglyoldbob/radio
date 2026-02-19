@@ -28,6 +28,7 @@ serde = {version = "1.0.219", features = ["derive"]}
 simple_logger = "5.0.0"
 swupdate-ipc = { path = "./swupdate-ipc", optional=true }
 tokio = { version = "1.40.0", features = ["full"] }
+tokio-tungstenite = "0.28.0"
 toml = "0.8.20"
 uobradio-comms = { path = "./uobradio-comms" }
 

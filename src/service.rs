@@ -255,6 +255,13 @@ pub async fn process_app(
                 uobradio_comms::MessageFromApp::StartUpdate => {
                     #[cfg(feature = "swupdate")]
                     swupdate_ipc::install_swu("/data/update.swu".into());
+                    if let Ok((ws_stream, _)) = tokio_tungstenite::connect_async("http://127.0.0.1:8080").await {
+                        use futures_util::StreamExt;
+                        let (write, read) = ws_stream.split();
+                        read.for_each(|message| async move {
+                            log::error!("The message received is {:?}", message);
+                        }).await;
+                    }
                 }
                 uobradio_comms::MessageFromApp::DownloadServerFile(url) => {
                     let files = reqwest::get(url).await;
