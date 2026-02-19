@@ -326,6 +326,8 @@ pub enum MessageFromApp {
     DownloadServerFileList(String),
     /// Download the firmware file from the update server
     DownloadServerFile(String),
+    /// Start the update
+    StartUpdate,
 }
 
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};

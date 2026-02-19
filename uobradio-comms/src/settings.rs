@@ -24,6 +24,8 @@ pub enum UpdateStatus {
     Downloading(f32),
     /// Completed with a status
     Completed(bool),
+    /// The update process has been started
+    UpdateStarted,
 }
 
 /// The settings for the settings page

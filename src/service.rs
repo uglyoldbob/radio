@@ -252,9 +252,12 @@ pub async fn process_app(
                 }
             }
             match packet {
+                uobradio_comms::MessageFromApp::StartUpdate => {
+                    swupdate_ipc::install_swu("/data/update.swu".into());
+                }
                 uobradio_comms::MessageFromApp::DownloadServerFile(url) => {
                     let files = reqwest::get(url).await;
-                    let mut success = false;
+                    let mut success = true;
                     if let Ok(r) = files {
                         let total_size = r.content_length();
                         let mut current_size = 0;

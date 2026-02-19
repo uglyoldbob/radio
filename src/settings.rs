@@ -218,6 +218,23 @@ impl SubwindowTrait for Settings {
                     }
                 }
                 uobradio_comms::settings::Subsetting::Update => {
+                    if let Ok(true) = std::fs::exists("/data/update.swu") {
+                        let button = egui::Button::new(
+                            egui::RichText::new("Install update")
+                                .size(16.0)
+                                .color(super::TEXT_SECONDARY),
+                        )
+                        .fill(super::BG_SECONDARY)
+                        .min_size(egui::vec2(70.0, 70.0))
+                        .corner_radius(12.0);
+
+                        if ui.add(button).clicked() {
+                            common.vsettings.settings.download_status = uobradio_comms::settings::UpdateStatus::UpdateStarted;
+                            let _ = common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::StartUpdate);
+                        }
+                    }
                     match common.vsettings.settings.download_status {
                         uobradio_comms::settings::UpdateStatus::Idle => {
                             if let Some(update_url) = std::option_env!("UPDATE_SERVER") {
@@ -269,6 +286,9 @@ impl SubwindowTrait for Settings {
                             } else {
                                 ui.label("Download failed");
                             }
+                        }
+                        uobradio_comms::settings::UpdateStatus::UpdateStarted => {
+                            ui.label("Update started");
                         }
                     }
                 }
