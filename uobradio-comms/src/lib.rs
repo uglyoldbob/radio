@@ -33,11 +33,22 @@ pub enum RadioReceiveStatus {
 }
 
 /// The mode of operation for wifi
+#[derive(Debug)]
 pub enum WifiMode {
     /// The local wifi devices creates a hotspot
-    Hotspot,
+    Hotspot {
+        /// The ssid of the network
+        ssid: String,
+        /// The password of the network if applicable
+        password: Option<String>,
+    },
     /// The local wifi adapter connects to an existing wifi network
-    RegularNetwork,
+    RegularNetwork {
+        /// The ssid of the network
+        ssid: String,
+        /// The password of the network if applicable
+        password: Option<String>,
+    },
 }
 
 /// Specifies what mode the wifi card should be in
@@ -384,14 +395,14 @@ pub enum MessageToApp {
         /// The ssid of the network
         ssid: String,
         /// The password of the network
-        password: String,
+        password: Option<String>,
     },
     /// Indicates a new connection to a wifi network
     ConnectedToWifiNetwork {
         /// The ssid of the network
         ssid: String,
         /// The password of the network
-        password: String,
+        password: Option<String>,
     },
     /// Indicates a failure to connect to the indicated wifi network
     FailedToConnectToWifiNetwork {

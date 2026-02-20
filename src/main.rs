@@ -121,7 +121,6 @@ fn main() {
     } else {
         egui::ViewportBuilder::default()
             .with_inner_size([800.0, 600.0])
-            .with_decorations(false)
             .with_resizable(false)
             .with_position([0.0, 0.0])
     };
@@ -143,7 +142,7 @@ struct CommonWindowProperties {
     pub vsettings: uobradio_comms::VolatileSettings,
     wifi_list: Vec<nmrs::Network>,
     /// The optional details for the wifi network, ssid and password
-    wifi_details: Option<(String, String)>,
+    wifi_details: Option<(String, Option<String>)>,
     android_auto_video_decoder: openh264::decoder::Decoder,
     android_auto_texture: Option<egui::TextureHandle>,
 }

@@ -25,14 +25,16 @@ impl Config {
         if let uobradio_comms::WifiConfig::Disabled = common.settings.wifi_config {
             common.vsettings.wifi_texture.take();
         } else if let Some((wn, wp)) = &common.wifi_details {
-            let contents = self.make_wifi_qr(wn, wp);
-            let code = qrcode::QrCode::new(contents).unwrap();
-            let image = code.render::<image::Rgb<u8>>().build();
-            let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
-                image.into();
-            let cimg: egui::ColorImage = img.into();
-            common.vsettings.wifi_texture =
-                Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
+            if let Some(wp) = wp {
+                let contents = self.make_wifi_qr(wn, wp);
+                let code = qrcode::QrCode::new(contents).unwrap();
+                let image = code.render::<image::Rgb<u8>>().build();
+                let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
+                    image.into();
+                let cimg: egui::ColorImage = img.into();
+                common.vsettings.wifi_texture =
+                    Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
+            }
         }
     }
 }
@@ -88,9 +90,9 @@ impl SubwindowTrait for Config {
             .radio
             .send_packet(uobradio_comms::MessageFromApp::GetWifiDetails);
         self.update_qr_code(ctx, common);
-        egui::SidePanel::right("Hotspot qr code view").show(ctx, |ui| {
-            let size = ui.available_size();
-            if let Some(t) = &common.vsettings.wifi_texture {
+        if let Some(t) = &common.vsettings.wifi_texture {
+            egui::SidePanel::right("Hotspot qr code view").show(ctx, |ui| {
+                let size = ui.available_size();
                 let isize = t.size()[1];
                 let zoom = isize as f32 / size.y;
                 let dsize = t.size_vec2() / zoom;
@@ -98,8 +100,8 @@ impl SubwindowTrait for Config {
                     id: t.id(),
                     size: dsize,
                 }));
-            }
-        });
+            });
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label("Future expansion here for bluetooth settings");
             if ui.button("Enable discovery").clicked() {
