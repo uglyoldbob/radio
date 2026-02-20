@@ -659,56 +659,7 @@ async fn receive_message_from_app(
                 }
                 #[cfg(feature = "wifi")]
                 if wifi_changed {
-                    if let Some(wifi) = &common2.wifi {
-                        service::log::info!("Updating wifi connection");
-                        wifi.disconnect().await.map_err(|e| e.to_string())?;
-                        service::log::info!(
-                            "Disconnected wifi connection {:?}",
-                            common2.settings.wifi_config
-                        );
-                        if let Some(wifi_dev) = &common2.wifi_device {
-                            let wifi_dev = wifi_dev.path.clone();
-                            match &common2.settings.wifi_config {
-                                WifiConfig::Hotspot => {
-                                    hotspot::start_hotspot(
-                                        "Hotspot5".to_string(),
-                                        "rueiowquiower".to_string(),
-                                        &wifi_dev,
-                                    )
-                                    .await?;
-                                }
-                                WifiConfig::RegularNetwork => {}
-                                WifiConfig::Ready => {}
-                                WifiConfig::Disabled => {}
-                            }
-                        }
-                        match &common2.wifi_setup {
-                            Some(uobradio_comms::WifiMode::Hotspot { ssid, password }) => {
-                                service::log::info!("Updating wifi hotspot");
-                                let p = match password {
-                                    Some(p) => nmrs::WifiSecurity::WpaPsk { psk: p.clone() },
-                                    None => nmrs::WifiSecurity::Open,
-                                };
-                                let co = nmrs::ConnectionOptions::new(true);
-                                service::log::info!("Building wifi hotspot");
-                                let test = nmrs::builders::build_wifi_connection(ssid, &p, &co);
-                                service::log::info!("The hotspot details are {:?}", test);
-                                if wifi.connect(&ssid, p).await.is_err() {
-                                    return Err("Failed to connect to wifi".to_string());
-                                }
-                            }
-                            Some(uobradio_comms::WifiMode::RegularNetwork { ssid, password }) => {
-                                let p = match password {
-                                    Some(p) => nmrs::WifiSecurity::WpaPsk { psk: p.clone() },
-                                    None => nmrs::WifiSecurity::Open,
-                                };
-                                if wifi.connect(&ssid, p).await.is_err() {
-                                    return Err("Failed to connect to wifi".to_string());
-                                }
-                            }
-                            None => {}
-                        }
-                    }
+                    setup_wifi(common2).await;
                 }
             }
             uobradio_comms::MessageFromApp::CameraSettingControl(id, control, data) => {
@@ -1234,6 +1185,52 @@ async fn get_wifi_interface(nmrs: &nmrs::NetworkManager) -> Option<nmrs::Device>
     None
 }
 
+/// Sets up the wifi hardware according to settings
+/// Call this when initially setting up wifi, or when changing wifi settings
+/// Wifi connections will likey drop and reconnect
+async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
+    log::info!("Setup wifi with {:?}", common2.settings.wifi_config);
+    if let Some(wifi) = &common2.wifi {
+        let _ = wifi.disconnect().await;
+    }
+    match &common2.settings.wifi_config {
+        WifiConfig::Ready => {
+            common2.wifi_setup.take();
+        }
+        WifiConfig::Hotspot => {
+            let hotspot = common2.settings.hotspot_enabled.clone();
+            if let Some((n, p)) = hotspot {
+                common2.wifi_setup.take();
+                if let Some(wd) = &common2.wifi_device {
+                    let wifi_dev_path = wd.path.clone();
+                    if hotspot::start_hotspot(n.clone(), p.clone(), &wifi_dev_path)
+                        .await
+                        .is_ok()
+                    {
+                        common2.wifi_setup = Some(uobradio_comms::WifiMode::Hotspot {
+                            ssid: n,
+                            password: Some(p),
+                        });
+                    }
+                }
+            }
+        }
+        WifiConfig::RegularNetwork => {
+            /*if let Some(wifi) = &common2.wifi {
+                let w = iterate_over_networks(wifi, &common2.settings.wifi_network);
+                common2.wifi_setup.take();
+                common2.wifi_setup = w.map(uobradio_comms::WifiMode::RegularNetwork);
+            } else {
+                log::error!("Wifi is not present?");
+            }*/
+            common2.wifi_setup.take();
+        }
+        WifiConfig::Disabled => {
+            common2.wifi_setup.take();
+        }
+    }
+}
+
 /// The main function for the service
 async fn smain() {
     #[cfg(target_family = "windows")]
@@ -1349,6 +1346,11 @@ async fn smain() {
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(auc));
+
+    {
+        let c = common.lock().await;
+        setup_wifi(c).await;
+    }
 
     let mut tasks: tokio::task::JoinSet<Result<(), String>> = tokio::task::JoinSet::new();
     let common2 = common.clone();
