@@ -343,10 +343,11 @@ async fn receive_message_from_app(
             }
             uobradio_comms::MessageFromApp::StartUpdate => {
                 service::log::error!("Starting update");
-                tokio::task::spawn_blocking(||{
+                tokio::task::spawn_blocking(|| {
                     #[cfg(feature = "swupdate")]
                     {
                         if swupdate_ipc::install_swu("/data/update.swu".into()).is_ok() {
+                            std::fs::remove_file("/data/update.swu");
                             let mut t = std::process::Command::new("reboot");
                             let _ = t.output();
                         }
