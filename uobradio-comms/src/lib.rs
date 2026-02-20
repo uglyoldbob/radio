@@ -328,6 +328,8 @@ pub enum MessageFromApp {
     DownloadServerFile(String),
     /// Start the update
     StartUpdate,
+    /// Query update progress
+    GetUpdateProgress,
 }
 
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};
@@ -414,6 +416,8 @@ pub enum MessageToApp {
     ServerFileDownloadProgress(f32),
     /// The percentage of the update progress
     UpdateProgress(u8, u8),
+    /// No update in progress
+    NoUpdateInProgress,
 }
 
 impl MessageFromApp {
@@ -512,6 +516,7 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::NoUpdateInProgress => {}
                                         MessageToApp::UpdateProgress(_, _) => {}
                                         MessageToApp::ServerFileDownloadProgress(_) => {}
                                         MessageToApp::ServerFileDownloadComplete(_) => {}
@@ -623,7 +628,7 @@ impl UobRadio {
                                             }
                                         }
                                         MessageToApp::BluetoothHandlerResult(result) => {
-                                            log::error!("Bluetooth result is {}", result);
+                                            //log::error!("Bluetooth result is {}", result);
                                             self.bluetooth_handler = Some(*result);
                                         }
                                     }
@@ -993,4 +998,18 @@ impl NonvolatileSettings {
             Self::default()
         }
     }
+}
+
+/// The messages to send to the swupdate websocket channel
+pub enum MessageToSwupdateChannel {
+    /// Exit the websocket comms
+    Exit,
+}
+
+/// The messages to receive from the swupdate websocket channel
+pub enum MessageFromSwupdateChannel {
+    /// the websocket is ready
+    Ready,
+    /// A progress message
+    Progress(u8, u8),
 }

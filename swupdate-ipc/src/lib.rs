@@ -47,7 +47,11 @@ pub fn install_swu(fp: std::path::PathBuf) -> Result<(),()> {
         }
     }
     unsafe { internal::ipc_end(f) };
-    Err(())
+    
+    unsafe {
+        internal::ipc_wait_for_complete(None)
+    };
+    Ok(())
 }
 
 pub fn add(left: u64, right: u64) -> u64 {

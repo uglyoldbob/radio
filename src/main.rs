@@ -490,7 +490,13 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::NoUpdateInProgress => {
+                    log::error!("There is no update in progress");
+                    self.common.vsettings.settings.update_status_pending = false;
+                }
                 uobradio_comms::MessageToApp::UpdateProgress(step, percent) => {
+                    log::error!("Setting update progress of step {step} to {percent}");
+                    self.common.vsettings.settings.update_status_pending = false;
                     self.common.vsettings.settings.download_status =
                         uobradio_comms::settings::UpdateStatus::UpdateProgress(*step, *percent);
                 }

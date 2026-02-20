@@ -41,4 +41,6 @@ pub struct Settings {
     pub list: Vec<String>,
     /// The status of the download
     pub download_status: UpdateStatus,
+    /// update progress pending a reply
+    pub update_status_pending: bool,
 }

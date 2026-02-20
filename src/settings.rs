@@ -259,6 +259,13 @@ impl SubwindowTrait for Settings {
                                 .send_packet(uobradio_comms::MessageFromApp::StartUpdate);
                         }
                     }
+                    if !common.vsettings.settings.update_status_pending {
+                        service::log::error!("Sending query for update progress");
+                        common.vsettings.settings.update_status_pending = common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::GetUpdateProgress)
+                            .is_ok();
+                    }
                     match common.vsettings.settings.download_status {
                         uobradio_comms::settings::UpdateStatus::Idle => {
                             if let Some(update_url) = std::option_env!("UPDATE_SERVER") {
