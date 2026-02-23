@@ -1,5 +1,6 @@
 //! Wifi page code and structs
 
+#[cfg(feature = "wifi")]
 /// The mode of operation for wifi
 #[derive(Debug)]
 pub enum WifiMode {
@@ -19,6 +20,7 @@ pub enum WifiMode {
     },
 }
 
+#[cfg(feature = "wifi")]
 /// Specifies what mode the wifi card should be in
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq)]
 pub enum WifiConfig {
@@ -33,6 +35,7 @@ pub enum WifiConfig {
     Disabled,
 }
 
+#[cfg(feature = "wifi")]
 #[derive(Clone, Default)]
 /// The stage of connecting to a wifi network
 pub enum WifiConnectStage {
@@ -52,12 +55,16 @@ pub enum WifiConnectStage {
 /// The volatile wifi settings
 #[derive(Default)]
 pub struct Settings {
+    #[cfg(feature = "wifi")]
     /// For the qr code
     pub wifi_texture: Option<egui::TextureHandle>,
+    #[cfg(feature = "wifi")]
     /// The password storage for wifi connection
     pub wifi_password: String,
+    #[cfg(feature = "wifi")]
     /// Connection state for the indicated wifi network (wifi_new_connect)
     pub wifi_state: WifiConnectStage,
+    #[cfg(feature = "wifi")]
     /// The list of known networks by ssid
     pub known_networks: super::Pollable<Vec<String>>,
 }
@@ -65,6 +72,7 @@ pub struct Settings {
 /// The non-volatile wifi settings
 #[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct NvSettings {
+    #[cfg(feature = "wifi")]
     /// The wifi configuration that is currently active
     pub config: WifiConfig,
 }

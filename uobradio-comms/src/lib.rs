@@ -16,8 +16,8 @@ pub mod aauto;
 pub mod settings;
 pub mod video;
 
-#[cfg(feature = "wifi")]
-pub mod wifi;
+#[cfg(any(feature = "wifi", feature = "bluetooth"))]
+pub mod wireless;
 
 #[cfg(feature = "androidauto")]
 use android_auto::AudioChannelType;
@@ -1079,7 +1079,7 @@ pub struct VolatileSettings {
     /// Which video stream to look at
     pub which_video: u8,
     /// The wifi page settings
-    pub wifi: wifi::Settings,
+    pub wifi: wireless::Settings,
 }
 
 /// Non-volatile settings that should be saved to nonvolatile storage of some kind

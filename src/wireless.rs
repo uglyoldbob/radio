@@ -119,6 +119,7 @@ impl SubwindowTrait for Config {
         }
         #[cfg(feature = "wifi")]
         self.update_qr_code(ctx, common);
+        #[cfg(feature = "wifi")]
         if let Some(t) = &common.vsettings.wifi.wifi_texture {
             egui::SidePanel::right("Hotspot qr code view").show(ctx, |ui| {
                 let size = ui.available_size();
