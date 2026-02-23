@@ -11,11 +11,15 @@ mod video;
 #[cfg(any(feature = "wifi", feature = "bluetooth"))]
 mod wireless;
 
+#[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui::{self};
+#[cfg(feature = "androidauto")]
 use ringbuf::traits::{Consumer, Observer, Producer};
+#[cfg(feature = "androidauto")]
 use uobradio_comms::PendingAudioCommand;
 
+/// The trait that all main page elements must implement for the application
 #[enum_dispatch::enum_dispatch]
 trait SubwindowTrait {
     /// Show the window, return a new subwindow if the subwindow needs to change
@@ -32,20 +36,27 @@ trait SubwindowTrait {
         vsettings: &mut uobradio_comms::VolatileSettings,
         packet: &uobradio_comms::MessageToApp,
     );
-    /// Get the icon for the bottom of the gui
+    /// Get the icon for the left panel of the gui
     fn card(&self, active: bool, ui: &mut egui::Ui) -> bool;
 }
 
+/// The main page for the gui
 #[derive(Clone, Copy)]
 struct MainPage {}
 
-// Define color scheme - premium automotive dark theme
+/// A color for the gui to use
 const BG_PRIMARY: egui::Color32 = egui::Color32::from_rgb(12, 14, 18);
+/// A color for the gui to use
 const BG_SECONDARY: egui::Color32 = egui::Color32::from_rgb(20, 24, 30);
+/// A color for the gui to use
 const BG_CARD: egui::Color32 = egui::Color32::from_rgb(28, 32, 40);
+/// A color for the gui to use
 const ACCENT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(0, 180, 255);
+/// A color for the gui to use
 const ACCENT_WARM: egui::Color32 = egui::Color32::from_rgb(255, 140, 60);
+/// A color for the gui to use
 const TEXT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(240, 242, 245);
+/// A color for the gui to use
 const TEXT_SECONDARY: egui::Color32 = egui::Color32::from_rgb(160, 165, 175);
 
 impl SubwindowTrait for MainPage {
@@ -98,12 +109,19 @@ impl SubwindowTrait for MainPage {
 
 #[derive(Clone, Copy)]
 #[enum_dispatch::enum_dispatch(SubwindowTrait)]
+/// The types of subwindows that can exist for the main page
 enum Subwindow {
+    /// The home screen or main page
     MainPage(MainPage),
+    /// The video configuration page
     Video(video::Video),
+    /// The settings page
     Settings(settings::Settings),
+    /// The hvac control page
     Hvac(hvac::Window),
+    /// The offroad control page
     Offroad(offroad::Window),
+    /// The wireless control page
     #[cfg(any(feature = "wifi", feature = "bluetooth"))]
     Wireless(wireless::Config),
 }
@@ -138,20 +156,27 @@ fn main() {
     .unwrap();
 }
 
+/// The properties common to every window in the application
 struct CommonWindowProperties {
+    /// The object to communicate with the radio service
     radio: uobradio_comms::UobRadio,
+    /// The non-volatile settings for the program
     pub settings: uobradio_comms::NonvolatileSettings,
+    /// The volatile settings for the program
     pub vsettings: uobradio_comms::VolatileSettings,
     #[cfg(feature = "wifi")]
     wifi_list: Vec<nmrs::Network>,
     #[cfg(feature = "wifi")]
     /// The optional details for the wifi network, ssid and password
     wifi_details: Option<(String, Option<String>)>,
+    #[cfg(feature = "androidauto")]
     android_auto_video_decoder: openh264::decoder::Decoder,
+    #[cfg(feature = "androidauto")]
     android_auto_texture: Option<egui::TextureHandle>,
 }
 
 impl CommonWindowProperties {
+    /// Construct a new Self with default settings
     pub fn new() -> Self {
         Self {
             vsettings: uobradio_comms::VolatileSettings::default(),
@@ -161,7 +186,9 @@ impl CommonWindowProperties {
             wifi_list: Vec::new(),
             #[cfg(feature = "wifi")]
             wifi_details: None,
+            #[cfg(feature = "androidauto")]
             android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
+            #[cfg(feature = "androidauto")]
             android_auto_texture: None,
         }
     }
@@ -173,186 +200,204 @@ impl CommonWindowProperties {
     }
 }
 
+/// The main struct for the application
 struct MyEguiApp {
+    /// The specific subwindow being displayed in the gui
     subwindow: Subwindow,
-    check: bool,
+    /// The properties common to all windows in the application
     common: CommonWindowProperties,
+    #[cfg(feature = "androidauto")]
     audio_output: Option<cpal::Device>,
+    #[cfg(feature = "androidauto")]
     audio_input: Option<cpal::Device>,
+    #[cfg(feature = "androidauto")]
     cpal_host: cpal::Host,
+    #[cfg(feature = "androidauto")]
     media_stream: Option<(AudioProducer, cpal::Stream)>,
+    #[cfg(feature = "androidauto")]
     sys_stream: Option<(AudioProducer, cpal::Stream)>,
+    #[cfg(feature = "androidauto")]
     speech_stream: Option<(AudioProducer, cpal::Stream)>,
+    #[cfg(feature = "androidauto")]
     input_stream: Option<(AudioConsumer, cpal::Stream)>,
 }
 
+#[cfg(feature = "androidauto")]
 type AudioProducer = ringbuf::HeapProd<i16>;
+#[cfg(feature = "androidauto")]
 type AudioConsumer = ringbuf::HeapCons<i16>;
 
 impl MyEguiApp {
+    /// construct a new Self
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        let h = cpal::default_host();
-        let mut ao = h.default_output_device();
-        let mut ai = h.default_input_device();
-        let mut media_stream = None;
-        let mut sys_stream = None;
-        let mut speech_stream = None;
-        let mut input_stream = None;
-        if let Some(ai) = &mut ai {
-            if let Ok(c) = ai.supported_input_configs() {
-                let mut in_config = None;
-                for c in c {
-                    const IN_RATE: u32 = 16000;
-                    const IN_CHANNELS: u16 = 1;
-                    if c.min_sample_rate().0 <= IN_RATE && c.max_sample_rate().0 >= IN_RATE {
-                        if c.channels() == IN_CHANNELS {
-                            if c.sample_format() == cpal::SampleFormat::I16 {
-                                in_config = c.try_with_sample_rate(cpal::SampleRate(IN_RATE));
+        #[cfg(feature = "androidauto")]
+        {
+            let h = cpal::default_host();
+            let mut ao = h.default_output_device();
+            let mut ai = h.default_input_device();
+            let mut media_stream = None;
+            let mut sys_stream = None;
+            let mut speech_stream = None;
+            let mut input_stream = None;
+            if let Some(ai) = &mut ai {
+                if let Ok(c) = ai.supported_input_configs() {
+                    let mut in_config = None;
+                    for c in c {
+                        const IN_RATE: u32 = 16000;
+                        const IN_CHANNELS: u16 = 1;
+                        if c.min_sample_rate().0 <= IN_RATE && c.max_sample_rate().0 >= IN_RATE {
+                            if c.channels() == IN_CHANNELS {
+                                if c.sample_format() == cpal::SampleFormat::I16 {
+                                    in_config = c.try_with_sample_rate(cpal::SampleRate(IN_RATE));
+                                }
                             }
                         }
                     }
-                }
-                if let Some(mc) = in_config {
-                    let rb = ringbuf::HeapRb::new(16000);
-                    let (mut producer, consumer) = ringbuf::traits::Split::split(rb);
-                    let s = ai.build_input_stream(
-                        &mc.config(),
-                        move |data: &[i16], _: &cpal::InputCallbackInfo| {
-                            producer.push_slice(data);
-                        },
-                        move |err| {
-                            log::error!("Error in media audio output: {:?}", err);
-                        },
-                        None,
-                    );
-                    if let Ok(s) = s {
-                        input_stream = Some((consumer, s));
+                    if let Some(mc) = in_config {
+                        let rb = ringbuf::HeapRb::new(16000);
+                        let (mut producer, consumer) = ringbuf::traits::Split::split(rb);
+                        let s = ai.build_input_stream(
+                            &mc.config(),
+                            move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                                producer.push_slice(data);
+                            },
+                            move |err| {
+                                log::error!("Error in media audio output: {:?}", err);
+                            },
+                            None,
+                        );
+                        if let Ok(s) = s {
+                            input_stream = Some((consumer, s));
+                        }
                     }
                 }
             }
-        }
-        if let Some(ao) = &mut ao {
-            if let Ok(c) = ao.supported_output_configs() {
-                {
-                    let mut media_config = None;
-                    let mut sys_config = None;
-                    let mut speech_config = None;
-                    for c in c {
-                        const MEDIA_RATE: u32 = 48000;
-                        const MEDIA_CHANNELS: u16 = 2;
-                        if c.min_sample_rate().0 <= MEDIA_RATE
-                            && c.max_sample_rate().0 >= MEDIA_RATE
-                        {
-                            if c.channels() == MEDIA_CHANNELS {
-                                if c.sample_format() == cpal::SampleFormat::I16 {
-                                    media_config =
-                                        c.try_with_sample_rate(cpal::SampleRate(MEDIA_RATE));
+            if let Some(ao) = &mut ao {
+                if let Ok(c) = ao.supported_output_configs() {
+                    {
+                        let mut media_config = None;
+                        let mut sys_config = None;
+                        let mut speech_config = None;
+                        for c in c {
+                            const MEDIA_RATE: u32 = 48000;
+                            const MEDIA_CHANNELS: u16 = 2;
+                            if c.min_sample_rate().0 <= MEDIA_RATE
+                                && c.max_sample_rate().0 >= MEDIA_RATE
+                            {
+                                if c.channels() == MEDIA_CHANNELS {
+                                    if c.sample_format() == cpal::SampleFormat::I16 {
+                                        media_config =
+                                            c.try_with_sample_rate(cpal::SampleRate(MEDIA_RATE));
+                                    }
                                 }
                             }
-                        }
 
-                        const SYS_RATE: u32 = 16000;
-                        const SYS_CHANNELS: u16 = 1;
-                        if c.min_sample_rate().0 <= SYS_RATE && c.max_sample_rate().0 >= SYS_RATE {
-                            if c.channels() == SYS_CHANNELS {
-                                if c.sample_format() == cpal::SampleFormat::I16 {
-                                    sys_config = c.try_with_sample_rate(cpal::SampleRate(SYS_RATE));
+                            const SYS_RATE: u32 = 16000;
+                            const SYS_CHANNELS: u16 = 1;
+                            if c.min_sample_rate().0 <= SYS_RATE
+                                && c.max_sample_rate().0 >= SYS_RATE
+                            {
+                                if c.channels() == SYS_CHANNELS {
+                                    if c.sample_format() == cpal::SampleFormat::I16 {
+                                        sys_config =
+                                            c.try_with_sample_rate(cpal::SampleRate(SYS_RATE));
+                                    }
                                 }
                             }
-                        }
 
-                        const SPEECH_RATE: u32 = 16000;
-                        const SPEECH_CHANNELS: u16 = 1;
-                        if c.min_sample_rate().0 <= SPEECH_RATE
-                            && c.max_sample_rate().0 >= SPEECH_RATE
-                        {
-                            if c.channels() == SPEECH_CHANNELS {
-                                if c.sample_format() == cpal::SampleFormat::I16 {
-                                    speech_config =
-                                        c.try_with_sample_rate(cpal::SampleRate(SPEECH_RATE));
+                            const SPEECH_RATE: u32 = 16000;
+                            const SPEECH_CHANNELS: u16 = 1;
+                            if c.min_sample_rate().0 <= SPEECH_RATE
+                                && c.max_sample_rate().0 >= SPEECH_RATE
+                            {
+                                if c.channels() == SPEECH_CHANNELS {
+                                    if c.sample_format() == cpal::SampleFormat::I16 {
+                                        speech_config =
+                                            c.try_with_sample_rate(cpal::SampleRate(SPEECH_RATE));
+                                    }
                                 }
                             }
                         }
-                    }
-                    if let Some(mc) = media_config {
-                        let rb = ringbuf::HeapRb::new(48000);
-                        let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
-                        let s = ao.build_output_stream(
-                            &mc.config(),
-                            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                                let mut index = 0;
-                                while index < data.len() {
-                                    let c = ringbuf::traits::Consumer::pop_slice(
-                                        &mut consumer,
-                                        &mut data[index..],
-                                    );
-                                    if c == 0 {
-                                        break;
+                        if let Some(mc) = media_config {
+                            let rb = ringbuf::HeapRb::new(48000);
+                            let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
+                            let s = ao.build_output_stream(
+                                &mc.config(),
+                                move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                                    let mut index = 0;
+                                    while index < data.len() {
+                                        let c = ringbuf::traits::Consumer::pop_slice(
+                                            &mut consumer,
+                                            &mut data[index..],
+                                        );
+                                        if c == 0 {
+                                            break;
+                                        }
+                                        index += c;
                                     }
-                                    index += c;
-                                }
-                            },
-                            move |err| {
-                                log::error!("Error in media audio output: {:?}", err);
-                            },
-                            None,
-                        );
-                        if let Ok(s) = s {
-                            media_stream = Some((producer, s));
+                                },
+                                move |err| {
+                                    log::error!("Error in media audio output: {:?}", err);
+                                },
+                                None,
+                            );
+                            if let Ok(s) = s {
+                                media_stream = Some((producer, s));
+                            }
                         }
-                    }
-                    if let Some(mc) = sys_config {
-                        let rb = ringbuf::HeapRb::new(16000);
-                        let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
-                        let s = ao.build_output_stream(
-                            &mc.config(),
-                            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                                let mut index = 0;
-                                while index < data.len() {
-                                    let c = ringbuf::traits::Consumer::pop_slice(
-                                        &mut consumer,
-                                        &mut data[index..],
-                                    );
-                                    if c == 0 {
-                                        break;
+                        if let Some(mc) = sys_config {
+                            let rb = ringbuf::HeapRb::new(16000);
+                            let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
+                            let s = ao.build_output_stream(
+                                &mc.config(),
+                                move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                                    let mut index = 0;
+                                    while index < data.len() {
+                                        let c = ringbuf::traits::Consumer::pop_slice(
+                                            &mut consumer,
+                                            &mut data[index..],
+                                        );
+                                        if c == 0 {
+                                            break;
+                                        }
+                                        index += c;
                                     }
-                                    index += c;
-                                }
-                            },
-                            move |err| {
-                                log::error!("Error in media audio output: {:?}", err);
-                            },
-                            None,
-                        );
-                        if let Ok(s) = s {
-                            sys_stream = Some((producer, s));
+                                },
+                                move |err| {
+                                    log::error!("Error in media audio output: {:?}", err);
+                                },
+                                None,
+                            );
+                            if let Ok(s) = s {
+                                sys_stream = Some((producer, s));
+                            }
                         }
-                    }
-                    if let Some(mc) = speech_config {
-                        let rb = ringbuf::HeapRb::new(16000);
-                        let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
-                        let s = ao.build_output_stream(
-                            &mc.config(),
-                            move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                                let mut index = 0;
-                                while index < data.len() {
-                                    let c = ringbuf::traits::Consumer::pop_slice(
-                                        &mut consumer,
-                                        &mut data[index..],
-                                    );
-                                    if c == 0 {
-                                        break;
+                        if let Some(mc) = speech_config {
+                            let rb = ringbuf::HeapRb::new(16000);
+                            let (producer, mut consumer) = ringbuf::traits::Split::split(rb);
+                            let s = ao.build_output_stream(
+                                &mc.config(),
+                                move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+                                    let mut index = 0;
+                                    while index < data.len() {
+                                        let c = ringbuf::traits::Consumer::pop_slice(
+                                            &mut consumer,
+                                            &mut data[index..],
+                                        );
+                                        if c == 0 {
+                                            break;
+                                        }
+                                        index += c;
                                     }
-                                    index += c;
-                                }
-                            },
-                            move |err| {
-                                log::error!("Error in media audio output: {:?}", err);
-                            },
-                            None,
-                        );
-                        if let Ok(s) = s {
-                            speech_stream = Some((producer, s));
+                                },
+                                move |err| {
+                                    log::error!("Error in media audio output: {:?}", err);
+                                },
+                                None,
+                            );
+                            if let Ok(s) = s {
+                                speech_stream = Some((producer, s));
+                            }
                         }
                     }
                 }
@@ -360,14 +405,20 @@ impl MyEguiApp {
         }
         Self {
             subwindow: Subwindow::MainPage(MainPage {}),
-            check: false,
             common: CommonWindowProperties::new(),
+            #[cfg(feature = "androidauto")]
             audio_output: ao,
+            #[cfg(feature = "androidauto")]
             audio_input: ai,
+            #[cfg(feature = "androidauto")]
             cpal_host: h,
+            #[cfg(feature = "androidauto")]
             media_stream,
+            #[cfg(feature = "androidauto")]
             sys_stream,
+            #[cfg(feature = "androidauto")]
             speech_stream,
+            #[cfg(feature = "androidauto")]
             input_stream,
         }
     }
@@ -578,6 +629,7 @@ impl eframe::App for MyEguiApp {
                 .radio
                 .send_packet(uobradio_comms::MessageFromApp::NewSettings {
                     settings: self.common.settings.clone(),
+                    #[cfg(feature = "wifi")]
                     wifi_reconnect: settings_changed,
                 });
         }
@@ -745,24 +797,14 @@ impl eframe::App for MyEguiApp {
                 .show(ctx, |ui| {
                     {
                         let vw = Subwindow::MainPage(MainPage {});
-                        let active = if let Subwindow::MainPage(_) = self.subwindow {
-                            true
-                        } else {
-                            false
-                        };
-                        if vw.card(active, ui) {
+                        if vw.card(matches!(self.subwindow, Subwindow::MainPage(_)), ui) {
                             self.subwindow = vw;
                         }
                     }
                     if let Some(cameras) = self.common.radio.cameras() {
                         if !cameras.is_empty() {
                             let vw = Subwindow::Video(video::Video::new());
-                            let active = if let Subwindow::Video(_) = self.subwindow {
-                                true
-                            } else {
-                                false
-                            };
-                            if vw.card(active, ui) {
+                            if vw.card(matches!(self.subwindow, Subwindow::Video(_)), ui) {
                                 self.subwindow = vw;
                             }
                         }
@@ -770,45 +812,25 @@ impl eframe::App for MyEguiApp {
                     #[cfg(any(feature = "wifi", feature = "bluetooth"))]
                     {
                         let vw = Subwindow::Wireless(wireless::Config::new());
-                        let active = if let Subwindow::Wireless(_) = self.subwindow {
-                            true
-                        } else {
-                            false
-                        };
-                        if vw.card(active, ui) {
+                        if vw.card(matches!(self.subwindow, Subwindow::Wireless(_)), ui) {
                             self.subwindow = vw;
                         }
                     }
                     {
                         let vw = Subwindow::Hvac(hvac::Window::new());
-                        let active = if let Subwindow::Hvac(_) = self.subwindow {
-                            true
-                        } else {
-                            false
-                        };
-                        if vw.card(active, ui) {
+                        if vw.card(matches!(self.subwindow, Subwindow::Hvac(_)), ui) {
                             self.subwindow = vw;
                         }
                     }
                     {
                         let vw = Subwindow::Offroad(offroad::Window::new());
-                        let active = if let Subwindow::Offroad(_) = self.subwindow {
-                            true
-                        } else {
-                            false
-                        };
-                        if vw.card(active, ui) {
+                        if vw.card(matches!(self.subwindow, Subwindow::Offroad(_)), ui) {
                             self.subwindow = vw;
                         }
                     }
                     {
                         let vw = Subwindow::Settings(settings::Settings::new());
-                        let active = if let Subwindow::Settings(_) = self.subwindow {
-                            true
-                        } else {
-                            false
-                        };
-                        if vw.card(active, ui) {
+                        if vw.card(matches!(self.subwindow, Subwindow::Settings(_)), ui) {
                             self.subwindow = vw;
                         }
                     }

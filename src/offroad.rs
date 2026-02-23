@@ -1,12 +1,16 @@
+//! Code for the offroad page
+
 use super::CommonWindowProperties;
 use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+/// The offroad page for the application
 #[derive(Clone, Copy)]
 pub struct Window {}
 
 impl Window {
+    /// Construct a new Self
     pub fn new() -> Self {
         Self {}
     }

@@ -13,7 +13,10 @@ mod hotspot;
 ))]
 compile_error!("Wifi and bluetooth must be enabled if android-auto is enabled");
 
-use std::{collections::HashSet, io::Read, path::PathBuf, sync::Arc};
+#[cfg(feature = "androidauto")]
+use std::collections::HashSet;
+
+use std::{io::Read, path::PathBuf, sync::Arc};
 
 #[cfg(feature = "androidauto")]
 use android_auto::{
@@ -167,16 +170,19 @@ impl AndroidAutoService {
     }
 }
 
+#[cfg(feature = "swupdate")]
 struct SwupdateChannel {
     recv: tokio::sync::mpsc::Receiver<uobradio_comms::MessageToSwupdateChannel>,
     send: tokio::sync::mpsc::Sender<uobradio_comms::MessageFromSwupdateChannel>,
 }
 
+#[cfg(feature = "swupdate")]
 struct SwupdateChannelRecv {
     send: tokio::sync::mpsc::Sender<uobradio_comms::MessageToSwupdateChannel>,
     recv: tokio::sync::mpsc::Receiver<uobradio_comms::MessageFromSwupdateChannel>,
 }
 
+#[cfg(feature = "swupdate")]
 impl SwupdateChannelRecv {
     async fn process(&mut self, progress: &mut Option<(u8, u8)>) {
         while let Ok(m) = self.recv.try_recv() {
@@ -190,6 +196,7 @@ impl SwupdateChannelRecv {
     }
 }
 
+#[cfg(feature = "swupdate")]
 impl SwupdateChannel {
     async fn run(&mut self) {
         while let Err(e) = self.iteration().await {
@@ -302,7 +309,7 @@ async fn receive_message_from_app(
     streamr: &mut tokio::net::tcp::OwnedReadHalf,
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
     streamw: Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>,
-    addr: std::net::SocketAddr,
+    #[cfg(any(feature = "androidauto", feature = "bluetooth"))] addr: std::net::SocketAddr,
     #[cfg(feature = "bluetooth")] send_passkey_response: &mut Option<
         tokio::sync::mpsc::Sender<ResponseToPasskey>,
     >,
@@ -329,9 +336,9 @@ async fn receive_message_from_app(
     let packet: Result<(uobradio_comms::MessageFromApp, usize), bincode::error::DecodeError> =
         bincode::serde::decode_from_slice(&packet, bincode::config::standard());
     if let Ok((packet, _length)) = packet {
+        #[cfg(feature = "bluetooth")]
         {
             let mut common2 = common.lock().await;
-            #[cfg(feature = "bluetooth")]
             if common2.blue_addr.is_some() {
                 while let Ok(m) = common2.blue_recv.try_recv() {
                     match &m {
@@ -660,6 +667,7 @@ async fn receive_message_from_app(
             }
             uobradio_comms::MessageFromApp::NewSettings {
                 settings,
+                #[cfg(feature = "wifi")]
                 wifi_reconnect,
             } => {
                 let mut common2 = common.lock().await;
@@ -752,9 +760,9 @@ async fn receive_message_from_app(
                 }
             },
         }
+        #[cfg(feature = "androidauto")]
         {
             let mut common2 = common.lock().await;
-            #[cfg(feature = "androidauto")]
             if let Some(aauto) = &mut common2.aauto_service {
                 while let Ok(m) = aauto.recv.try_recv() {
                     let packet = MessageToApp::AndroidAutoMessage(m);
@@ -800,6 +808,7 @@ pub async fn process_app(
             &mut streamr,
             common.clone(),
             streamw.clone(),
+            #[cfg(any(feature = "androidauto", feature = "bluetooth"))]
             addr,
             #[cfg(feature = "bluetooth")]
             &mut send_passkey_response,
@@ -857,11 +866,11 @@ async fn hvac_control(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
 }
 
 /// Polls the sensors in the system
-async fn sensor_polling(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
+async fn sensor_polling(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
     loop {
-        {
+        /*{
             let mut common2 = common.lock().await;
-        }
+        }*/
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
@@ -887,6 +896,7 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
                         let a = tokio::task::spawn_local(async move {
                             log::info!("Got a tcp client {:?}", addr);
                             let r = process_app(stream, addr, common2.clone()).await;
+                            #[cfg(any(feature = "androidauto", feature = "bluetooth"))]
                             let mut common3 = common2.lock().await;
                             #[cfg(feature = "bluetooth")]
                             if Some(addr) == common3.blue_addr {
@@ -1352,9 +1362,12 @@ async fn smain() {
         }
     }
 
+    #[cfg(feature = "swupdate")]
     let swc1 = tokio::sync::mpsc::channel(5);
+    #[cfg(feature = "swupdate")]
     let swc2 = tokio::sync::mpsc::channel(5);
 
+    #[cfg(feature = "swupdate")]
     tokio::spawn(async move {
         let mut swupdate = SwupdateChannel {
             send: swc1.0,

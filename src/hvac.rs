@@ -1,12 +1,16 @@
+//! Code for the hvac control page
+
 use super::CommonWindowProperties;
 use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+/// The hvac control page
 #[derive(Clone, Copy)]
 pub struct Window {}
 
 impl Window {
+    /// Construct a new Self
     pub fn new() -> Self {
         Self {}
     }

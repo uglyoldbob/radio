@@ -1,12 +1,16 @@
+//! Code for the settings page
+
 use super::CommonWindowProperties;
 use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+/// The settings page for the application, with sub-menus
 #[derive(Clone, Copy)]
 pub struct Settings {}
 
 impl Settings {
+    /// construct a new Self
     pub fn new() -> Self {
         Self {}
     }

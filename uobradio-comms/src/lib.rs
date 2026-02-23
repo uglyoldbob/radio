@@ -82,6 +82,7 @@ pub enum PendingAudioCommand {
     Stop,
 }
 
+#[cfg(feature = "androidauto")]
 /// Manages the user facing aspects of an android auto server
 pub struct AndroidAutoServerFrontend {
     /// The video data received so far from the android auto device, h264 encoded video packets
@@ -96,6 +97,7 @@ pub struct AndroidAutoServerFrontend {
     running: bool,
 }
 
+#[cfg(feature = "androidauto")]
 impl AndroidAutoServerFrontend {
     /// Construct a new self, initialize as waiting for control
     pub fn new() -> Self {
@@ -125,6 +127,7 @@ impl AndroidAutoServerFrontend {
     }
 }
 
+#[cfg(feature = "androidauto")]
 impl Drop for AndroidAutoServerFrontend {
     fn drop(&mut self) {}
 }
@@ -311,6 +314,7 @@ pub enum MessageFromApp {
     NewSettings {
         /// The new settings
         settings: NonvolatileSettings,
+        #[cfg(feature = "wifi")]
         /// Should the wifi be reconnected?
         wifi_reconnect: bool,
     },

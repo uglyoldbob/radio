@@ -1,12 +1,16 @@
+//! The code for the video page
+
 use super::CommonWindowProperties;
 use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+/// The video configuration page
 #[derive(Clone, Copy)]
 pub struct Video {}
 
 impl Video {
+    /// Construct a new Self
     pub fn new() -> Self {
         Self {}
     }
