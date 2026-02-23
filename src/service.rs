@@ -1312,7 +1312,7 @@ async fn smain() {
         settings
             .debug_level
             .as_ref()
-            .unwrap_or(&service::LogLevel::Trace)
+            .unwrap_or(&service::LogLevel::Info)
             .level_filter(),
     );
 

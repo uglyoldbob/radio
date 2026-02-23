@@ -1054,14 +1054,14 @@ pub struct NonvolatileSettings {
 impl NonvolatileSettings {
     /// Save the non-volatile settings to the current directory
     pub fn save(&self, path_override: &Option<std::path::PathBuf>) {
-        let d = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
+        let d = toml::to_string(self).unwrap();
         let f = if let Some(p) = path_override {
             std::fs::File::create(p)
         } else {
-            std::fs::File::create("./settings.bin")
+            std::fs::File::create("./settings.toml")
         };
         if let Ok(mut f) = f {
-            let _ = f.write_all(&d);
+            let _ = f.write_all(d.as_bytes());
         }
     }
 
@@ -1070,21 +1070,33 @@ impl NonvolatileSettings {
         let f = if let Some(p) = path_override {
             std::fs::File::open(p)
         } else {
-            std::fs::File::open("./settings.bin")
+            std::fs::File::open("./settings.toml")
         };
-        if let Ok(mut f) = f {
-            let mut contents = Vec::new();
-            let _ = f.read_to_end(&mut contents);
-            let s = bincode::serde::decode_from_slice(&contents, bincode::config::standard());
-            if let Ok((s, _)) = s {
-                s
-            } else {
-                log::error!("Failure reading nonvolatile settings");
+        match f {
+            Ok(mut f) => {
+                let mut contents = Vec::new();
+                let _ = f.read_to_end(&mut contents);
+                match str::from_utf8(&contents) {
+                    Ok(contents) => {
+                        let s = toml::from_str::<NonvolatileSettings>(contents);
+                        match s {
+                            Ok(s) => s,
+                            Err(e) => {
+                                log::error!("Failed to parse nonvolatile settings {e}");
+                                Self::default()
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failure converting nonvolatile settings {e}");
+                        Self::default()
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("Nonvolatile settings error {e}");
                 Self::default()
             }
-        } else {
-            log::error!("Nonvolatile settings do not exist");
-            Self::default()
         }
     }
 }
