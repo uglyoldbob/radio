@@ -60,6 +60,12 @@ pub enum Pollable<T> {
     },
 }
 
+impl<T> Default for Pollable<T> {
+    fn default() -> Self {
+        Self::Idle { last_known: None }
+    }
+}
+
 impl<T> Pollable<T> {
     /// Try to get the contained value
     pub fn value(&self) -> Option<&T> {
@@ -70,8 +76,8 @@ impl<T> Pollable<T> {
         }
     }
 
-    /// Provides the new value for the object
-    pub fn new_value(&mut self, v: Option<T>) {
+    /// Provides the new value for the object, None means it won't update the last know
+    pub fn new_value_optional(&mut self, v: Option<T>) {
         match v {
             Some(v) => {
                 *self = Pollable::Value { v };
@@ -393,7 +399,12 @@ pub enum MessageFromApp {
     ListAllKnownWifiNetworks,
     #[cfg(feature = "wifi")]
     /// Connect to the specified network
-    ConnectToNetwork(String, Option<String>),
+    ConnectToNetwork {
+        /// The majority of the network details
+        network: nmrs::Network,
+        /// The password
+        password: Option<String>,
+    },
     #[cfg(feature = "wifi")]
     /// Get the ssid and password for the current wifi network
     GetWifiDetails,
@@ -620,6 +631,7 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        #[cfg(feature = "wifi")]
                                         MessageToApp::KnownWifiNetworks(_) => {}
                                         MessageToApp::NoUpdateInProgress => {}
                                         MessageToApp::UpdateProgress(_, _) => {}

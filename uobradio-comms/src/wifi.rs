@@ -33,11 +33,11 @@ pub enum WifiConfig {
     Disabled,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 /// The stage of connecting to a wifi network
 pub enum WifiConnectStage {
     /// Prompt the user for the password
-    PasswordPrompt,
+    PasswordPrompt(nmrs::Network, String),
     /// Indicate connecting to the network
     Connecting,
     /// The wifi is connected
@@ -59,7 +59,7 @@ pub struct Settings {
     /// Connection state for the indicated wifi network (wifi_new_connect)
     pub wifi_state: WifiConnectStage,
     /// The list of known networks by ssid
-    pub known_networks: Vec<String>,
+    pub known_networks: super::Pollable<Vec<String>>,
 }
 
 /// The non-volatile wifi settings

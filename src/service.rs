@@ -503,7 +503,7 @@ async fn receive_message_from_app(
                 }
             }
             #[cfg(feature = "wifi")]
-            uobradio_comms::MessageFromApp::ConnectToNetwork(ssid, password) => {
+            uobradio_comms::MessageFromApp::ConnectToNetwork { network, password } => {
                 let wifi = {
                     let mut common2 = common.lock().await;
                     common2.wifi_setup.take();
@@ -513,42 +513,45 @@ async fn receive_message_from_app(
                 let stream2w = streamw.clone();
                 tokio::task::spawn(async move {
                     if let Some(wifi) = wifi {
-                        if let Some(p) = password {
-                            log::info!("Start connect to wifi {}", ssid);
-                            let ssid2 = ssid.clone();
-                            let p2 = p.clone();
-                            let a = wifi
-                                .connect(&ssid, nmrs::WifiSecurity::WpaPsk { psk: p2.clone() })
-                                .await;
-                            match a {
-                                Ok(_wifi) => {
-                                    log::info!("Connected to wifi network {}", ssid);
-                                    let mut common2 = common2.lock().await;
-                                    common2.wifi_setup =
-                                        Some(uobradio_comms::wifi::WifiMode::RegularNetwork {
-                                            ssid: ssid2.clone(),
-                                            password: Some(p2.clone()),
-                                        });
-                                    common2
-                                        .settings
-                                        .wifi_network
-                                        .push((ssid.clone(), p.clone()));
-                                    common2.settings.save(&common2.args.nvconfig);
-                                    let packet = MessageToApp::ConnectedToWifiNetwork {
-                                        ssid,
-                                        password: Some(p),
-                                    };
-                                    packet.send_to_stream(&stream2w).await?;
+                        if network.secured {
+                            let ssid = network.ssid.clone();
+                            if let Some(p) = password {
+                                log::info!("Start connect to wifi {}", ssid);
+                                let ssid2 = ssid.clone();
+                                let p2 = p.clone();
+                                let a = wifi
+                                    .connect(&ssid, nmrs::WifiSecurity::WpaPsk { psk: p2.clone() })
+                                    .await;
+                                match a {
+                                    Ok(_wifi) => {
+                                        log::info!("Connected to wifi network {}", ssid);
+                                        let mut common2 = common2.lock().await;
+                                        common2.wifi_setup =
+                                            Some(uobradio_comms::wifi::WifiMode::RegularNetwork {
+                                                ssid: ssid2.clone(),
+                                                password: Some(p2.clone()),
+                                            });
+                                        common2
+                                            .settings
+                                            .wifi_network
+                                            .push((ssid.clone(), p.clone()));
+                                        common2.settings.save(&common2.args.nvconfig);
+                                        let packet = MessageToApp::ConnectedToWifiNetwork {
+                                            ssid,
+                                            password: Some(p),
+                                        };
+                                        packet.send_to_stream(&stream2w).await?;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Error connecting to {}: {:?}", ssid, e);
+                                        let packet =
+                                            MessageToApp::FailedToConnectToWifiNetwork { ssid };
+                                        packet.send_to_stream(&stream2w).await?;
+                                    }
                                 }
-                                Err(e) => {
-                                    log::error!("Error connecting to {}: {:?}", ssid, e);
-                                    let packet =
-                                        MessageToApp::FailedToConnectToWifiNetwork { ssid };
-                                    packet.send_to_stream(&stream2w).await?;
-                                }
+                            } else {
+                                log::error!("No password for wifi defined");
                             }
-                        } else {
-                            log::error!("No password for wifi defined");
                         }
                     } else {
                         log::error!("No wifi adapter found?");
