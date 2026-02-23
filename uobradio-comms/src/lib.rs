@@ -1078,6 +1078,7 @@ pub struct VolatileSettings {
     pub hvac: hvac::VolatileSettings,
     /// Which video stream to look at
     pub which_video: u8,
+    #[cfg(any(feature = "wifi", feature = "bluetooth"))]
     /// The wifi page settings
     pub wifi: wireless::Settings,
 }
