@@ -108,16 +108,19 @@ impl SubwindowTrait for Config {
             });
         }
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.label("Future expansion here for bluetooth settings");
-            if ui.button("Enable discovery").clicked() {
-                let _ = common
-                    .radio
-                    .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(true));
-            }
-            if ui.button("Disable discovery").clicked() {
-                let _ = common
-                    .radio
-                    .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(false));
+            #[cfg(feature = "bluetooth")]
+            {
+                ui.label("Future expansion here for bluetooth settings");
+                if ui.button("Enable discovery").clicked() {
+                    let _ = common
+                        .radio
+                        .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(true));
+                }
+                if ui.button("Disable discovery").clicked() {
+                    let _ = common
+                        .radio
+                        .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(false));
+                }
             }
             #[cfg(feature = "wifi")]
             {
