@@ -16,6 +16,9 @@ pub mod aauto;
 pub mod settings;
 pub mod video;
 
+#[cfg(feature = "wifi")]
+pub mod wifi;
+
 #[cfg(feature = "androidauto")]
 use android_auto::AudioChannelType;
 #[cfg(target_os = "linux")]
@@ -37,37 +40,82 @@ pub enum RadioReceiveStatus {
     GotPacket(Vec<u8>),
 }
 
-/// The mode of operation for wifi
-#[derive(Debug)]
-pub enum WifiMode {
-    /// The local wifi devices creates a hotspot
-    Hotspot {
-        /// The ssid of the network
-        ssid: String,
-        /// The password of the network if applicable
-        password: Option<String>,
+/// A type that allows for polling of a value, without sending a whole ton of requests.
+/// This limits the number of outstanding requests to one. This is useful for queries that take a while to run, compared to how often the data is displayed to the user.
+pub enum Pollable<T> {
+    /// The variable is idle
+    Idle {
+        /// The last known value
+        last_known: Option<T>,
     },
-    /// The local wifi adapter connects to an existing wifi network
-    RegularNetwork {
-        /// The ssid of the network
-        ssid: String,
-        /// The password of the network if applicable
-        password: Option<String>,
+    /// A request for the variable has been sent
+    Waiting {
+        /// The last known value
+        last_known: Option<T>,
+    },
+    /// A value has been received
+    Value {
+        /// The value stored
+        v: T,
     },
 }
 
-/// Specifies what mode the wifi card should be in
-#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq)]
-pub enum WifiConfig {
-    /// Hotspot
-    Hotspot,
-    /// The local wifi adapter connects to an existing wifi network
-    RegularNetwork,
-    /// The wifi card should be ready
-    Ready,
-    /// The wifi card should be disabled
-    #[default]
-    Disabled,
+impl<T> Pollable<T> {
+    /// Try to get the contained value
+    pub fn value(&self) -> Option<&T> {
+        match self {
+            Pollable::Idle { last_known } => last_known.as_ref(),
+            Pollable::Waiting { last_known } => last_known.as_ref(),
+            Pollable::Value { v } => Some(v),
+        }
+    }
+
+    /// Provides the new value for the object
+    pub fn new_value(&mut self, v: Option<T>) {
+        match v {
+            Some(v) => {
+                *self = Pollable::Value { v };
+            }
+            None => {
+                let b = std::mem::replace(self, Pollable::Idle { last_known: None });
+                match b {
+                    Pollable::Idle { last_known: _ } => {
+                    }
+                    Pollable::Waiting { last_known } => {
+                        if let Some(v2) = last_known {
+                            *self = Pollable::Value { v: v2 };
+                        }
+                        else {
+                            *self = Pollable::Idle { last_known };
+                        }
+                    }
+                    Pollable::Value { v } => {
+                    }
+                };        
+            }
+        }
+    }
+
+    /// Runs a closure when poll action is possible
+    pub fn poll_action<U: FnOnce()>(&mut self, closure: U) {
+        let b = std::mem::replace(self, Pollable::Idle { last_known: None });
+        let a = match b {
+            Pollable::Idle { last_known } => {
+                *self = Pollable::Waiting { last_known };
+                true
+            }
+            Pollable::Waiting { last_known: _ } => {
+                false
+            }
+            Pollable::Value { v } => {
+                *self = Pollable::Waiting { last_known: Some(v) };
+                true
+            }
+        };
+        if a {
+            closure();
+        }
+    }
 }
 
 /// The port to listen to for udp communication
@@ -341,6 +389,9 @@ pub enum MessageFromApp {
     /// Scan for wifi networks with the wifi adapter
     ScanForWifiNetworks,
     #[cfg(feature = "wifi")]
+    /// List all known wifi networks
+    ListAllKnownWifiNetworks,
+    #[cfg(feature = "wifi")]
     /// Connect to the specified network
     ConnectToNetwork(String, Option<String>),
     #[cfg(feature = "wifi")]
@@ -446,6 +497,9 @@ pub enum MessageToApp {
         /// The reason for failure
         reason: String,
     },
+    #[cfg(feature = "wifi")]
+    /// The list of known wifi networks
+    KnownWifiNetworks(Vec<String>),
     /// A response to an ac control command
     Ac(AcResponse),
     /// The list of files on the remote update server
@@ -566,6 +620,7 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::KnownWifiNetworks(_) => {}
                                         MessageToApp::NoUpdateInProgress => {}
                                         MessageToApp::UpdateProgress(_, _) => {}
                                         MessageToApp::ServerFileDownloadProgress(_) => {}
@@ -1000,22 +1055,6 @@ impl UobRadio {
     }
 }
 
-#[derive(Clone, Copy, Default)]
-/// The stage of connecting to a wifi network
-pub enum WifiConnectStage {
-    /// Prompt the user for the password
-    PasswordPrompt,
-    /// Indicate connecting to the network
-    Connecting,
-    /// The wifi is connected
-    Connected,
-    /// The wifi failed to connect
-    FailedConnection,
-    /// Doing nothing
-    #[default]
-    Idle,
-}
-
 /// The volatile settings for the radio
 #[derive(Default)]
 pub struct VolatileSettings {
@@ -1027,12 +1066,8 @@ pub struct VolatileSettings {
     pub hvac: hvac::VolatileSettings,
     /// Which video stream to look at
     pub which_video: u8,
-    /// For the qr code
-    pub wifi_texture: Option<egui::TextureHandle>,
-    /// The password storage for wifi connection
-    pub wifi_password: String,
-    /// Connection state for the indicated wifi network (wifi_new_connect)
-    pub wifi_state: WifiConnectStage,
+    /// The wifi page settings
+    pub wifi: wifi::Settings,
 }
 
 /// Non-volatile settings that should be saved to nonvolatile storage of some kind
@@ -1048,7 +1083,7 @@ pub struct NonvolatileSettings {
     pub wifi_network: Vec<(String, String)>,
     #[cfg(feature = "wifi")]
     /// The wifi configuration
-    pub wifi_config: WifiConfig,
+    pub wifi_config: wifi::NvSettings,
 }
 
 impl NonvolatileSettings {

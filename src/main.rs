@@ -168,8 +168,8 @@ struct CommonWindowProperties {
     /// The list of available wifi networks
     wifi_list: Vec<nmrs::Network>,
     #[cfg(feature = "wifi")]
-    /// The optional details for the wifi network, ssid and password
-    wifi_details: Option<(String, Option<String>)>,
+    /// The details for the current wifi network, ssid and password
+    wifi_details: uobradio_comms::Pollable<(String, Option<String>)>,
     #[cfg(feature = "androidauto")]
     android_auto_video_decoder: openh264::decoder::Decoder,
     #[cfg(feature = "androidauto")]
@@ -186,7 +186,7 @@ impl CommonWindowProperties {
             #[cfg(feature = "wifi")]
             wifi_list: Vec::new(),
             #[cfg(feature = "wifi")]
-            wifi_details: None,
+            wifi_details: uobradio_comms::Pollable::Idle { last_known: None },
             #[cfg(feature = "androidauto")]
             android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
             #[cfg(feature = "androidauto")]
@@ -562,6 +562,10 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                #[cfg(feature = "wifi")]
+                uobradio_comms::MessageToApp::KnownWifiNetworks(list) => {
+                    self.common.vsettings.wifi.known_networks = list.to_owned();
+                }
                 uobradio_comms::MessageToApp::NoUpdateInProgress => {
                     log::error!("There is no update in progress");
                     self.common.vsettings.settings.update_status_pending = false;
@@ -598,11 +602,13 @@ impl eframe::App for MyEguiApp {
                 },
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {
-                    self.common.wifi_details.take();
+                    self.common.wifi_details = uobradio_comms::Pollable::Idle { last_known: None };
                 }
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password } => {
-                    self.common.wifi_details = Some((ssid.clone(), password.clone()));
+                    self.common
+                        .wifi_details
+                        .new_value(Some((ssid.clone(), password.clone())));
                 }
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::WifiList(list) => {
@@ -612,7 +618,9 @@ impl eframe::App for MyEguiApp {
                 }
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {
-                    self.common.wifi_details = Some((ssid.clone(), password.clone()));
+                    self.common
+                        .wifi_details
+                        .new_value(Some((ssid.clone(), password.clone())));
                 }
                 #[cfg(feature = "androidauto")]
                 uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}

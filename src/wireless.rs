@@ -25,17 +25,34 @@ impl Config {
     #[cfg(feature = "wifi")]
     /// update the displayed qr code for the user to be able to scan
     fn update_qr_code(&mut self, ctx: &egui::Context, common: &mut CommonWindowProperties) {
-        if let uobradio_comms::WifiConfig::Disabled = common.settings.wifi_config {
-            common.vsettings.wifi_texture.take();
-        } else if let Some((wn, Some(wp))) = &common.wifi_details {
-            let contents = self.make_wifi_qr(wn, wp);
-            let code = qrcode::QrCode::new(contents).unwrap();
-            let image = code.render::<image::Rgb<u8>>().build();
-            let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
-                image.into();
-            let cimg: egui::ColorImage = img.into();
-            common.vsettings.wifi_texture =
-                Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
+        if let uobradio_comms::wifi::WifiConfig::Disabled = common.settings.wifi_config.config {
+            common.vsettings.wifi.wifi_texture.take();
+        } else {
+            let mut wifi = |wifi: &(String, Option<String>)| {
+                if let Some(wp) = &wifi.1 {
+                    let contents = self.make_wifi_qr(&wifi.0, wp);
+                    let code = qrcode::QrCode::new(contents).unwrap();
+                    let image = code.render::<image::Rgb<u8>>().build();
+                    let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
+                        image.into();
+                    let cimg: egui::ColorImage = img.into();
+                    common.vsettings.wifi.wifi_texture =
+                        Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
+                }
+            };
+            match &common.wifi_details {
+                uobradio_comms::Pollable::Idle { last_known } => {
+                    if let Some(known) = last_known {
+                        wifi(known)
+                    }
+                }
+                uobradio_comms::Pollable::Waiting { last_known } => {
+                    if let Some(known) = last_known {
+                        wifi(known)
+                    }
+                }
+                uobradio_comms::Pollable::Value { v } => wifi(v),
+            }
         }
     }
 }
@@ -93,12 +110,16 @@ impl SubwindowTrait for Config {
             .radio
             .send_packet(uobradio_comms::MessageFromApp::RequestSettings);
         #[cfg(feature = "wifi")]
-        let _ = common
-            .radio
-            .send_packet(uobradio_comms::MessageFromApp::GetWifiDetails);
+        {
+            common.wifi_details.poll_action(|| {
+                let _ = common
+                    .radio
+                    .send_packet(uobradio_comms::MessageFromApp::GetWifiDetails);
+            });
+        }
         #[cfg(feature = "wifi")]
         self.update_qr_code(ctx, common);
-        if let Some(t) = &common.vsettings.wifi_texture {
+        if let Some(t) = &common.vsettings.wifi.wifi_texture {
             egui::SidePanel::right("Hotspot qr code view").show(ctx, |ui| {
                 let size = ui.available_size();
                 let isize = t.size()[1];
@@ -134,40 +155,47 @@ impl SubwindowTrait for Config {
                 {
                     if ui
                         .add(egui::SelectableLabel::new(
-                            common.settings.wifi_config == uobradio_comms::WifiConfig::Disabled,
+                            common.settings.wifi_config.config
+                                == uobradio_comms::wifi::WifiConfig::Disabled,
                             "Disabled",
                         ))
                         .clicked()
                     {
                         save = true;
                         reconnect = true;
-                        common.settings.wifi_config = uobradio_comms::WifiConfig::Disabled;
+                        common.settings.wifi_config.config =
+                            uobradio_comms::wifi::WifiConfig::Disabled;
                     }
                     if ui
                         .add(egui::SelectableLabel::new(
-                            common.settings.wifi_config == uobradio_comms::WifiConfig::Hotspot,
+                            common.settings.wifi_config.config
+                                == uobradio_comms::wifi::WifiConfig::Hotspot,
                             "Hotspot",
                         ))
                         .clicked()
                     {
                         save = true;
                         reconnect = true;
-                        common.settings.wifi_config = uobradio_comms::WifiConfig::Hotspot;
+                        common.settings.wifi_config.config =
+                            uobradio_comms::wifi::WifiConfig::Hotspot;
                     }
                     if ui
                         .add(egui::SelectableLabel::new(
-                            common.settings.wifi_config == uobradio_comms::WifiConfig::Ready,
+                            common.settings.wifi_config.config
+                                == uobradio_comms::wifi::WifiConfig::Ready,
                             "Regular network",
                         ))
                         .clicked()
                     {
                         save = true;
                         reconnect = true;
-                        common.settings.wifi_config = uobradio_comms::WifiConfig::Ready;
+                        common.settings.wifi_config.config =
+                            uobradio_comms::wifi::WifiConfig::Ready;
                     }
-                    if let uobradio_comms::WifiConfig::RegularNetwork = &common.settings.wifi_config
+                    if let uobradio_comms::wifi::WifiConfig::RegularNetwork =
+                        &common.settings.wifi_config.config
                     {
-                        if let Some((wn, _wp)) = &common.wifi_details {
+                        if let Some((wn, _wp)) = &common.wifi_details.value() {
                             ui.label(format!("Connected to wifi network {}", wn));
                         } else {
                             ui.label("ConnectPasswordPrompted to a wifi network");
@@ -188,11 +216,11 @@ impl SubwindowTrait for Config {
                         ui.label(format!("Wifi network {}", w.ssid));
                     }
                 };
-                match &common.settings.wifi_config {
-                    uobradio_comms::WifiConfig::RegularNetwork => {
+                match &common.settings.wifi_config.config {
+                    uobradio_comms::wifi::WifiConfig::RegularNetwork => {
                         scan();
                     }
-                    uobradio_comms::WifiConfig::Ready => {
+                    uobradio_comms::wifi::WifiConfig::Ready => {
                         scan();
                     }
                     _ => {}

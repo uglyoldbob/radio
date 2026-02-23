@@ -5,7 +5,7 @@
 //! This program is for handling the video and audio components for the radio
 
 #[cfg(feature = "wifi")]
-mod hotspot;
+mod nmrs_extensions;
 
 #[cfg(all(
     feature = "androidauto",
@@ -29,7 +29,7 @@ use tokio::io::AsyncReadExt;
 #[cfg(feature = "androidauto")]
 use uobradio_comms::aauto::AndroidAutoMessageFromPhone;
 #[cfg(feature = "wifi")]
-use uobradio_comms::WifiConfig;
+use uobradio_comms::wifi::WifiConfig;
 use uobradio_comms::{HvacController, NonvolatileSettings};
 use video_service::VideoSource;
 
@@ -280,7 +280,7 @@ pub struct AppUserCommon {
     wifi_device: Option<nmrs::Device>,
     #[cfg(feature = "wifi")]
     /// The wifi setup
-    wifi_setup: Option<uobradio_comms::WifiMode>,
+    wifi_setup: Option<uobradio_comms::wifi::WifiMode>,
     #[cfg(feature = "bluetooth")]
     /// The main bluetooth struct
     bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
@@ -360,6 +360,30 @@ async fn receive_message_from_app(
             }
         }
         match packet {
+            #[cfg(feature = "wifi")]
+            uobradio_comms::MessageFromApp::ListAllKnownWifiNetworks => {
+                let wifi = {
+                    let mut common2 = common.lock().await;
+                    common2.wifi_setup.take();
+                    common2.wifi.clone()
+                };
+                let stream2w = streamw.clone();
+                if let Some(wifi) = wifi {
+                    let wifis = wifi.list_saved_connections().await;
+                    match wifis {
+                        Ok(list) => {
+                            let packet = MessageToApp::KnownWifiNetworks(list);
+                            packet.send_to_stream(&stream2w).await?;
+                        }
+                        Err(e) => {
+                            let packet = MessageToApp::FailedToScanForWifiNetworks {
+                                reason: e.to_string(),
+                            };
+                            packet.send_to_stream(&stream2w).await?;
+                        }
+                    }
+                }
+            }
             uobradio_comms::MessageFromApp::GetUpdateProgress => {
                 if let Some(p) = progress {
                     let packet = MessageToApp::UpdateProgress(p.0, p.1);
@@ -461,14 +485,14 @@ async fn receive_message_from_app(
                 let common2 = common.lock().await;
                 if let Some(wifi) = &common2.wifi_setup {
                     match wifi {
-                        uobradio_comms::WifiMode::Hotspot { ssid, password } => {
+                        uobradio_comms::wifi::WifiMode::Hotspot { ssid, password } => {
                             let packet = uobradio_comms::MessageToApp::WifiDetails {
                                 ssid: ssid.clone(),
                                 password: password.clone(),
                             };
                             packet.send_to_stream(&streamw).await?;
                         }
-                        uobradio_comms::WifiMode::RegularNetwork { ssid, password } => {
+                        uobradio_comms::wifi::WifiMode::RegularNetwork { ssid, password } => {
                             let packet = uobradio_comms::MessageToApp::WifiDetails {
                                 ssid: ssid.clone(),
                                 password: password.clone(),
@@ -501,7 +525,7 @@ async fn receive_message_from_app(
                                     log::info!("Connected to wifi network {}", ssid);
                                     let mut common2 = common2.lock().await;
                                     common2.wifi_setup =
-                                        Some(uobradio_comms::WifiMode::RegularNetwork {
+                                        Some(uobradio_comms::wifi::WifiMode::RegularNetwork {
                                             ssid: ssid2.clone(),
                                             password: Some(p2.clone()),
                                         });
@@ -1240,11 +1264,11 @@ async fn get_wifi_interface(nmrs: &nmrs::NetworkManager) -> Option<nmrs::Device>
 /// Call this when initially setting up wifi, or when changing wifi settings
 /// Wifi connections will likey drop and reconnect
 async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
-    log::info!("Setup wifi with {:?}", common2.settings.wifi_config);
+    log::info!("Setup wifi with {:?}", common2.settings.wifi_config.config);
     if let Some(wifi) = &common2.wifi {
         let _ = wifi.disconnect().await;
     }
-    match &common2.settings.wifi_config {
+    match &common2.settings.wifi_config.config {
         WifiConfig::Ready => {
             common2.wifi_setup.take();
         }
@@ -1254,11 +1278,11 @@ async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
                 common2.wifi_setup.take();
                 if let Some(wd) = &common2.wifi_device {
                     let wifi_dev_path = wd.path.clone();
-                    if hotspot::start_hotspot(n.clone(), p.clone(), &wifi_dev_path)
+                    if nmrs_extensions::start_hotspot(n.clone(), p.clone(), &wifi_dev_path)
                         .await
                         .is_ok()
                     {
-                        common2.wifi_setup = Some(uobradio_comms::WifiMode::Hotspot {
+                        common2.wifi_setup = Some(uobradio_comms::wifi::WifiMode::Hotspot {
                             ssid: n,
                             password: Some(p),
                         });
