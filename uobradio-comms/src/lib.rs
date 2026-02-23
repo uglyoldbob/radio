@@ -1096,7 +1096,7 @@ pub struct NonvolatileSettings {
     pub wifi_network: Vec<(String, String)>,
     #[cfg(feature = "wifi")]
     /// The wifi configuration
-    pub wifi_config: wifi::NvSettings,
+    pub wifi_config: wireless::NvSettings,
 }
 
 impl NonvolatileSettings {

@@ -25,7 +25,7 @@ impl Config {
     #[cfg(feature = "wifi")]
     /// update the displayed qr code for the user to be able to scan
     fn update_qr_code(&mut self, ctx: &egui::Context, common: &mut CommonWindowProperties) {
-        if let uobradio_comms::wifi::WifiConfig::Disabled = common.settings.wifi_config.config {
+        if let uobradio_comms::wireless::WifiConfig::Disabled = common.settings.wifi_config.config {
             common.vsettings.wifi.wifi_texture.take();
         } else {
             let mut wifi = |wifi: &(String, Option<String>)| {
@@ -157,7 +157,7 @@ impl SubwindowTrait for Config {
                     if ui
                         .add(egui::SelectableLabel::new(
                             common.settings.wifi_config.config
-                                == uobradio_comms::wifi::WifiConfig::Disabled,
+                                == uobradio_comms::wireless::WifiConfig::Disabled,
                             "Disabled",
                         ))
                         .clicked()
@@ -165,12 +165,12 @@ impl SubwindowTrait for Config {
                         save = true;
                         reconnect = true;
                         common.settings.wifi_config.config =
-                            uobradio_comms::wifi::WifiConfig::Disabled;
+                            uobradio_comms::wireless::WifiConfig::Disabled;
                     }
                     if ui
                         .add(egui::SelectableLabel::new(
                             common.settings.wifi_config.config
-                                == uobradio_comms::wifi::WifiConfig::Hotspot,
+                                == uobradio_comms::wireless::WifiConfig::Hotspot,
                             "Hotspot",
                         ))
                         .clicked()
@@ -178,12 +178,12 @@ impl SubwindowTrait for Config {
                         save = true;
                         reconnect = true;
                         common.settings.wifi_config.config =
-                            uobradio_comms::wifi::WifiConfig::Hotspot;
+                            uobradio_comms::wireless::WifiConfig::Hotspot;
                     }
                     if ui
                         .add(egui::SelectableLabel::new(
                             common.settings.wifi_config.config
-                                == uobradio_comms::wifi::WifiConfig::Ready,
+                                == uobradio_comms::wireless::WifiConfig::Ready,
                             "Regular network",
                         ))
                         .clicked()
@@ -191,9 +191,9 @@ impl SubwindowTrait for Config {
                         save = true;
                         reconnect = true;
                         common.settings.wifi_config.config =
-                            uobradio_comms::wifi::WifiConfig::Ready;
+                            uobradio_comms::wireless::WifiConfig::Ready;
                     }
-                    if let uobradio_comms::wifi::WifiConfig::RegularNetwork =
+                    if let uobradio_comms::wireless::WifiConfig::RegularNetwork =
                         &common.settings.wifi_config.config
                     {
                         if let Some((wn, _wp)) = &common.wifi_details.value() {
@@ -204,7 +204,7 @@ impl SubwindowTrait for Config {
                     }
                 }
                 match &mut common.vsettings.wifi.wifi_state {
-                    uobradio_comms::wifi::WifiConnectStage::PasswordPrompt(w, pw) => {
+                    uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w, pw) => {
                         let t = egui::RichText::new("Wifi password...")
                             .size(16.0)
                             .color(super::TEXT_SECONDARY);
@@ -228,13 +228,13 @@ impl SubwindowTrait for Config {
                             );
                         }
                     }
-                    uobradio_comms::wifi::WifiConnectStage::Connecting => {
+                    uobradio_comms::wireless::WifiConnectStage::Connecting => {
                         let t = egui::RichText::new("Connecting to wifi network...")
                             .size(16.0)
                             .color(super::TEXT_SECONDARY);
                         ui.label(t);
                     }
-                    uobradio_comms::wifi::WifiConnectStage::Connected => {
+                    uobradio_comms::wireless::WifiConnectStage::Connected => {
                         let t = egui::RichText::new("Connected to wifi network...")
                             .size(16.0)
                             .color(super::TEXT_SECONDARY);
@@ -250,10 +250,10 @@ impl SubwindowTrait for Config {
 
                         if ui.add(button).clicked() {
                             common.vsettings.wifi.wifi_state =
-                                uobradio_comms::wifi::WifiConnectStage::Idle;
+                                uobradio_comms::wireless::WifiConnectStage::Idle;
                         }
                     }
-                    uobradio_comms::wifi::WifiConnectStage::FailedConnection => {
+                    uobradio_comms::wireless::WifiConnectStage::FailedConnection => {
                         let t = egui::RichText::new("Failed to connect to wifi network...")
                             .size(16.0)
                             .color(super::TEXT_SECONDARY);
@@ -269,10 +269,10 @@ impl SubwindowTrait for Config {
 
                         if ui.add(button).clicked() {
                             common.vsettings.wifi.wifi_state =
-                                uobradio_comms::wifi::WifiConnectStage::Idle;
+                                uobradio_comms::wireless::WifiConnectStage::Idle;
                         }
                     }
-                    uobradio_comms::wifi::WifiConnectStage::Idle => {
+                    uobradio_comms::wireless::WifiConnectStage::Idle => {
                         ui.label("Saved wifi networks");
                         for (i, w) in common.settings.wifi_network.iter().enumerate() {
                             ui.label(format!(" * {}: {}", i, w.0));
@@ -295,10 +295,10 @@ impl SubwindowTrait for Config {
                             }
                         };
                         match &common.settings.wifi_config.config {
-                            uobradio_comms::wifi::WifiConfig::RegularNetwork => {
+                            uobradio_comms::wireless::WifiConfig::RegularNetwork => {
                                 scan();
                             }
-                            uobradio_comms::wifi::WifiConfig::Ready => {
+                            uobradio_comms::wireless::WifiConfig::Ready => {
                                 scan();
                             }
                             _ => {}

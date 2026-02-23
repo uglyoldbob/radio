@@ -29,7 +29,7 @@ use tokio::io::AsyncReadExt;
 #[cfg(feature = "androidauto")]
 use uobradio_comms::aauto::AndroidAutoMessageFromPhone;
 #[cfg(feature = "wifi")]
-use uobradio_comms::wifi::WifiConfig;
+use uobradio_comms::wireless::WifiConfig;
 use uobradio_comms::{HvacController, NonvolatileSettings};
 use video_service::VideoSource;
 
@@ -280,7 +280,7 @@ pub struct AppUserCommon {
     wifi_device: Option<nmrs::Device>,
     #[cfg(feature = "wifi")]
     /// The wifi setup
-    wifi_setup: Option<uobradio_comms::wifi::WifiMode>,
+    wifi_setup: Option<uobradio_comms::wireless::WifiMode>,
     #[cfg(feature = "bluetooth")]
     /// The main bluetooth struct
     bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
@@ -485,14 +485,14 @@ async fn receive_message_from_app(
                 let common2 = common.lock().await;
                 if let Some(wifi) = &common2.wifi_setup {
                     match wifi {
-                        uobradio_comms::wifi::WifiMode::Hotspot { ssid, password } => {
+                        uobradio_comms::wireless::WifiMode::Hotspot { ssid, password } => {
                             let packet = uobradio_comms::MessageToApp::WifiDetails {
                                 ssid: ssid.clone(),
                                 password: password.clone(),
                             };
                             packet.send_to_stream(&streamw).await?;
                         }
-                        uobradio_comms::wifi::WifiMode::RegularNetwork { ssid, password } => {
+                        uobradio_comms::wireless::WifiMode::RegularNetwork { ssid, password } => {
                             let packet = uobradio_comms::MessageToApp::WifiDetails {
                                 ssid: ssid.clone(),
                                 password: password.clone(),
@@ -527,7 +527,7 @@ async fn receive_message_from_app(
                                         log::info!("Connected to wifi network {}", ssid);
                                         let mut common2 = common2.lock().await;
                                         common2.wifi_setup =
-                                            Some(uobradio_comms::wifi::WifiMode::RegularNetwork {
+                                            Some(uobradio_comms::wireless::WifiMode::RegularNetwork {
                                                 ssid: ssid2.clone(),
                                                 password: Some(p2.clone()),
                                             });
@@ -1010,8 +1010,8 @@ impl AndroidAutoStuff {
             frame_sender,
         };
         let mut s = HashSet::new();
-        s.insert(android_auto::Wifi::sensor_type::Enum::DRIVING_STATUS);
-        s.insert(android_auto::Wifi::sensor_type::Enum::NIGHT_DATA);
+        s.insert(android_auto::wireless::sensor_type::Enum::DRIVING_STATUS);
+        s.insert(android_auto::wireless::sensor_type::Enum::NIGHT_DATA);
         Self {
             inner: Arc::new(tokio::sync::Mutex::new(inner)),
             bluetooth,
@@ -1021,8 +1021,8 @@ impl AndroidAutoStuff {
                 keycodes: vec![1, 2, 3, 4, 5],
             },
             video_config: android_auto::VideoConfiguration {
-                resolution: android_auto::Wifi::video_resolution::Enum::_480p,
-                fps: android_auto::Wifi::video_fps::Enum::_30,
+                resolution: android_auto::wireless::video_resolution::Enum::_480p,
+                fps: android_auto::wireless::video_fps::Enum::_30,
                 dpi: 111,
             },
             sensors: android_auto::SensorInformation { sensors: s },
@@ -1194,17 +1194,17 @@ impl android_auto::AndroidAutoSensorTrait for AndroidAutoStuff {
         &self.sensors
     }
 
-    async fn start_sensor(&self, stype: android_auto::Wifi::sensor_type::Enum) -> Result<(), ()> {
+    async fn start_sensor(&self, stype: android_auto::wireless::sensor_type::Enum) -> Result<(), ()> {
         if self.sensors.sensors.contains(&stype) {
-            let mut m3 = android_auto::Wifi::SensorEventIndication::new();
+            let mut m3 = android_auto::wireless::SensorEventIndication::new();
             match stype {
-                android_auto::Wifi::sensor_type::Enum::DRIVING_STATUS => {
-                    let mut ds = android_auto::Wifi::DrivingStatus::new();
-                    ds.set_status(android_auto::Wifi::DrivingStatusEnum::UNRESTRICTED as i32);
+                android_auto::wireless::sensor_type::Enum::DRIVING_STATUS => {
+                    let mut ds = android_auto::wireless::DrivingStatus::new();
+                    ds.set_status(android_auto::wireless::DrivingStatusEnum::UNRESTRICTED as i32);
                     m3.driving_status.push(ds);
                 }
-                android_auto::Wifi::sensor_type::Enum::NIGHT_DATA => {
-                    let mut ds = android_auto::Wifi::NightMode::new();
+                android_auto::wireless::sensor_type::Enum::NIGHT_DATA => {
+                    let mut ds = android_auto::wireless::NightMode::new();
                     ds.set_is_night(false);
                     m3.night_mode.push(ds);
                 }
@@ -1285,7 +1285,7 @@ async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
                         .await
                         .is_ok()
                     {
-                        common2.wifi_setup = Some(uobradio_comms::wifi::WifiMode::Hotspot {
+                        common2.wifi_setup = Some(uobradio_comms::wireless::WifiMode::Hotspot {
                             ssid: n,
                             password: Some(p),
                         });
