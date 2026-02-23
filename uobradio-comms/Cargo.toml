@@ -20,7 +20,7 @@ nmrs = { version = "2.0.0", optional = true }
 v4l = { version = "0.14.0", features = ["v4l2"] }
 
 [features]
-default = ["wifi", "bluetooth", "androidauto"]
+default = []
 wifi = ["dep:nmrs"]
 bluetooth = ["dep:bluetooth-rust"]
 androidauto = ["dep:android-auto"]

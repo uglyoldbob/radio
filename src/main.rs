@@ -8,6 +8,7 @@ mod hvac;
 mod offroad;
 mod settings;
 mod video;
+#[cfg(any(feature = "wifi", feature = "bluetooth"))]
 mod wireless;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -103,6 +104,7 @@ enum Subwindow {
     Settings(settings::Settings),
     Hvac(hvac::Window),
     Offroad(offroad::Window),
+    #[cfg(any(feature = "wifi", feature = "bluetooth"))]
     Wireless(wireless::Config),
 }
 
@@ -140,7 +142,9 @@ struct CommonWindowProperties {
     radio: uobradio_comms::UobRadio,
     pub settings: uobradio_comms::NonvolatileSettings,
     pub vsettings: uobradio_comms::VolatileSettings,
+    #[cfg(feature = "wifi")]
     wifi_list: Vec<nmrs::Network>,
+    #[cfg(feature = "wifi")]
     /// The optional details for the wifi network, ssid and password
     wifi_details: Option<(String, Option<String>)>,
     android_auto_video_decoder: openh264::decoder::Decoder,
@@ -153,7 +157,9 @@ impl CommonWindowProperties {
             vsettings: uobradio_comms::VolatileSettings::default(),
             radio: uobradio_comms::UobRadio::localhost(),
             settings: uobradio_comms::NonvolatileSettings::default(),
+            #[cfg(feature = "wifi")]
             wifi_list: Vec::new(),
+            #[cfg(feature = "wifi")]
             wifi_details: None,
             android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
             android_auto_texture: None,
@@ -377,8 +383,11 @@ impl eframe::App for MyEguiApp {
             self.common.radio.disconnect();
         }
         self.common.radio.get_cameras();
+        #[cfg(feature = "bluetooth")]
         self.common.radio.try_get_bluetooth();
+        #[cfg(feature = "androidauto")]
         self.common.radio.try_get_android_auto();
+        #[cfg(feature = "androidauto")]
         if let Some(ai) = &mut self.input_stream {
             if !ai.0.is_empty() {
                 let len = ai.0.occupied_len();
@@ -387,6 +396,7 @@ impl eframe::App for MyEguiApp {
                 self.common.radio.transmit_audio(v[0..olen].to_vec());
             }
         }
+        #[cfg(feature = "androidauto")]
         self.common.radio.process_pending_audio_commands(|c, cmd| {
             match c {
                 android_auto::AudioChannelType::Media => {
@@ -428,6 +438,7 @@ impl eframe::App for MyEguiApp {
             }
             log::error!("DONE Processing command {:?} for {:?}", cmd, c);
         });
+        #[cfg(feature = "androidauto")]
         self.common.radio.process_received_audio(|c, data| match c {
             android_auto::AudioChannelType::Media => {
                 if let Some((p, _s)) = &mut self.media_stream {
@@ -445,6 +456,7 @@ impl eframe::App for MyEguiApp {
                 }
             }
         });
+        #[cfg(feature = "androidauto")]
         if let Some(vdata) = self.common.radio.get_android_auto_video_buf() {
             let mut units = openh264::nal_units(&vdata).peekable();
             while let Some(p) = units.next() {
@@ -515,6 +527,7 @@ impl eframe::App for MyEguiApp {
                 uobradio_comms::MessageToApp::ListOfServerUpdateFiles { files } => {
                     self.common.vsettings.settings.list = files.to_owned();
                 }
+                #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::FailedToScanForWifiNetworks { reason: _ } => {}
                 uobradio_comms::MessageToApp::Ac(c) => match c {
                     uobradio_comms::AcResponse::CurrentHvacTemperature(_) => todo!(),
@@ -522,23 +535,31 @@ impl eframe::App for MyEguiApp {
                     uobradio_comms::AcResponse::FanSpeedAcknowledge => todo!(),
                     uobradio_comms::AcResponse::CurrentCabinTemperature(_) => todo!(),
                 },
+                #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {
                     self.common.wifi_details.take();
                 }
+                #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password } => {
                     self.common.wifi_details = Some((ssid.clone(), password.clone()));
                 }
+                #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::WifiList(list) => {
                     let mut list2 = list.clone();
                     list2.sort_by(|a, b| b.strength.cmp(&a.strength));
                     self.common.wifi_list = list2;
                 }
+                #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {
                     self.common.wifi_details = Some((ssid.clone(), password.clone()));
                 }
+                #[cfg(feature = "androidauto")]
                 uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
+                #[cfg(feature = "androidauto")]
                 uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}
+                #[cfg(feature = "bluetooth")]
                 uobradio_comms::MessageToApp::BluetoothMessage(_) => {}
+                #[cfg(feature = "bluetooth")]
                 uobradio_comms::MessageToApp::BluetoothHandlerResult(_) => {}
                 uobradio_comms::MessageToApp::CamerasBtreeMap(_) => {}
                 uobradio_comms::MessageToApp::PingReply(_) => {}
@@ -561,7 +582,7 @@ impl eframe::App for MyEguiApp {
                 });
         }
         egui_extras::install_image_loaders(ctx);
-
+        #[cfg(feature = "bluetooth")]
         if let Some(pass) = &self.common.radio.display_passkey {
             let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
             let builder = egui::ViewportBuilder::default()
@@ -620,7 +641,7 @@ impl eframe::App for MyEguiApp {
                 });
             });
         }
-
+        #[cfg(feature = "androidauto")]
         if self.common.radio.android_auto_frontend() {
             egui::CentralPanel::default().show(ctx, |ui| {
                 let size = ui.available_size();
@@ -689,7 +710,8 @@ impl eframe::App for MyEguiApp {
                     }
                 }
             });
-        } else {
+        }
+        {
             egui::TopBottomPanel::top("status_bar")
                 .frame(egui::Frame::new().fill(BG_PRIMARY).inner_margin(10.0))
                 .show(ctx, |ui| {
@@ -745,6 +767,7 @@ impl eframe::App for MyEguiApp {
                             }
                         }
                     }
+                    #[cfg(any(feature = "wifi", feature = "bluetooth"))]
                     {
                         let vw = Subwindow::Wireless(wireless::Config::new());
                         let active = if let Subwindow::Wireless(_) = self.subwindow {

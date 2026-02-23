@@ -1,11 +1,11 @@
 mod internal;
 
-pub fn install_swu(fp: std::path::PathBuf) -> Result<(),()> {
+pub fn install_swu(fp: std::path::PathBuf) -> Result<(), ()> {
     use std::io::Read;
-    let metadata = std::fs::metadata(&fp).map_err(|_|())?;
+    let metadata = std::fs::metadata(&fp).map_err(|_| ())?;
     let swu_length = metadata.len() as usize;
 
-    let f = std::fs::File::open(fp).map_err(|_|())?;
+    let f = std::fs::File::open(fp).map_err(|_| ())?;
     let mut swu_reader = std::io::BufReader::new(f);
 
     let info = {
@@ -34,23 +34,26 @@ pub fn install_swu(fp: std::path::PathBuf) -> Result<(),()> {
         disable_store_swu: true,
     };
     unsafe { internal::swupdate_prepare_req(&mut req as *mut internal::swupdate_request) };
-    let f = unsafe { internal::ipc_inst_start_ext(&mut req as *mut internal::swupdate_request as *mut std::ffi::c_void, std::mem::size_of::<internal::swupdate_request>() as isize ) };
+    let f = unsafe {
+        internal::ipc_inst_start_ext(
+            &mut req as *mut internal::swupdate_request as *mut std::ffi::c_void,
+            std::mem::size_of::<internal::swupdate_request>() as isize,
+        )
+    };
     {
         let mut buffer = [0_u8; 4096];
 
         loop {
-            let count = swu_reader.read(&mut buffer).map_err(|_|())?;
+            let count = swu_reader.read(&mut buffer).map_err(|_| ())?;
             if count == 0 {
                 break;
             }
-            unsafe { internal::ipc_send_data(f, &mut buffer as *mut u8, count as i32)};
+            unsafe { internal::ipc_send_data(f, &mut buffer as *mut u8, count as i32) };
         }
     }
     unsafe { internal::ipc_end(f) };
-    
-    unsafe {
-        internal::ipc_wait_for_complete(None)
-    };
+
+    unsafe { internal::ipc_wait_for_complete(None) };
     Ok(())
 }
 

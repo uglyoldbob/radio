@@ -33,7 +33,7 @@ pub struct Pid {
 
 impl Pid {
     /// Construct a new self
-    pub fn new(mode: PidMode, kp: f32, ki: f32, kd: f32,) -> Self {
+    pub fn new(mode: PidMode, kp: f32, ki: f32, kd: f32) -> Self {
         Self {
             dc_out: 0.0,
             input: 0.0,
@@ -53,7 +53,7 @@ impl Pid {
     }
 
     /// Update the pid constants
-    pub fn set_pid_constants(&mut self, kp: f32, ki: f32, kd: f32,) {
+    pub fn set_pid_constants(&mut self, kp: f32, ki: f32, kd: f32) {
         self.kp = kp;
         self.ki = ki;
         self.kd = kd;

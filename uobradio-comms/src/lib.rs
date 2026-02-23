@@ -6,12 +6,17 @@
 mod hvac;
 pub use hvac::*;
 
-use std::{collections::BTreeMap, io::{Read, Write}};
+use std::{
+    collections::BTreeMap,
+    io::{Read, Write},
+};
 
+#[cfg(feature = "androidauto")]
+pub mod aauto;
 pub mod settings;
 pub mod video;
-pub mod aauto;
 
+#[cfg(feature = "androidauto")]
 use android_auto::AudioChannelType;
 #[cfg(target_os = "linux")]
 pub use v4l;
@@ -114,16 +119,14 @@ impl AndroidAutoServerFrontend {
             let b = self.video_buf.clone();
             self.video_buf.clear();
             Some(b)
-        }
-        else {
+        } else {
             None
         }
     }
 }
 
 impl Drop for AndroidAutoServerFrontend {
-    fn drop(&mut self) {
-    }
+    fn drop(&mut self) {}
 }
 
 /// Represents all possible sensors on the radio
@@ -262,13 +265,13 @@ pub enum Gpio {
     /// Unlock doors
     UnlockDoors,
     /// Control a door window up or down
-    WindowControl { 
+    WindowControl {
         /// The window id
-        id: u8, 
+        id: u8,
         /// Make the window go up. Up and down at the same time is invalid
-        up: bool, 
+        up: bool,
         /// Make the window go down. Up and down at the same time is invalid
-        down: bool, 
+        down: bool,
     },
     /// Light control (light id and whether to enable or disable the light)
     LightControl(u8, bool),
@@ -291,7 +294,7 @@ pub enum RadioCommand {
     TransmissionDataPartial(Vec<u8>),
 }
 
-/// A message that can be sent from an app. 
+/// A message that can be sent from an app.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum MessageFromApp {
     /// A ping message
@@ -307,28 +310,36 @@ pub enum MessageFromApp {
     /// Update the nonvolatile settings on the radio
     NewSettings {
         /// The new settings
-        settings: NonvolatileSettings, 
+        settings: NonvolatileSettings,
         /// Should the wifi be reconnected?
         wifi_reconnect: bool,
     },
     /// Request all nonvolatile settings
     RequestSettings,
+    #[cfg(feature = "bluetooth")]
     /// Request from the the app user that handles bluetooth pairing stuff
     RequestBluetoothControl,
+    #[cfg(feature = "androidauto")]
     /// Request from the app user that handles android auto stuff
     RequestAndroidAutoControl,
+    #[cfg(feature = "bluetooth")]
     /// Enable or disable bluetooth discoverable
     SetBluetoothDiscovery(bool),
+    #[cfg(feature = "bluetooth")]
     /// A generic bluetooth command
     BluetoothMessage(bluetooth_rust::MessageFromBluetoothHost),
+    #[cfg(feature = "androidauto")]
     /// A generic android auto command to the "phone"
     AndroidAutoMessage(aauto::AndroidAutoMessageToPhone),
     /// A command to operate the external radio
     ExternalRadio(RadioCommand),
+    #[cfg(feature = "wifi")]
     /// Scan for wifi networks with the wifi adapter
     ScanForWifiNetworks,
+    #[cfg(feature = "wifi")]
     /// Connect to the specified network
     ConnectToNetwork(String, Option<String>),
+    #[cfg(feature = "wifi")]
     /// Get the ssid and password for the current wifi network
     GetWifiDetails,
     /// Ac control messages
@@ -343,14 +354,22 @@ pub enum MessageFromApp {
     GetUpdateProgress,
 }
 
+#[cfg(feature = "bluetooth")]
 use bluetooth_rust::{MessageFromBluetoothHost, MessageToBluetoothHost};
 
+#[cfg(feature = "bluetooth")]
 impl From<MessageToBluetoothHost> for ActualMessageToBluetoothHost {
     fn from(value: MessageToBluetoothHost) -> Self {
         match value {
-            MessageToBluetoothHost::DisplayPasskey(passkey, _) => ActualMessageToBluetoothHost::DisplayPasskey(passkey),
-            MessageToBluetoothHost::ConfirmPasskey(passkey, _) => ActualMessageToBluetoothHost::ConfirmPasskey(passkey),
-            MessageToBluetoothHost::CancelDisplayPasskey => ActualMessageToBluetoothHost::CancelDisplayPasskey,
+            MessageToBluetoothHost::DisplayPasskey(passkey, _) => {
+                ActualMessageToBluetoothHost::DisplayPasskey(passkey)
+            }
+            MessageToBluetoothHost::ConfirmPasskey(passkey, _) => {
+                ActualMessageToBluetoothHost::ConfirmPasskey(passkey)
+            }
+            MessageToBluetoothHost::CancelDisplayPasskey => {
+                ActualMessageToBluetoothHost::CancelDisplayPasskey
+            }
         }
     }
 }
@@ -380,16 +399,22 @@ pub enum MessageToApp {
     CamerasBtreeMap(BTreeMap<u8, video::SendableVideoSource>),
     /// The new settings for the radio
     NewSettings(NonvolatileSettings),
+    #[cfg(feature = "bluetooth")]
     /// Tell the app if they were accepted as a bluetooth handler
     BluetoothHandlerResult(bool),
+    #[cfg(feature = "androidauto")]
     /// Tell the app if they were accepted as an android auto handler
     AndroidAutoHandlerResult(bool),
+    #[cfg(feature = "bluetooth")]
     /// A bluetooth message from the bluetooth stuff
     BluetoothMessage(ActualMessageToBluetoothHost),
+    #[cfg(feature = "androidauto")]
     /// A generic android auto command from the "phone"
     AndroidAutoMessage(aauto::AndroidAutoMessageFromPhone),
+    #[cfg(feature = "wifi")]
     /// A list of wifi networks
     WifiList(Vec<nmrs::Network>),
+    #[cfg(feature = "wifi")]
     /// The details for the current wifi network
     WifiDetails {
         /// The ssid of the network
@@ -397,6 +422,7 @@ pub enum MessageToApp {
         /// The password of the network
         password: Option<String>,
     },
+    #[cfg(feature = "wifi")]
     /// Indicates a new connection to a wifi network
     ConnectedToWifiNetwork {
         /// The ssid of the network
@@ -404,11 +430,13 @@ pub enum MessageToApp {
         /// The password of the network
         password: Option<String>,
     },
+    #[cfg(feature = "wifi")]
     /// Indicates a failure to connect to the indicated wifi network
     FailedToConnectToWifiNetwork {
         /// The ssid of the network
         ssid: String,
     },
+    #[cfg(feature = "wifi")]
     /// Indicates a failure to scan for wifi networks
     FailedToScanForWifiNetworks {
         /// The reason for failure
@@ -446,7 +474,10 @@ impl MessageFromApp {
 impl MessageToApp {
     /// Send the message to the given stream.
     #[cfg(not(target_os = "android"))]
-    pub async fn send_to_stream(&self, stream: &std::sync::Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>) -> Result<(), String> {
+    pub async fn send_to_stream(
+        &self,
+        stream: &std::sync::Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>,
+    ) -> Result<(), String> {
         use tokio::io::AsyncWriteExt;
         let mut stream = stream.lock().await;
         let packet = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
@@ -460,6 +491,7 @@ impl MessageToApp {
 }
 
 impl UobRadio {
+    #[cfg(feature = "androidauto")]
     /// Is the android auto frontend running?
     pub fn android_auto_frontend(&self) -> bool {
         self.aauto.as_ref().map(|a| a.is_running()).unwrap_or(false)
@@ -505,18 +537,21 @@ impl UobRadio {
                     );
                 }
                 let mut go_idle = false;
-                if let RadioReceiveStatus::WaitForPacket(time, packet, length, l) = &mut self.status {
+                if let RadioReceiveStatus::WaitForPacket(time, packet, length, l) = &mut self.status
+                {
                     if std::time::Instant::now() > *time {
                         return Err("Timeout waiting for packet".to_string());
                     }
                     match stream.read(&mut packet[*l as usize..]) {
                         Ok(a) => {
                             if (a + *l as usize) == *length as usize {
-                                let packet: Result<(MessageToApp, usize), bincode::error::DecodeError> =
-                                    bincode::serde::decode_from_slice(
-                                        &packet,
-                                        bincode::config::standard(),
-                                    );
+                                let packet: Result<
+                                    (MessageToApp, usize),
+                                    bincode::error::DecodeError,
+                                > = bincode::serde::decode_from_slice(
+                                    &packet,
+                                    bincode::config::standard(),
+                                );
                                 if let Ok((packet, length2)) = packet {
                                     if length2 != *length as usize {
                                         log::error!(
@@ -533,14 +568,19 @@ impl UobRadio {
                                         MessageToApp::ServerFileDownloadComplete(_) => {}
                                         MessageToApp::ListOfServerUpdateFiles { files: _ } => {}
                                         MessageToApp::Ac(_c) => { }
+                                        #[cfg(feature = "wifi")]
                                         MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {}
+                                        #[cfg(feature = "wifi")]
                                         MessageToApp::FailedToScanForWifiNetworks { reason } => {
                                             log::error!("Failed to scan for wifi networks: {reason}");
                                         }
+                                        #[cfg(feature = "wifi")]
                                         MessageToApp::ConnectedToWifiNetwork { ssid: _, password: _ } => {}
+                                        #[cfg(feature = "wifi")]
                                         MessageToApp::WifiDetails { ssid: _, password: _ } => {}
-                                        MessageToApp::WifiList(_list) => {
-                                        }
+                                        #[cfg(feature = "wifi")]
+                                        MessageToApp::WifiList(_list) => {}
+                                        #[cfg(feature = "androidauto")]
                                         MessageToApp::AndroidAutoMessage(m) => {
                                             match m {
                                                 aauto::AndroidAutoMessageFromPhone::AudioChannelOpen(_) => {
@@ -603,6 +643,7 @@ impl UobRadio {
                                         }
                                         MessageToApp::PingReply(_) => {}
                                         MessageToApp::NewSettings(_) => {}
+                                        #[cfg(feature = "bluetooth")]
                                         MessageToApp::BluetoothMessage(m) => {
                                             match m {
                                                 ActualMessageToBluetoothHost::DisplayPasskey(pass) => {
@@ -632,12 +673,14 @@ impl UobRadio {
                                         MessageToApp::CamerasBtreeMap(map) => {
                                             self.cameras.replace(map.to_owned());
                                         }
+                                        #[cfg(feature = "androidauto")]
                                         MessageToApp::AndroidAutoHandlerResult(result) => {
                                             log::error!("Android auto result is {}", result);
                                             if let Some(aauto) = &mut self.aauto {
                                                 aauto.waiting = !*result;
                                             }
                                         }
+                                        #[cfg(feature = "bluetooth")]
                                         MessageToApp::BluetoothHandlerResult(result) => {
                                             //log::error!("Bluetooth result is {}", result);
                                             self.bluetooth_handler = Some(*result);
@@ -670,18 +713,22 @@ impl UobRadio {
         Ok(())
     }
 
+    #[cfg(feature = "androidauto")]
     /// Attempt to pull all current android auto video data
     pub fn get_android_auto_video_buf(&mut self) -> Option<Vec<u8>> {
         if let Some(aauto) = &mut self.aauto {
             aauto.get_android_video_buf()
-        }
-        else {
+        } else {
             None
         }
     }
 
+    #[cfg(feature = "androidauto")]
     /// Process any pending commands on audio channels
-    pub fn process_pending_audio_commands<F: FnMut(AudioChannelType, PendingAudioCommand)>(&mut self, mut f: F) {
+    pub fn process_pending_audio_commands<F: FnMut(AudioChannelType, PendingAudioCommand)>(
+        &mut self,
+        mut f: F,
+    ) {
         if let Some(aauto) = &mut self.aauto {
             if let Some(c) = aauto.audio_commands[0].take() {
                 f(AudioChannelType::Media, c);
@@ -695,39 +742,51 @@ impl UobRadio {
         }
     }
 
+    #[cfg(feature = "androidauto")]
     /// Transmit the given audio data to the android auto device
     pub fn transmit_audio(&mut self, data: Vec<i16>) {
         if self.aauto.is_some() {
-            let timestamp: u64 = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_micros() as u64;
+            let timestamp: u64 = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_micros() as u64;
             let data2 = data.iter().map(|e| e.to_le_bytes()).flatten().collect();
             let p = android_auto::AndroidAutoMessage::Audio(Some(timestamp), data2);
-            let m2 = aauto::AndroidAutoMessageToPhone::Message(
-                p.sendable(),
-            );
+            let m2 = aauto::AndroidAutoMessageToPhone::Message(p.sendable());
             //let _ = self.send_packet(
             //    MessageFromApp::AndroidAutoMessage(m2),
             //);
         }
     }
 
+    #[cfg(feature = "androidauto")]
     /// Process all audio data received with a closure for all channel types, then clear it
     pub fn process_received_audio<F: FnMut(AudioChannelType, &[i16])>(&mut self, mut f: F) {
         if let Some(aauto) = &mut self.aauto {
             if !aauto.audio_bufs[0].is_empty() {
                 let r: &[u8] = aauto.audio_bufs[0].as_ref();
-                let r2: Vec<i16> = r.chunks_exact(2).map(|v| i16::from_le_bytes([v[0], v[1]])).collect();
+                let r2: Vec<i16> = r
+                    .chunks_exact(2)
+                    .map(|v| i16::from_le_bytes([v[0], v[1]]))
+                    .collect();
                 f(AudioChannelType::Media, &r2);
                 aauto.audio_bufs[0].clear();
             }
             if !aauto.audio_bufs[1].is_empty() {
                 let r: &[u8] = aauto.audio_bufs[1].as_ref();
-                let r2: Vec<i16> = r.chunks_exact(2).map(|v| i16::from_le_bytes([v[0], v[1]])).collect();
+                let r2: Vec<i16> = r
+                    .chunks_exact(2)
+                    .map(|v| i16::from_le_bytes([v[0], v[1]]))
+                    .collect();
                 f(AudioChannelType::System, &r2);
                 aauto.audio_bufs[1].clear();
             }
             if !aauto.audio_bufs[2].is_empty() {
                 let r: &[u8] = aauto.audio_bufs[2].as_ref();
-                let r2: Vec<i16> = r.chunks_exact(2).map(|v| i16::from_le_bytes([v[0], v[1]])).collect();
+                let r2: Vec<i16> = r
+                    .chunks_exact(2)
+                    .map(|v| i16::from_le_bytes([v[0], v[1]]))
+                    .collect();
                 f(AudioChannelType::Speech, &r2);
                 aauto.audio_bufs[2].clear();
             }
@@ -753,21 +812,37 @@ impl UobRadio {
     pub fn ping(&mut self) -> Result<(), String> {
         self.connect();
         let time = self.check_ping_time();
-        let blue_waiting = self.confirm_passkey.is_some() || self.display_passkey.is_some();
-        if let Some(comms) = &mut self.comms {
-            if time {
-                let packet = MessageFromApp::Ping(1);
-                packet.send_to_stream(comms)?;
-                if blue_waiting {
-                    let packet = MessageFromApp::BluetoothMessage(MessageFromBluetoothHost::PasskeyMessage(bluetooth_rust::ResponseToPasskey::Waiting));
+        #[cfg(feature = "bluetooth")]
+        {
+            let blue_waiting = self.confirm_passkey.is_some() || self.display_passkey.is_some();
+            if let Some(comms) = &mut self.comms {
+                if time {
+                    let packet = MessageFromApp::Ping(1);
+                    packet.send_to_stream(comms)?;
+                    if blue_waiting {
+                        let packet = MessageFromApp::BluetoothMessage(
+                            MessageFromBluetoothHost::PasskeyMessage(
+                                bluetooth_rust::ResponseToPasskey::Waiting,
+                            ),
+                        );
+                        packet.send_to_stream(comms)?;
+                    }
+                    self.update_ping_time();
+                }
+                Ok(())
+            } else {
+                Err("Not connected".to_string())
+            }
+        }
+        #[cfg(not(feature = "bluetooth"))]
+        {
+            if let Some(comms) = &mut self.comms {
+                if time {
+                    let packet = MessageFromApp::Ping(1);
                     packet.send_to_stream(comms)?;
                 }
-                self.update_ping_time();
             }
             Ok(())
-        }
-        else {
-            Err("Not connected".to_string())
         }
     }
 
@@ -797,29 +872,35 @@ impl UobRadio {
                 self.update_ping_time();
                 self.disconnect();
                 Err(())
-            }
-            else {
+            } else {
                 Ok(())
             }
-        }
-        else {
+        } else {
             Err(())
         }
     }
 
+    #[cfg(feature = "bluetooth")]
     /// Try to establish self as the handler for bluetooth. Does nothing if already established as the handler
     pub fn try_get_bluetooth(&mut self) {
         if Some(false) == self.bluetooth_handler {
-            if self.send_packet(MessageFromApp::RequestBluetoothControl).is_ok() {
+            if self
+                .send_packet(MessageFromApp::RequestBluetoothControl)
+                .is_ok()
+            {
                 self.bluetooth_handler.take();
             }
         }
     }
 
+    #[cfg(feature = "androidauto")]
     /// Try to establish self as the handler for android auto. Does nothing if already established as the handler
     pub fn try_get_android_auto(&mut self) {
         if self.aauto.is_none() {
-            if self.send_packet(MessageFromApp::RequestAndroidAutoControl).is_ok() {
+            if self
+                .send_packet(MessageFromApp::RequestAndroidAutoControl)
+                .is_ok()
+            {
                 log::error!("Initializing an android auto server frontend");
                 self.aauto.replace(AndroidAutoServerFrontend::new());
             }
@@ -850,14 +931,13 @@ impl UobRadio {
             packet.send_to_stream(comms)?;
             self.update_ping_time();
             Ok(())
-        }
-        else {
+        } else {
             Err("Not connected".to_string())
         }
     }
 
     /// Send a request to obtain the image of the specified camera
-    pub fn send_camera_request(&mut self, index: u8) -> Result<(),String> {
+    pub fn send_camera_request(&mut self, index: u8) -> Result<(), String> {
         self.connect();
         if let Some(inst) = &self.waiting_until {
             if *inst < std::time::Instant::now() {
@@ -890,9 +970,7 @@ impl UobRadio {
 
     /// Run a detection to find all uob radios on the local network.
     /// times is the number of broadcast packets to send out. Since it is udp, there is no guarantee that 100% of packets will be received.
-    pub fn detect_radios(
-        times: u8,
-    ) -> Result<UobRadios, std::io::Error> {
+    pub fn detect_radios(times: u8) -> Result<UobRadios, std::io::Error> {
         let mut radios = UobRadios::new();
         let socket = std::net::UdpSocket::bind("0.0.0.0:0")?;
         socket.set_read_timeout(Some(std::time::Duration::new(5, 0)))?;
@@ -975,8 +1053,7 @@ impl NonvolatileSettings {
         let d = bincode::serde::encode_to_vec(self, bincode::config::standard()).unwrap();
         let f = if let Some(p) = path_override {
             std::fs::File::create(p)
-        }
-        else {
+        } else {
             std::fs::File::create("./settings.bin")
         };
         if let Ok(mut f) = f {
@@ -988,8 +1065,7 @@ impl NonvolatileSettings {
     pub fn load(path_override: &Option<std::path::PathBuf>) -> Self {
         let f = if let Some(p) = path_override {
             std::fs::File::open(p)
-        }
-        else {
+        } else {
             std::fs::File::open("./settings.bin")
         };
         if let Ok(mut f) = f {
@@ -998,13 +1074,11 @@ impl NonvolatileSettings {
             let s = bincode::serde::decode_from_slice(&contents, bincode::config::standard());
             if let Ok((s, _)) = s {
                 s
-            }
-            else {
+            } else {
                 log::error!("Failure reading nonvolatile settings");
                 Self::default()
             }
-        }
-        else {
+        } else {
             log::error!("Nonvolatile settings do not exist");
             Self::default()
         }

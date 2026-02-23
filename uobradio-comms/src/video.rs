@@ -6,7 +6,6 @@ use ffimage::iter::BytesExt;
 use ffimage::iter::ColorConvertExt;
 use ffimage::iter::PixelsExt;
 
-
 /// Represents a color pixel with rgb components
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -17,15 +16,11 @@ pub struct RgbPixel {
 impl RgbPixel {
     /// Build from r g and b, making it fully non-transparent
     pub const fn from_rgb(r: u8, g: u8, b: u8) -> Self {
-        Self {
-            colors: [r, g, b],
-        }
+        Self { colors: [r, g, b] }
     }
     /// Build from a solid gray channel
     pub const fn from_gray(g: u8) -> Self {
-        Self {
-            colors: [g, g, g],
-        }
+        Self { colors: [g, g, g] }
     }
 }
 
@@ -85,7 +80,7 @@ impl PixelImage<RgbPixel> {
 
 impl From<image::ImageBuffer<image::Rgb<u8>, Vec<u8>>> for PixelImage<RgbPixel> {
     fn from(value: image::ImageBuffer<image::Rgb<u8>, Vec<u8>>) -> Self {
-        let p = value.pixels().map(|p| RgbPixel{ colors: p.0 }).collect();
+        let p = value.pixels().map(|p| RgbPixel { colors: p.0 }).collect();
         Self {
             pixels: p,
             width: value.width() as u16,
@@ -210,7 +205,11 @@ pub struct VideoFrame {
 
 impl From<PixelImage<RgbPixel>> for VideoFrame {
     fn from(value: PixelImage<RgbPixel>) -> Self {
-        let p: Vec<u8> = value.pixels.iter().flat_map(|p| [p.colors[0], p.colors[1], p.colors[2]]).collect();
+        let p: Vec<u8> = value
+            .pixels
+            .iter()
+            .flat_map(|p| [p.colors[0], p.colors[1], p.colors[2]])
+            .collect();
         let pixels: PixelData = PixelData::Rgb(p);
         Self {
             width: value.width,
@@ -259,7 +258,6 @@ impl VideoFrame {
         }
     }
 }
-
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 enum ControlData {
@@ -321,10 +319,7 @@ impl ControlElement {
     }
 
     /// Construct a new self, with the given description and value
-    pub fn new(
-        d: &v4l::control::Description,
-        value: v4l::control::Value,
-    ) -> Result<Self, String> {
+    pub fn new(d: &v4l::control::Description, value: v4l::control::Value) -> Result<Self, String> {
         let cd = match d.typ {
             v4l::control::Type::Integer => Ok(ControlData::Integer {
                 val: d.default,
@@ -382,7 +377,7 @@ impl ControlElement {
 }
 
 /// A plain video source
-#[cfg(target_os="linux")]
+#[cfg(target_os = "linux")]
 pub struct VideoSource {
     /// The latext image for the video source
     pub image: Arc<Mutex<VideoFrame>>,
@@ -390,12 +385,15 @@ pub struct VideoSource {
     pub controls: Vec<ControlElement>,
 }
 
-#[cfg(target_os="linux")]
+#[cfg(target_os = "linux")]
 impl VideoSource {
     /// Get a sendable version of the video source
     pub fn sendable(&self) -> Option<SendableVideoSource> {
         let img = self.image.lock().ok()?;
-        Some(SendableVideoSource { image: Some(img.clone()), controls: self.controls.iter().map(|a| a.into()).collect() })
+        Some(SendableVideoSource {
+            image: Some(img.clone()),
+            controls: self.controls.iter().map(|a| a.into()).collect(),
+        })
     }
 }
 
@@ -431,7 +429,7 @@ pub struct SendableControlElement {
     pub value: ControlValue,
 }
 
-#[cfg(target_os="linux")]
+#[cfg(target_os = "linux")]
 impl From<&ControlElement> for SendableControlElement {
     fn from(value: &ControlElement) -> Self {
         Self {
@@ -458,8 +456,7 @@ impl SendableControlElement {
             } => {
                 let a = if let ControlValue::Int64(i) = value {
                     Some(i)
-                }
-                else {
+                } else {
                     None
                 };
                 let mut r = false;
@@ -473,8 +470,7 @@ impl SendableControlElement {
             ControlData::Boolean { val: _, default: _ } => {
                 let a = if let ControlValue::Bool(i) = value {
                     Some(i)
-                }
-                else {
+                } else {
                     None
                 };
                 let mut r = false;
@@ -486,8 +482,7 @@ impl SendableControlElement {
             ControlData::String(_s) => {
                 let a = if let ControlValue::String(i) = value {
                     Some(i)
-                }
-                else {
+                } else {
                     None
                 };
                 let mut r = false;
@@ -499,8 +494,7 @@ impl SendableControlElement {
             ControlData::Bitmask(_m) => {
                 let a = if let ControlValue::Int64(i) = value {
                     Some(i)
-                }
-                else {
+                } else {
                     None
                 };
                 let r = false;
@@ -517,8 +511,7 @@ impl SendableControlElement {
             } => {
                 let a = if let ControlValue::Int64(i) = value {
                     Some(i)
-                }
-                else {
+                } else {
                     None
                 };
                 let mut r = false;
@@ -540,8 +533,7 @@ impl SendableControlElement {
             } => {
                 let a = if let ControlValue::Int64(i) = value {
                     Some(i)
-                }
-                else {
+                } else {
                     None
                 };
                 let mut r = false;
@@ -563,8 +555,7 @@ impl SendableControlElement {
             } => {
                 let a = if let ControlValue::Int64(i) = value {
                     Some(i)
-                }
-                else {
+                } else {
                     None
                 };
                 let mut r = false;

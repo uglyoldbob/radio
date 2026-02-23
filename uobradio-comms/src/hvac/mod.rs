@@ -187,8 +187,8 @@ impl HvacController {
 
     /// Operate the controls and perform any necessary calculations
     pub fn run_controls(&mut self) {
-        const HYSTERESIS : f32 = 0.5;
-        const MIN_AC_TEMP : f32 = 40.0;
+        const HYSTERESIS: f32 = 0.5;
+        const MIN_AC_TEMP: f32 = 40.0;
         match self.mode {
             HvacMode::Off => {
                 self.fan_speed_out = 0;
@@ -205,11 +205,7 @@ impl HvacController {
                 self.fan_speed_pid.run_calc(self.hvac_vent_temperature);
                 self.heat_pid.reset();
                 let fs = self.fan_speed_pid.duty_cycle();
-                let fs = if fs < self.min_fan_speed {
-                    0.0
-                } else {
-                    fs
-                };
+                let fs = if fs < self.min_fan_speed { 0.0 } else { fs };
                 self.fan_speed_out = (fs * 255.0).round() as u8;
             }
             HvacMode::HeatAuto => {
@@ -219,11 +215,7 @@ impl HvacController {
                 self.fan_speed_pid.set_setpoint(self.heat_sp);
                 self.fan_speed_pid.run_calc(self.hvac_vent_temperature);
                 let fs = self.fan_speed_pid.duty_cycle();
-                let fs = if fs < self.min_fan_speed {
-                    0.0
-                } else {
-                    fs
-                };
+                let fs = if fs < self.min_fan_speed { 0.0 } else { fs };
                 self.fan_speed_out = (fs * 255.0).round() as u8;
             }
             HvacMode::AutoAuto => {
@@ -243,8 +235,7 @@ impl HvacController {
                         self.fan_speed_pid.set_setpoint(self.auto_sp);
                         self.fan_speed_pid.run_calc(cabin);
                     }
-                }
-                else {
+                } else {
                     if (self.hvac_vent_temperature + HYSTERESIS) < self.auto_sp {
                         self.fan_speed_pid.change_mode(PidMode::Increasing);
                         self.ac_pid.reset();
@@ -252,7 +243,6 @@ impl HvacController {
                         self.heat_pid.run_calc(self.hvac_vent_temperature);
                         self.fan_speed_pid.set_setpoint(self.auto_sp);
                         self.fan_speed_pid.run_calc(self.hvac_vent_temperature);
-
                     } else if (self.hvac_vent_temperature - HYSTERESIS) > self.auto_sp {
                         self.fan_speed_pid.change_mode(PidMode::Decreasing);
                         self.ac_pid.set_setpoint(self.auto_sp);
@@ -263,11 +253,7 @@ impl HvacController {
                     }
                 }
                 let fs = self.fan_speed_pid.duty_cycle();
-                let fs = if fs < self.min_fan_speed {
-                    0.0
-                } else {
-                    fs
-                };
+                let fs = if fs < self.min_fan_speed { 0.0 } else { fs };
                 self.fan_speed_out = (fs * 255.0).round() as u8;
             }
         }
