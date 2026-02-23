@@ -526,11 +526,12 @@ async fn receive_message_from_app(
                                     Ok(_wifi) => {
                                         log::info!("Connected to wifi network {}", ssid);
                                         let mut common2 = common2.lock().await;
-                                        common2.wifi_setup =
-                                            Some(uobradio_comms::wireless::WifiMode::RegularNetwork {
+                                        common2.wifi_setup = Some(
+                                            uobradio_comms::wireless::WifiMode::RegularNetwork {
                                                 ssid: ssid2.clone(),
                                                 password: Some(p2.clone()),
-                                            });
+                                            },
+                                        );
                                         common2
                                             .settings
                                             .wifi_network
@@ -1010,8 +1011,8 @@ impl AndroidAutoStuff {
             frame_sender,
         };
         let mut s = HashSet::new();
-        s.insert(android_auto::wireless::sensor_type::Enum::DRIVING_STATUS);
-        s.insert(android_auto::wireless::sensor_type::Enum::NIGHT_DATA);
+        s.insert(android_auto::Wifi::sensor_type::Enum::DRIVING_STATUS);
+        s.insert(android_auto::Wifi::sensor_type::Enum::NIGHT_DATA);
         Self {
             inner: Arc::new(tokio::sync::Mutex::new(inner)),
             bluetooth,
@@ -1021,8 +1022,8 @@ impl AndroidAutoStuff {
                 keycodes: vec![1, 2, 3, 4, 5],
             },
             video_config: android_auto::VideoConfiguration {
-                resolution: android_auto::wireless::video_resolution::Enum::_480p,
-                fps: android_auto::wireless::video_fps::Enum::_30,
+                resolution: android_auto::Wifi::video_resolution::Enum::_480p,
+                fps: android_auto::Wifi::video_fps::Enum::_30,
                 dpi: 111,
             },
             sensors: android_auto::SensorInformation { sensors: s },
@@ -1194,17 +1195,17 @@ impl android_auto::AndroidAutoSensorTrait for AndroidAutoStuff {
         &self.sensors
     }
 
-    async fn start_sensor(&self, stype: android_auto::wireless::sensor_type::Enum) -> Result<(), ()> {
+    async fn start_sensor(&self, stype: android_auto::Wifi::sensor_type::Enum) -> Result<(), ()> {
         if self.sensors.sensors.contains(&stype) {
-            let mut m3 = android_auto::wireless::SensorEventIndication::new();
+            let mut m3 = android_auto::Wifi::SensorEventIndication::new();
             match stype {
-                android_auto::wireless::sensor_type::Enum::DRIVING_STATUS => {
-                    let mut ds = android_auto::wireless::DrivingStatus::new();
-                    ds.set_status(android_auto::wireless::DrivingStatusEnum::UNRESTRICTED as i32);
+                android_auto::Wifi::sensor_type::Enum::DRIVING_STATUS => {
+                    let mut ds = android_auto::Wifi::DrivingStatus::new();
+                    ds.set_status(android_auto::Wifi::DrivingStatusEnum::UNRESTRICTED as i32);
                     m3.driving_status.push(ds);
                 }
-                android_auto::wireless::sensor_type::Enum::NIGHT_DATA => {
-                    let mut ds = android_auto::wireless::NightMode::new();
+                android_auto::Wifi::sensor_type::Enum::NIGHT_DATA => {
+                    let mut ds = android_auto::Wifi::NightMode::new();
                     ds.set_is_night(false);
                     m3.night_mode.push(ds);
                 }
