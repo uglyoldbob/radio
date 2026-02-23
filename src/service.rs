@@ -483,7 +483,7 @@ async fn receive_message_from_app(
                 let wifi = {
                     let mut common2 = common.lock().await;
                     common2.wifi_setup.take();
-                    common2.wifi.as_ref().map(|wifi| wifi.clone())
+                    common2.wifi.clone()
                 };
                 let common2 = common.clone();
                 let stream2w = streamw.clone();
@@ -519,7 +519,7 @@ async fn receive_message_from_app(
                                 Err(e) => {
                                     log::error!("Error connecting to {}: {:?}", ssid, e);
                                     let packet =
-                                        MessageToApp::FailedToConnectToWifiNetwork { ssid: ssid };
+                                        MessageToApp::FailedToConnectToWifiNetwork { ssid };
                                     packet.send_to_stream(&stream2w).await?;
                                 }
                             }
@@ -537,7 +537,7 @@ async fn receive_message_from_app(
                 let wifi = {
                     let mut common2 = common.lock().await;
                     common2.wifi_setup.take();
-                    common2.wifi.as_ref().map(|wifi| wifi.clone())
+                    common2.wifi.clone()
                 };
                 let stream2w = streamw.clone();
                 if let Some(wifi) = wifi {
@@ -1226,12 +1226,9 @@ impl android_auto::AndroidAutoVideoChannelTrait for AndroidAutoStuff {
 async fn get_wifi_interface(nmrs: &nmrs::NetworkManager) -> Option<nmrs::Device> {
     if let Ok(devs) = nmrs.list_wireless_devices().await {
         for dev in devs {
-            match dev.device_type {
-                nmrs::DeviceType::Wifi => {
-                    service::log::info!("Found wifi device {:?}", dev);
-                    return Some(dev);
-                }
-                _ => {}
+            if dev.device_type == nmrs::DeviceType::Wifi {
+                service::log::info!("Found wifi device {:?}", dev);
+                return Some(dev);
             }
         }
     }
@@ -1325,17 +1322,18 @@ async fn smain() {
     let s = NonvolatileSettings::load(&args.nvconfig);
     let sys = SystemSettings::load();
     #[cfg(feature = "bluetooth")]
-    {
+    let (bluechan, bluetooth) = {
         let bluechan = tokio::sync::mpsc::channel(5);
         let mut bluetooth = bluetooth_rust::BluetoothAdapterBuilder::new();
         bluetooth.with_sender(bluechan.0);
         let bluetooth = Arc::new(bluetooth.build().await.expect("Could not open bluetooth"));
-    }
+        (bluechan.1, bluetooth)
+    };
 
     #[cfg(feature = "wifi")]
     let wifi = nmrs::NetworkManager::new().await.ok();
 
-    #[cfg(feature = "wifi")]
+    #[cfg(all(feature = "wifi", feature = "androidauto"))]
     let mut network = {
         s.hotspot_enabled
             .as_ref()
@@ -1355,6 +1353,7 @@ async fn smain() {
     #[cfg(feature = "wifi")]
     if let Some(wifi) = &wifi {
         if let Some(dev) = get_wifi_interface(wifi).await {
+            #[cfg(feature = "androidauto")]
             if let Some(ni) = &mut network {
                 ni.mac_addr = dev.identity.current_mac.clone();
             }
@@ -1392,7 +1391,7 @@ async fn smain() {
         #[cfg(feature = "bluetooth")]
         bluetooth: bluetooth.clone(),
         #[cfg(feature = "bluetooth")]
-        blue_recv: bluechan.1,
+        blue_recv: bluechan,
         #[cfg(feature = "bluetooth")]
         blue_addr: None,
         video: vs,

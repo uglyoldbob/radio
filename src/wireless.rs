@@ -1,40 +1,41 @@
+//! Code for the wireless settings page
+
 use super::CommonWindowProperties;
 use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
-#[cfg(feature = "wifi")]
-use uobradio_comms::WifiConnectStage;
-
+/// The wireless config page
 #[derive(Clone, Copy)]
 pub struct Config {}
 
 impl Config {
+    /// construct a new Self
     pub fn new() -> Self {
         Self {}
     }
 
     #[cfg(feature = "wifi")]
+    /// Creates a qr code for a wifi network
     fn make_wifi_qr(&self, wifi_name: &String, wifi_password: &String) -> Vec<u8> {
         let a = format!("WIFI:S:{};T:WPA;P:{};H:false;;", wifi_name, wifi_password);
         a.as_bytes().to_vec()
     }
 
     #[cfg(feature = "wifi")]
+    /// update the displayed qr code for the user to be able to scan
     fn update_qr_code(&mut self, ctx: &egui::Context, common: &mut CommonWindowProperties) {
         if let uobradio_comms::WifiConfig::Disabled = common.settings.wifi_config {
             common.vsettings.wifi_texture.take();
-        } else if let Some((wn, wp)) = &common.wifi_details {
-            if let Some(wp) = wp {
-                let contents = self.make_wifi_qr(wn, wp);
-                let code = qrcode::QrCode::new(contents).unwrap();
-                let image = code.render::<image::Rgb<u8>>().build();
-                let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
-                    image.into();
-                let cimg: egui::ColorImage = img.into();
-                common.vsettings.wifi_texture =
-                    Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
-            }
+        } else if let Some((wn, Some(wp))) = &common.wifi_details {
+            let contents = self.make_wifi_qr(wn, wp);
+            let code = qrcode::QrCode::new(contents).unwrap();
+            let image = code.render::<image::Rgb<u8>>().build();
+            let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
+                image.into();
+            let cimg: egui::ColorImage = img.into();
+            common.vsettings.wifi_texture =
+                Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
         }
     }
 }
@@ -48,9 +49,9 @@ impl SubwindowTrait for Config {
     ) {
         match packet {
             #[cfg(feature = "wifi")]
-            uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password: _ } => {}
+            uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid: _, password: _ } => {}
             #[cfg(feature = "wifi")]
-            uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {}
+            uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {}
             _ => {}
         }
     }

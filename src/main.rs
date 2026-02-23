@@ -165,6 +165,7 @@ struct CommonWindowProperties {
     /// The volatile settings for the program
     pub vsettings: uobradio_comms::VolatileSettings,
     #[cfg(feature = "wifi")]
+    /// The list of available wifi networks
     wifi_list: Vec<nmrs::Network>,
     #[cfg(feature = "wifi")]
     /// The optional details for the wifi network, ssid and password
@@ -587,7 +588,7 @@ impl eframe::App for MyEguiApp {
                     uobradio_comms::AcResponse::CurrentCabinTemperature(_) => todo!(),
                 },
                 #[cfg(feature = "wifi")]
-                uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {
+                uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {
                     self.common.wifi_details.take();
                 }
                 #[cfg(feature = "wifi")]

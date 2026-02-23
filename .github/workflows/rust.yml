@@ -1,0 +1,92 @@
+name: Rust build checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: "Build [${{ matrix.features }}]"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # -------------------------------------------------------
+          # Valid combinations (androidauto always paired with wifi+bluetooth)
+          # -------------------------------------------------------
+          - features: ""
+            should_fail: false
+          - features: "--no-default-features"
+            should_fail: false
+          - features: "--no-default-features --features wifi"
+            should_fail: false
+          - features: "--no-default-features --features bluetooth"
+            should_fail: false
+          - features: "--no-default-features --features swupdate"
+            should_fail: false
+          - features: "--no-default-features --features wifi,bluetooth"
+            should_fail: false
+          - features: "--no-default-features --features wifi,swupdate"
+            should_fail: false
+          - features: "--no-default-features --features bluetooth,swupdate"
+            should_fail: false
+          - features: "--no-default-features --features wifi,bluetooth,androidauto"
+            should_fail: false
+          - features: "--no-default-features --features wifi,bluetooth,swupdate"
+            should_fail: false
+          - features: "--no-default-features --features wifi,bluetooth,androidauto,swupdate"
+            should_fail: false
+          - features: "--all-features"
+            should_fail: false
+
+          # -------------------------------------------------------
+          # Invalid combinations (androidauto without wifi+bluetooth)
+          # -------------------------------------------------------
+          - features: "--no-default-features --features androidauto"
+            should_fail: true
+          - features: "--no-default-features --features androidauto,wifi"
+            should_fail: true
+          - features: "--no-default-features --features androidauto,bluetooth"
+            should_fail: true
+          - features: "--no-default-features --features androidauto,swupdate"
+            should_fail: true
+          - features: "--no-default-features --features androidauto,wifi,swupdate"
+            should_fail: true
+          - features: "--no-default-features --features androidauto,bluetooth,swupdate"
+            should_fail: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build (expected to succeed)
+        if: ${{ matrix.should_fail == false }}
+        run: cargo build ${{ matrix.features }}
+
+      - name: Test (expected to succeed)
+        if: ${{ matrix.should_fail == false }}
+        run: cargo test ${{ matrix.features }}
+
+      - name: Build (must fail)
+        if: ${{ matrix.should_fail == true }}
+        run: |
+          if cargo build ${{ matrix.features }} 2>&1; then
+            echo "::error::Build succeeded but was expected to fail for: ${{ matrix.features }}"
+            exit 1
+          else
+            echo "::notice::Correctly rejected invalid feature combination: ${{ matrix.features }}"
+          fi

@@ -1,11 +1,10 @@
 //! Hotspot workaround code
 
-use nmrs::{builders, WifiSecurity};
 use std::collections::HashMap;
 use zbus::{proxy, Connection};
 use zvariant::{OwnedObjectPath, OwnedValue};
 
-// Type alias matching what NM's D-Bus API expects
+/// Type alias matching what NM's D-Bus API expects
 type NmSettings = HashMap<String, HashMap<String, OwnedValue>>;
 
 #[proxy(
@@ -56,6 +55,7 @@ trait NmDeviceProxy {
     fn interface(&self) -> zbus::Result<String>;
 }
 
+/// Convert the output of nmrs to a usable form that is not borrowed
 fn to_owned_settings(
     input: HashMap<&str, HashMap<&str, zvariant::Value<'_>>>,
 ) -> HashMap<String, HashMap<String, OwnedValue>> {
@@ -71,18 +71,19 @@ fn to_owned_settings(
         .collect()
 }
 
+/// Start a hotspot connection
 pub async fn start_hotspot(ssid: String, psk: String, wifi_dev_path: &str) -> Result<(), String> {
     let p = nmrs::WifiSecurity::WpaPsk { psk };
     let co = nmrs::ConnectionOptions::new(true);
     let mut test = nmrs::builders::build_wifi_connection(&ssid, &p, &co);
     service::log::info!("The hotspot details are {:#?}", test);
-    let q = test.get("802-11-wireless").map(|i| i.get("mode")).flatten();
+    let q = test.get("802-11-wireless").and_then(|i| i.get("mode"));
     service::log::info!("The mode is {q:?}");
     test.get_mut("802-11-wireless")
         .map(|i| i.insert("mode", "ap".into()));
-    let q = test.get("802-11-wireless").map(|i| i.get("mode")).flatten();
+    let q = test.get("802-11-wireless").and_then(|i| i.get("mode"));
     service::log::info!("The mode is {q:?}");
-    let hr = build_hotspot(&wifi_dev_path, test).await;
+    let hr = build_hotspot(wifi_dev_path, test).await;
     service::log::info!("The result of making a hotspot is {hr:#?}");
     Ok(())
 }
