@@ -48,7 +48,7 @@ pub fn install_swu(fp: std::path::PathBuf) -> Result<(), ()> {
             if count == 0 {
                 break;
             }
-            unsafe { internal::ipc_send_data(f, &mut buffer as *mut u8, count as i32) };
+            unsafe { internal::ipc_send_data(f, &mut buffer as *mut _, count as i32) };
         }
     }
     unsafe { internal::ipc_end(f) };

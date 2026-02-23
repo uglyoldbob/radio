@@ -232,7 +232,7 @@ impl MyEguiApp {
     /// construct a new Self
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         #[cfg(feature = "androidauto")]
-        {
+        let (ao, ai, h, media_stream, sys_stream, speech_stream, input_stream) = {
             let h = cpal::default_host();
             let mut ao = h.default_output_device();
             let mut ai = h.default_input_device();
@@ -403,7 +403,16 @@ impl MyEguiApp {
                     }
                 }
             }
-        }
+            (
+                ao,
+                ai,
+                h,
+                media_stream,
+                sys_stream,
+                speech_stream,
+                input_stream,
+            )
+        };
         Self {
             subwindow: Subwindow::MainPage(MainPage {}),
             common: CommonWindowProperties::new(),

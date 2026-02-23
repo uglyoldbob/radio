@@ -49,7 +49,10 @@ impl SubwindowTrait for Config {
     ) {
         match packet {
             #[cfg(feature = "wifi")]
-            uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid: _, password: _ } => {}
+            uobradio_comms::MessageToApp::ConnectedToWifiNetwork {
+                ssid: _,
+                password: _,
+            } => {}
             #[cfg(feature = "wifi")]
             uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {}
             _ => {}
