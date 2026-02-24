@@ -13,7 +13,7 @@ clap = { version = "4.5.38", features = ["derive"] }
 cpal = "0.15.3"
 eframe = { version = "0.31.1" }
 egui_extras = { version = "0.31.1", features = ["all_loaders"] }
-egui_virtual_keyboard = { git = "https://github.com/guspower/egui_virtual_keyboard.git" }
+egui_virtual_keyboard = { git = "https://github.com/guspower/egui_virtual_keyboard.git", branch="egui-0.31.0" }
 enum_dispatch = "0.3.13"
 ffimage = "0.10.0"
 ffimage_yuv = "0.10.0"
