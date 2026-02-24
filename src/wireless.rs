@@ -278,19 +278,25 @@ impl SubwindowTrait for Config {
                             ui.label(format!(" * {}: {}", i, w.0));
                         }
                         let mut scan = || {
-                            common.vsettings.wifi.known_networks.poll_action(|| {
-                                let _ = common.radio.send_packet(
-                                    uobradio_comms::MessageFromApp::ScanForWifiNetworks,
-                                );
-                            });
-                            for (i, w) in common.wifi_list.iter().enumerate() {
-                                if ui.button(format!("Wifi network {}", w.ssid)).clicked() {
+                            let button = egui::Button::new(
+                                egui::RichText::new("Scan for networks")
+                                    .size(16.0)
+                                    .color(super::TEXT_SECONDARY),
+                            )
+                            .fill(super::BG_SECONDARY)
+                            .min_size(egui::vec2(70.0, 70.0))
+                            .corner_radius(12.0);
+
+                            if ui.add(button).clicked() {
+                                common.vsettings.wifi.known_networks.poll_action(|| {
                                     let _ = common.radio.send_packet(
-                                        uobradio_comms::MessageFromApp::ConnectToNetwork {
-                                            network: w.clone(),
-                                            password: None,
-                                        },
+                                        uobradio_comms::MessageFromApp::ScanForWifiNetworks,
                                     );
+                                });
+                            }
+                            for (i, w) in common.wifi_list.iter().enumerate() {
+                                if ui.button(format!("Wifi network {i} {}", w.ssid)).clicked() {
+                                    common.vsettings.wifi.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
                                 }
                             }
                         };
