@@ -203,8 +203,10 @@ impl SubwindowTrait for Config {
                         }
                     }
                 }
+                common.vsettings.wifi.show_keyboard = false;
                 match &mut common.vsettings.wifi.wifi_state {
                     uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w, pw) => {
+                        common.vsettings.wifi.show_keyboard = true;
                         let t = egui::RichText::new("Wifi password...")
                             .size(16.0)
                             .color(super::TEXT_SECONDARY);
@@ -345,6 +347,11 @@ impl SubwindowTrait for Config {
                         }
                     }
                 }
+            }
+            if common.vsettings.wifi.show_keyboard {
+                egui::TopBottomPanel::bottom("KBD").show(ctx, |ui| {
+                    common.keyboard.show(ui);
+                });
             }
         });
         None

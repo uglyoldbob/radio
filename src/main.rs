@@ -174,6 +174,8 @@ struct CommonWindowProperties {
     android_auto_video_decoder: openh264::decoder::Decoder,
     #[cfg(feature = "androidauto")]
     android_auto_texture: Option<egui::TextureHandle>,
+    /// the onscreen keyboard
+    keyboard: egui_virtual_keyboard::VirtualKeyboard,
 }
 
 impl CommonWindowProperties {
@@ -191,6 +193,7 @@ impl CommonWindowProperties {
             android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
             #[cfg(feature = "androidauto")]
             android_auto_texture: None,
+            keyboard: Default::default(),
         }
     }
 
@@ -436,6 +439,10 @@ impl MyEguiApp {
 
 impl eframe::App for MyEguiApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {}
+
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.common.keyboard.bump_events(ctx, raw_input);
+    }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         ctx.request_repaint();

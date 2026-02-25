@@ -67,6 +67,8 @@ pub struct Settings {
     #[cfg(feature = "wifi")]
     /// The list of known networks by ssid
     pub known_networks: super::Pollable<Vec<String>>,
+    /// Should the on-screen keyboard show
+    pub show_keyboard: bool,
 }
 
 /// The non-volatile wifi settings
