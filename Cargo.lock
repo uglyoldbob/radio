@@ -3329,9 +3329,9 @@ dependencies = [
 
 [[package]]
 name = "nmrs"
-version = "2.0.0"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fde6b64792a00832173305aa08846fbea4e403bbb8caee9f9b48dc1aa40fe95"
+checksum = "65904a9f82e5cf4f1db5b632c1af3dec8a6c94e65d6411751845c4c1d391afef"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4694,9 +4694,9 @@ dependencies = [
 
 [[package]]
 name = "rgb"
-version = "0.8.52"
+version = "0.8.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
+checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 dependencies = [
  "bytemuck",
 ]
@@ -7666,7 +7666,3 @@ dependencies = [
  "syn",
  "winnow",
 ]
-
-[[patch.unused]]
-name = "rustls-webpki"
-version = "0.103.2"

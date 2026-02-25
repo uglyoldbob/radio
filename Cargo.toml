@@ -57,6 +57,3 @@ wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]
 androidauto = ["dep:android-auto", "uobradio-comms/androidauto"]
 swupdate = ["dep:swupdate-ipc"]
-
-[patch.crates-io]
-rustls-webpki = { path = "./webpki" }
