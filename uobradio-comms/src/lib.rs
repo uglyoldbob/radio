@@ -42,7 +42,8 @@ pub enum RadioReceiveStatus {
 
 /// A type that allows for polling of a value, without sending a whole ton of requests.
 /// This limits the number of outstanding requests to one. This is useful for queries that take a while to run, compared to how often the data is displayed to the user.
-pub enum Pollable<T> {
+#[derive(Debug)]
+pub enum Pollable<T: std::fmt::Debug> {
     /// The variable is idle
     Idle {
         /// The last known value
@@ -60,13 +61,13 @@ pub enum Pollable<T> {
     },
 }
 
-impl<T> Default for Pollable<T> {
+impl<T: std::fmt::Debug> Default for Pollable<T> {
     fn default() -> Self {
         Self::Idle { last_known: None }
     }
 }
 
-impl<T> Pollable<T> {
+impl<T: std::fmt::Debug> Pollable<T> {
     /// Try to get the contained value
     pub fn value(&self) -> Option<&T> {
         match self {
@@ -85,7 +86,12 @@ impl<T> Pollable<T> {
             None => {
                 let b = std::mem::replace(self, Pollable::Idle { last_known: None });
                 match b {
-                    Pollable::Idle { last_known: _ } => {
+                    Pollable::Idle { last_known } => {
+                        if let Some(v) = v {
+                            *self = Pollable::Idle { last_known: Some(v) };
+                        } else {
+                            *self = Pollable::Idle { last_known };
+                        }
                     }
                     Pollable::Waiting { last_known } => {
                         if let Some(v2) = last_known {
@@ -96,6 +102,7 @@ impl<T> Pollable<T> {
                         }
                     }
                     Pollable::Value { v } => {
+                        *self = Pollable::Value { v };
                     }
                 };        
             }
@@ -110,7 +117,8 @@ impl<T> Pollable<T> {
                 *self = Pollable::Waiting { last_known };
                 true
             }
-            Pollable::Waiting { last_known: _ } => {
+            Pollable::Waiting { last_known } => {
+                *self = Pollable::Waiting { last_known };
                 false
             }
             Pollable::Value { v } => {
@@ -405,6 +413,9 @@ pub enum MessageFromApp {
         /// The password
         password: Option<String>,
     },
+    #[cfg(feature = "wifi")]
+    /// forget the given wifi network
+    ForgetWifiNetwork(String),
     #[cfg(feature = "wifi")]
     /// Get the ssid and password for the current wifi network
     GetWifiDetails,

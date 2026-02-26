@@ -73,17 +73,12 @@ fn to_owned_settings(
 
 /// Start a hotspot connection
 pub async fn start_hotspot(ssid: String, psk: String, wifi_dev_path: &str) -> Result<(), String> {
-    let p = nmrs::WifiSecurity::WpaPsk { psk };
-    let co = nmrs::ConnectionOptions::new(true);
-    let mut test = nmrs::builders::build_wifi_connection(&ssid, &p, &co);
-    service::log::info!("The hotspot details are {:#?}", test);
-    let q = test.get("802-11-wireless").and_then(|i| i.get("mode"));
-    service::log::info!("The mode is {q:?}");
-    test.get_mut("802-11-wireless")
-        .map(|i| i.insert("mode", "ap".into()));
-    let q = test.get("802-11-wireless").and_then(|i| i.get("mode"));
-    service::log::info!("The mode is {q:?}");
-    let hr = build_hotspot(wifi_dev_path, test).await;
+    let hotspot = nmrs::builders::WifiConnectionBuilder::new(&ssid)
+        .wpa_psk(&psk)
+        .autoconnect(false)
+        .mode(nmrs::builders::WifiMode::Ap)
+        .build();
+    let hr = build_hotspot(wifi_dev_path, hotspot).await;
     service::log::info!("The result of making a hotspot is {hr:#?}");
     Ok(())
 }

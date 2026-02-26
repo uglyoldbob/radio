@@ -165,8 +165,8 @@ struct CommonWindowProperties {
     /// The volatile settings for the program
     pub vsettings: uobradio_comms::VolatileSettings,
     #[cfg(feature = "wifi")]
-    /// The list of available wifi networks
-    wifi_list: Vec<nmrs::Network>,
+    /// The list of known wifi networks
+    wifi_list: uobradio_comms::Pollable<Vec<nmrs::Network>>,
     #[cfg(feature = "wifi")]
     /// The details for the current wifi network, ssid and password
     wifi_details: uobradio_comms::Pollable<(String, Option<String>)>,
@@ -186,9 +186,9 @@ impl CommonWindowProperties {
             radio: uobradio_comms::UobRadio::localhost(),
             settings: uobradio_comms::NonvolatileSettings::default(),
             #[cfg(feature = "wifi")]
-            wifi_list: Vec::new(),
+            wifi_list: Default::default(),
             #[cfg(feature = "wifi")]
-            wifi_details: uobradio_comms::Pollable::Idle { last_known: None },
+            wifi_details: Default::default(),
             #[cfg(feature = "androidauto")]
             android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
             #[cfg(feature = "androidauto")]
@@ -612,11 +612,13 @@ impl eframe::App for MyEguiApp {
                     uobradio_comms::AcResponse::CurrentCabinTemperature(_) => todo!(),
                 },
                 #[cfg(feature = "wifi")]
-                uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {
+                uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {
+                    service::log::info!("Failed to connect to {ssid}");
                     self.common.wifi_details = uobradio_comms::Pollable::Idle { last_known: None };
                 }
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password } => {
+                    service::log::info!("Wifi connected2: {ssid}");
                     self.common
                         .wifi_details
                         .new_value_optional(Some((ssid.clone(), password.clone())));
@@ -625,10 +627,11 @@ impl eframe::App for MyEguiApp {
                 uobradio_comms::MessageToApp::WifiList(list) => {
                     let mut list2 = list.clone();
                     list2.sort_by(|a, b| b.strength.cmp(&a.strength));
-                    self.common.wifi_list = list2;
+                    self.common.wifi_list.new_value_optional(Some(list2));
                 }
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {
+                    service::log::info!("Wifi connected: {ssid}");
                     self.common
                         .wifi_details
                         .new_value_optional(Some((ssid.clone(), password.clone())));

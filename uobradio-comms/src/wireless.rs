@@ -12,12 +12,7 @@ pub enum WifiMode {
         password: Option<String>,
     },
     /// The local wifi adapter connects to an existing wifi network
-    RegularNetwork {
-        /// The ssid of the network
-        ssid: String,
-        /// The password of the network if applicable
-        password: Option<String>,
-    },
+    RegularNetwork,
 }
 
 #[cfg(feature = "wifi")]

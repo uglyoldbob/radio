@@ -116,10 +116,13 @@ impl SubwindowTrait for Config {
         #[cfg(feature = "wifi")]
         {
             common.wifi_details.poll_action(|| {
-                let _ = common
+                service::log::info!("Polling wifi details");
+                let a = common
                     .radio
                     .send_packet(uobradio_comms::MessageFromApp::GetWifiDetails);
+                service::log::info!("Send packet is {:?}", a);
             });
+            log::info!("WIFI IS {:?}", common.wifi_details);
         }
         #[cfg(feature = "wifi")]
         self.update_qr_code(ctx, common);
@@ -198,14 +201,8 @@ impl SubwindowTrait for Config {
                             common.settings.wifi_config.config =
                                 uobradio_comms::wireless::WifiConfig::Ready;
                         }
-                        if let uobradio_comms::wireless::WifiConfig::RegularNetwork =
-                            &common.settings.wifi_config.config
-                        {
-                            if let Some((wn, _wp)) = &common.wifi_details.value() {
-                                ui.label(format!("Connected to wifi network {}", wn));
-                            } else {
-                                ui.label("ConnectPasswordPrompted to a wifi network");
-                            }
+                        if let Some((wn, _wp)) = &common.wifi_details.value() {
+                            ui.label(format!("Connected to wifi network {}", wn));
                         }
                     }
                     common.vsettings.wifi.show_keyboard = false;
@@ -286,6 +283,11 @@ impl SubwindowTrait for Config {
                             ui.label("Saved wifi networks");
                             for (i, w) in common.settings.wifi_network.iter().enumerate() {
                                 ui.label(format!(" * {}: {}", i, w.0));
+                                if ui.button("Forget").clicked() {
+                                    let _ = common.radio.send_packet(
+                                        uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.0.clone()),
+                                    );
+                                }
                             }
                             let mut scan = || {
                                 let button = egui::Button::new(
@@ -304,9 +306,11 @@ impl SubwindowTrait for Config {
                                         );
                                     });
                                 }
-                                for (i, w) in common.wifi_list.iter().enumerate() {
-                                    if ui.button(format!("Wifi network {i} {}", w.ssid)).clicked() {
-                                        common.vsettings.wifi.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
+                                if let Some(asdf) = common.wifi_list.value() {
+                                    for (i, w) in asdf.iter().enumerate() {
+                                        if ui.button(format!("Wifi network {i} {}", w.ssid)).clicked() {
+                                            common.vsettings.wifi.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
+                                        }
                                     }
                                 }
                             };
