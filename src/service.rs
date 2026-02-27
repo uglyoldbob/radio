@@ -372,7 +372,19 @@ async fn receive_message_from_app(
                     match wifis {
                         Ok(list) => {
                             service::log::info!("WIFI NETWORKS: {:?}", list);
-                            let packet = MessageToApp::KnownWifiNetworks(list);
+                            let mut new_list = Vec::new();
+                            for ssid in &list {
+                                if let Ok(Some(path)) =
+                                    wifi.get_saved_connection_path(ssid.as_str()).await
+                                {
+                                    if let Ok(true) =
+                                        nmrs_extensions::is_wifi_connection(&path).await
+                                    {
+                                        new_list.push(ssid.to_string());
+                                    }
+                                }
+                            }
+                            let packet = MessageToApp::KnownWifiNetworks(new_list);
                             packet.send_to_stream(&stream2w).await?;
                         }
                         Err(e) => {
@@ -540,7 +552,9 @@ async fn receive_message_from_app(
                                     Ok(_wifi) => {
                                         log::info!("Connected to wifi network {}", ssid);
                                         let mut common2 = common2.lock().await;
-                                        common2.wifi_setup = Some(uobradio_comms::wireless::WifiMode::RegularNetwork);
+                                        common2.wifi_setup = Some(
+                                            uobradio_comms::wireless::WifiMode::RegularNetwork,
+                                        );
                                         common2.settings.save(&common2.args.nvconfig);
                                         let packet = MessageToApp::ConnectedToWifiNetwork {
                                             ssid,
@@ -1267,6 +1281,16 @@ async fn get_wifi_interface(nmrs: &nmrs::NetworkManager) -> Option<nmrs::Device>
 /// Wifi connections will likey drop and reconnect
 async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
     log::info!("Setup wifi with {:?}", common2.settings.wifi_config.config);
+    {
+        if let Some(wifi) = &common2.wifi {
+            let _ = wifi
+                .set_wifi_enabled(!matches!(
+                    common2.settings.wifi_config.config,
+                    WifiConfig::Disabled
+                ))
+                .await;
+        }
+    }
     match &common2.settings.wifi_config.config {
         WifiConfig::Ready => {
             common2.wifi_setup = Some(uobradio_comms::wireless::WifiMode::RegularNetwork);
@@ -1294,9 +1318,6 @@ async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
         }
         WifiConfig::Disabled => {
             common2.wifi_setup.take();
-            if let Some(wifi) = &common2.wifi {
-                let _ = wifi.disconnect().await;
-            }
         }
     }
 }

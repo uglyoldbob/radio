@@ -101,3 +101,37 @@ async fn build_hotspot(
     println!("Active connection object path: {}", active_conn_path);
     Ok(())
 }
+
+/// returns true when the connection specified is a wifi connection
+pub async fn is_wifi_connection(path: &str) -> Result<bool, String> {
+    // NetworkManager is on the system bus
+    let conn = Connection::system().await.map_err(|e| e.to_string())?;
+
+    // Create proxy to the specific NM connection object
+    let proxy = zbus::Proxy::new(
+        &conn,
+        "org.freedesktop.NetworkManager",
+        path,
+        "org.freedesktop.NetworkManager.Settings.Connection",
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // GetSettings returns: a{sa{sv}}
+    let settings: HashMap<String, HashMap<String, OwnedValue>> = proxy
+        .call("GetSettings", &())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Look inside the "connection" group
+    if let Some(connection_section) = settings.get("connection") {
+        if let Some(conn_type) = connection_section.get("type") {
+            // Safely extract string
+            if let Ok(conn_type_str) = conn_type.downcast_ref::<&str>() {
+                return Ok(conn_type_str == "802-11-wireless");
+            }
+        }
+    }
+
+    Ok(false)
+}

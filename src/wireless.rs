@@ -74,7 +74,8 @@ impl SubwindowTrait for Config {
             }
             #[cfg(feature = "wifi")]
             uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {
-                vsettings.wifi.wifi_state = uobradio_comms::wireless::WifiConnectStage::FailedConnection;
+                vsettings.wifi.wifi_state =
+                    uobradio_comms::wireless::WifiConnectStage::FailedConnection;
             }
             _ => {}
         }
@@ -160,6 +161,11 @@ impl SubwindowTrait for Config {
                     ui.label("This is the wifi page".to_string());
                     let mut save = false;
                     let mut reconnect = false;
+                    common.vsettings.wifi.known_networks.poll_action(|| {
+                        let _ = common.radio.send_packet(
+                            uobradio_comms::MessageFromApp::ListAllKnownWifiNetworks,
+                        );
+                    });
                     ui.label("Wifi mode");
                     {
                         if ui
@@ -281,12 +287,14 @@ impl SubwindowTrait for Config {
                         }
                         uobradio_comms::wireless::WifiConnectStage::Idle => {
                             ui.label("Saved wifi networks");
-                            for (i, w) in common.settings.wifi_network.iter().enumerate() {
-                                ui.label(format!(" * {}: {}", i, w.0));
-                                if ui.button("Forget").clicked() {
-                                    let _ = common.radio.send_packet(
-                                        uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.0.clone()),
-                                    );
+                            if let Some(wifi_nets) = common.vsettings.wifi.known_networks.value() {
+                                for (i, w) in wifi_nets.iter().enumerate() {
+                                    ui.label(format!(" * {}: {}", i, w));
+                                    if ui.button("Forget").clicked() {
+                                        let _ = common.radio.send_packet(
+                                            uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.clone()),
+                                        );
+                                    }
                                 }
                             }
                             let mut scan = || {
@@ -300,7 +308,7 @@ impl SubwindowTrait for Config {
                                 .corner_radius(12.0);
 
                                 if ui.add(button).clicked() {
-                                    common.vsettings.wifi.known_networks.poll_action(|| {
+                                    common.wifi_list.poll_action(|| {
                                         let _ = common.radio.send_packet(
                                             uobradio_comms::MessageFromApp::ScanForWifiNetworks,
                                         );
