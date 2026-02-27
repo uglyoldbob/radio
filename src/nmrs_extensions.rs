@@ -135,3 +135,35 @@ pub async fn is_wifi_connection(path: &str) -> Result<bool, String> {
 
     Ok(false)
 }
+
+/// Connect to a saved wifi
+pub async fn activate_saved_wifi(connection_path: &str) -> Result<OwnedObjectPath, String> {
+    let conn = Connection::system().await.map_err(|e| e.to_string())?;
+
+    let nm_proxy = zbus::Proxy::new(
+        &conn,
+        "org.freedesktop.NetworkManager",
+        "/org/freedesktop/NetworkManager",
+        "org.freedesktop.NetworkManager",
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Let NetworkManager auto-select device and AP
+    let device_path = OwnedObjectPath::try_from("/").map_err(|e| e.to_string())?;
+    let specific_object = OwnedObjectPath::try_from("/").map_err(|e| e.to_string())?;
+
+    let active_connection: OwnedObjectPath = nm_proxy
+        .call(
+            "ActivateConnection",
+            &(
+                OwnedObjectPath::try_from(connection_path).map_err(|e| e.to_string())?,
+                device_path,
+                specific_object,
+            ),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(active_connection)
+}

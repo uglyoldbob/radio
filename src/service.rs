@@ -361,6 +361,17 @@ async fn receive_message_from_app(
         }
         match packet {
             #[cfg(feature = "wifi")]
+            uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(ssid) => {
+                let common2 = common.lock().await;
+                if let Some(wifi) = &common2.wifi {
+                    if let Ok(Some(connection_path)) =
+                        wifi.get_saved_connection_path(ssid.as_str()).await
+                    {
+                        let _ = nmrs_extensions::activate_saved_wifi(&connection_path).await;
+                    }
+                }
+            }
+            #[cfg(feature = "wifi")]
             uobradio_comms::MessageFromApp::ListAllKnownWifiNetworks => {
                 let wifi = {
                     let common2 = common.lock().await;
@@ -526,6 +537,9 @@ async fn receive_message_from_app(
                             }
                         }
                     }
+                } else {
+                    let packet = uobradio_comms::MessageToApp::NoCurrentWifiNetwork;
+                    packet.send_to_stream(&streamw).await?;
                 }
             }
             #[cfg(feature = "wifi")]

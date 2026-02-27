@@ -414,6 +414,9 @@ pub enum MessageFromApp {
         password: Option<String>,
     },
     #[cfg(feature = "wifi")]
+    /// Connect to a saved wifi network
+    ConnectToSavedWifiNetwork(String),
+    #[cfg(feature = "wifi")]
     /// forget the given wifi network
     ForgetWifiNetwork(String),
     #[cfg(feature = "wifi")]
@@ -499,6 +502,8 @@ pub enum MessageToApp {
         /// The password of the network
         password: Option<String>,
     },
+    /// There is no wifi network
+    NoCurrentWifiNetwork,
     #[cfg(feature = "wifi")]
     /// Indicates a new connection to a wifi network
     ConnectedToWifiNetwork {
@@ -642,6 +647,8 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        #[cfg(feature = "wifi")]
+                                        MessageToApp::NoCurrentWifiNetwork => {}
                                         #[cfg(feature = "wifi")]
                                         MessageToApp::KnownWifiNetworks(_) => {}
                                         MessageToApp::NoUpdateInProgress => {}

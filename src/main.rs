@@ -617,6 +617,10 @@ impl eframe::App for MyEguiApp {
                     self.common.wifi_details = uobradio_comms::Pollable::Idle { last_known: None };
                 }
                 #[cfg(feature = "wifi")]
+                uobradio_comms::MessageToApp::NoCurrentWifiNetwork => {
+                    self.common.wifi_details = Default::default();
+                }
+                #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::ConnectedToWifiNetwork { ssid, password } => {
                     service::log::info!("Wifi connected2: {ssid}");
                     self.common

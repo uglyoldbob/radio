@@ -295,6 +295,11 @@ impl SubwindowTrait for Config {
                                             uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.clone()),
                                         );
                                     }
+                                    if ui.button("Connect").clicked() {
+                                        let _ = common.radio.send_packet(
+                                            uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(w.clone()),
+                                        );
+                                    }
                                 }
                             }
                             let mut scan = || {
