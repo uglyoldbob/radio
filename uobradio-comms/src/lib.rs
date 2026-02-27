@@ -53,6 +53,8 @@ pub enum Pollable<T: std::fmt::Debug> {
     Waiting {
         /// The last known value
         last_known: Option<T>,
+        /// Waiting since time
+        waiting_since: std::time::Instant,
     },
     /// A value has been received
     Value {
@@ -72,7 +74,7 @@ impl<T: std::fmt::Debug> Pollable<T> {
     pub fn value(&self) -> Option<&T> {
         match self {
             Pollable::Idle { last_known } => last_known.as_ref(),
-            Pollable::Waiting { last_known } => last_known.as_ref(),
+            Pollable::Waiting { last_known, waiting_since: _ } => last_known.as_ref(),
             Pollable::Value { v } => Some(v),
         }
     }
@@ -93,7 +95,7 @@ impl<T: std::fmt::Debug> Pollable<T> {
                             *self = Pollable::Idle { last_known };
                         }
                     }
-                    Pollable::Waiting { last_known } => {
+                    Pollable::Waiting { last_known, waiting_since: _ } => {
                         if let Some(v2) = last_known {
                             *self = Pollable::Value { v: v2 };
                         }
@@ -114,15 +116,19 @@ impl<T: std::fmt::Debug> Pollable<T> {
         let b = std::mem::replace(self, Pollable::Idle { last_known: None });
         let a = match b {
             Pollable::Idle { last_known } => {
-                *self = Pollable::Waiting { last_known };
+                *self = Pollable::Waiting { last_known, waiting_since: std::time::Instant::now() };
                 true
             }
-            Pollable::Waiting { last_known } => {
-                *self = Pollable::Waiting { last_known };
+            Pollable::Waiting { last_known, waiting_since } => {
+                if std::time::Instant::now().duration_since(waiting_since) > std::time::Duration::from_secs(5) {
+                    *self = Pollable::Idle { last_known };
+                } else {
+                    *self = Pollable::Waiting { last_known, waiting_since };
+                }
                 false
             }
             Pollable::Value { v } => {
-                *self = Pollable::Waiting { last_known: Some(v) };
+                *self = Pollable::Waiting { last_known: Some(v), waiting_since: std::time::Instant::now() };
                 true
             }
         };
@@ -502,6 +508,7 @@ pub enum MessageToApp {
         /// The password of the network
         password: Option<String>,
     },
+    #[cfg(feature = "wifi")]
     /// There is no wifi network
     NoCurrentWifiNetwork,
     #[cfg(feature = "wifi")]

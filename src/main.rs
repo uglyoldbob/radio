@@ -165,8 +165,11 @@ struct CommonWindowProperties {
     /// The volatile settings for the program
     pub vsettings: uobradio_comms::VolatileSettings,
     #[cfg(feature = "wifi")]
-    /// The list of known wifi networks
-    wifi_list: uobradio_comms::Pollable<Vec<nmrs::Network>>,
+    /// The list of known wifi networks by ssid
+    pub known_networks: uobradio_comms::Pollable<Vec<String>>,
+    #[cfg(feature = "wifi")]
+    /// The list of available wifi networks by ssid
+    pub available_networks: uobradio_comms::Pollable<Vec<nmrs::Network>>,
     #[cfg(feature = "wifi")]
     /// The details for the current wifi network, ssid and password
     wifi_details: uobradio_comms::Pollable<(String, Option<String>)>,
@@ -186,7 +189,9 @@ impl CommonWindowProperties {
             radio: uobradio_comms::UobRadio::localhost(),
             settings: uobradio_comms::NonvolatileSettings::default(),
             #[cfg(feature = "wifi")]
-            wifi_list: Default::default(),
+            available_networks: Default::default(),
+            #[cfg(feature = "wifi")]
+            known_networks: Default::default(),
             #[cfg(feature = "wifi")]
             wifi_details: Default::default(),
             #[cfg(feature = "androidauto")]
@@ -572,8 +577,6 @@ impl eframe::App for MyEguiApp {
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::KnownWifiNetworks(list) => {
                     self.common
-                        .vsettings
-                        .wifi
                         .known_networks
                         .new_value_optional(Some(list.to_owned()));
                 }
@@ -631,7 +634,9 @@ impl eframe::App for MyEguiApp {
                 uobradio_comms::MessageToApp::WifiList(list) => {
                     let mut list2 = list.clone();
                     list2.sort_by(|a, b| b.strength.cmp(&a.strength));
-                    self.common.wifi_list.new_value_optional(Some(list2));
+                    self.common
+                        .available_networks
+                        .new_value_optional(Some(list2));
                 }
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {

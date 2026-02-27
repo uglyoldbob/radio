@@ -46,7 +46,10 @@ impl Config {
                         wifi(known)
                     }
                 }
-                uobradio_comms::Pollable::Waiting { last_known } => {
+                uobradio_comms::Pollable::Waiting {
+                    last_known,
+                    waiting_since: _,
+                } => {
                     if let Some(known) = last_known {
                         wifi(known)
                     }
@@ -161,7 +164,7 @@ impl SubwindowTrait for Config {
                     ui.label("This is the wifi page".to_string());
                     let mut save = false;
                     let mut reconnect = false;
-                    common.vsettings.wifi.known_networks.poll_action(|| {
+                    common.known_networks.poll_action(|| {
                         let _ = common.radio.send_packet(
                             uobradio_comms::MessageFromApp::ListAllKnownWifiNetworks,
                         );
@@ -287,7 +290,7 @@ impl SubwindowTrait for Config {
                         }
                         uobradio_comms::wireless::WifiConnectStage::Idle => {
                             ui.label("Saved wifi networks");
-                            if let Some(wifi_nets) = common.vsettings.wifi.known_networks.value() {
+                            if let Some(wifi_nets) = common.known_networks.value() {
                                 for (i, w) in wifi_nets.iter().enumerate() {
                                     ui.label(format!(" * {}: {}", i, w));
                                     if ui.button("Forget").clicked() {
@@ -313,13 +316,13 @@ impl SubwindowTrait for Config {
                                 .corner_radius(12.0);
 
                                 if ui.add(button).clicked() {
-                                    common.wifi_list.poll_action(|| {
+                                    common.available_networks.poll_action(|| {
                                         let _ = common.radio.send_packet(
                                             uobradio_comms::MessageFromApp::ScanForWifiNetworks,
                                         );
                                     });
                                 }
-                                if let Some(asdf) = common.wifi_list.value() {
+                                if let Some(asdf) = common.available_networks.value() {
                                     for (i, w) in asdf.iter().enumerate() {
                                         if ui.button(format!("Wifi network {i} {}", w.ssid)).clicked() {
                                             common.vsettings.wifi.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
@@ -378,6 +381,7 @@ impl SubwindowTrait for Config {
                 }
                 if common.vsettings.wifi.show_keyboard {
                     egui::TopBottomPanel::bottom("KBD").show(ctx, |ui| {
+                        ui.set_min_width(ui.available_width());
                         common.keyboard.show(ui);
                     });
                 }

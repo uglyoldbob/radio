@@ -59,9 +59,6 @@ pub struct Settings {
     #[cfg(feature = "wifi")]
     /// Connection state for the indicated wifi network (wifi_new_connect)
     pub wifi_state: WifiConnectStage,
-    #[cfg(feature = "wifi")]
-    /// The list of known networks by ssid
-    pub known_networks: super::Pollable<Vec<String>>,
     /// Should the on-screen keyboard show
     pub show_keyboard: bool,
 }

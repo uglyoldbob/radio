@@ -1,0 +1,7 @@
+{
+    "dotnet.testWindow.enableTestExplorerDiff": true,
+    "rust-analyzer.cargo.features": "all",
+    "rust-analyzer.runnables.command": "cargo",
+    "rust-analyzer.runnables.extraArgs": [],
+    "rust-analyzer.testExplorer": true
+}

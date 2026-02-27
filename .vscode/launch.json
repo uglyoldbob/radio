@@ -1,0 +1,45 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "radio_service",
+            "cargo": {
+                "args": ["build", "--bin", "radio_service", "--all-features"],
+                "filter": {
+                    "kind": "bin",
+                    "name": "radio_service"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "radio_gui",
+            "cargo": {
+                "args": ["build", "--bin", "radio_gui", "--all-features"],
+                "filter": {
+                    "kind": "bin",
+                    "name": "radio_gui"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run Both",
+            "configurations": ["radio_service", "radio_gui"],
+            "presentation": {
+                "hidden": false,
+                "group": "",
+                "order": 1
+            },
+            "stopAll": true
+        }
+    ]
+}
