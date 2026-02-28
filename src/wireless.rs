@@ -26,7 +26,7 @@ impl Config {
     /// update the displayed qr code for the user to be able to scan
     fn update_qr_code(&mut self, ctx: &egui::Context, common: &mut CommonWindowProperties) {
         if let uobradio_comms::wireless::WifiConfig::Disabled = common.settings.wifi_config.config {
-            common.vsettings.wifi.wifi_texture.take();
+            common.vsettings.wireless.wifi_texture.take();
         } else {
             let mut wifi = |wifi: &(String, Option<String>)| {
                 if let Some(wp) = &wifi.1 {
@@ -36,7 +36,7 @@ impl Config {
                     let img: uobradio_comms::video::PixelImage<uobradio_comms::video::RgbPixel> =
                         image.into();
                     let cimg: egui::ColorImage = img.into();
-                    common.vsettings.wifi.wifi_texture =
+                    common.vsettings.wireless.wifi_texture =
                         Some(ctx.load_texture("qrcode", cimg, egui::TextureOptions::LINEAR));
                 }
             };
@@ -73,11 +73,12 @@ impl SubwindowTrait for Config {
                 ssid: _,
                 password: _,
             } => {
-                vsettings.wifi.wifi_state = uobradio_comms::wireless::WifiConnectStage::Connected;
+                vsettings.wireless.wifi_state =
+                    uobradio_comms::wireless::WifiConnectStage::Connected;
             }
             #[cfg(feature = "wifi")]
             uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {
-                vsettings.wifi.wifi_state =
+                vsettings.wireless.wifi_state =
                     uobradio_comms::wireless::WifiConnectStage::FailedConnection;
             }
             _ => {}
@@ -130,20 +131,135 @@ impl SubwindowTrait for Config {
         }
         #[cfg(feature = "wifi")]
         self.update_qr_code(ctx, common);
-        #[cfg(feature = "wifi")]
-        if let Some(t) = &common.vsettings.wifi.wifi_texture {
-            egui::SidePanel::right("Hotspot qr code view").show(ctx, |ui| {
-                let size = ui.available_size();
-                let isize = t.size()[1];
-                let zoom = isize as f32 / size.y;
-                let dsize = t.size_vec2() / zoom;
-                ui.add(egui::Image::from_texture(egui::load::SizedTexture {
-                    id: t.id(),
-                    size: dsize,
-                }));
+
+        egui::SidePanel::left("Settings tabs")
+            .resizable(false)
+            .frame(
+                egui::Frame::side_top_panel(&ctx.style())
+                    .fill(super::BG_PRIMARY)
+                    .inner_margin(10.0)
+                    .outer_margin(0.0),
+            )
+            .show(ctx, |ui| {
+                {
+                    let active = common.vsettings.wireless.submenu
+                        == uobradio_comms::wireless::Submenu::Normal;
+                    let button_color = if active {
+                        super::ACCENT_PRIMARY
+                    } else {
+                        super::BG_SECONDARY
+                    };
+                    let text_color = if active {
+                        egui::Color32::WHITE
+                    } else {
+                        super::TEXT_SECONDARY
+                    };
+
+                    let button = egui::Button::new(
+                        egui::RichText::new(format!("{}\n{}", "G", "General"))
+                            .size(16.0)
+                            .color(text_color),
+                    )
+                    .fill(button_color)
+                    .min_size(egui::vec2(70.0, 70.0))
+                    .corner_radius(12.0);
+
+                    if ui.add(button).clicked() {
+                        common.vsettings.wireless.submenu =
+                            uobradio_comms::wireless::Submenu::Normal;
+                    }
+                }
+                #[cfg(feature = "bluetooth")]
+                {
+                    let active = ccommon.vsettings.wifi.submenu
+                        == uobradio_comms::wireless::Submenu::Bluetooth;
+                    let button_color = if active {
+                        super::ACCENT_PRIMARY
+                    } else {
+                        super::BG_SECONDARY
+                    };
+                    let text_color = if active {
+                        egui::Color32::WHITE
+                    } else {
+                        super::TEXT_SECONDARY
+                    };
+
+                    let button = egui::Button::new(
+                        egui::RichText::new(format!("{}\n{}", "B", "Bluetooth"))
+                            .size(16.0)
+                            .color(text_color),
+                    )
+                    .fill(button_color)
+                    .min_size(egui::vec2(70.0, 70.0))
+                    .corner_radius(12.0);
+
+                    if ui.add(button).clicked() {
+                        common.vsettings.wireless.submenu =
+                            uobradio_comms::wireless::Submenu::Bluetooth;
+                    }
+                }
+                #[cfg(feature = "wifi")]
+                {
+                    let active = common.vsettings.wireless.submenu
+                        == uobradio_comms::wireless::Submenu::Wifi;
+                    let button_color = if active {
+                        super::ACCENT_PRIMARY
+                    } else {
+                        super::BG_SECONDARY
+                    };
+                    let text_color = if active {
+                        egui::Color32::WHITE
+                    } else {
+                        super::TEXT_SECONDARY
+                    };
+
+                    let button = egui::Button::new(
+                        egui::RichText::new(format!("{}\n{}", "W", "Wifi"))
+                            .size(16.0)
+                            .color(text_color),
+                    )
+                    .fill(button_color)
+                    .min_size(egui::vec2(70.0, 70.0))
+                    .corner_radius(12.0);
+
+                    if ui.add(button).clicked() {
+                        common.vsettings.wireless.submenu = uobradio_comms::wireless::Submenu::Wifi;
+                    }
+                }
+                #[cfg(feature = "wifi")]
+                {
+                    let active = common.vsettings.wireless.submenu
+                        == uobradio_comms::wireless::Submenu::ShareWifi;
+                    let button_color = if active {
+                        super::ACCENT_PRIMARY
+                    } else {
+                        super::BG_SECONDARY
+                    };
+                    let text_color = if active {
+                        egui::Color32::WHITE
+                    } else {
+                        super::TEXT_SECONDARY
+                    };
+
+                    let button = egui::Button::new(
+                        egui::RichText::new(format!("{}\n{}", "S", "Share Wifi"))
+                            .size(16.0)
+                            .color(text_color),
+                    )
+                    .fill(button_color)
+                    .min_size(egui::vec2(70.0, 70.0))
+                    .corner_radius(12.0);
+
+                    if ui.add(button).clicked() {
+                        common.vsettings.wireless.submenu =
+                            uobradio_comms::wireless::Submenu::ShareWifi;
+                    }
+                }
             });
-        }
-        egui::CentralPanel::default().show(ctx, |ui| {
+
+        match &common.vsettings.wireless.submenu {
+            uobradio_comms::wireless::Submenu::Normal => {
+                egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 #[cfg(feature = "bluetooth")]
                 {
@@ -214,17 +330,17 @@ impl SubwindowTrait for Config {
                             ui.label(format!("Connected to wifi network {}", wn));
                         }
                     }
-                    common.vsettings.wifi.show_keyboard = false;
+                    common.vsettings.wireless.show_keyboard = false;
                     let mut new_wifi_state = None;
-                    match &mut common.vsettings.wifi.wifi_state {
+                    match &mut common.vsettings.wireless.wifi_state {
                         uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w, pw) => {
-                            common.vsettings.wifi.show_keyboard = true;
+                            common.vsettings.wireless.show_keyboard = true;
                             let t = egui::RichText::new("Wifi password...")
                                 .size(16.0)
                                 .color(super::TEXT_SECONDARY);
                             ui.label(t);
                             let edit = egui::text_edit::TextEdit::singleline(pw).password(true);
-                            ui.add(edit);
+                            ui.add(edit).request_focus();
                             let button = egui::Button::new(
                                 egui::RichText::new("Connect")
                                     .size(16.0)
@@ -265,7 +381,7 @@ impl SubwindowTrait for Config {
                             .corner_radius(12.0);
 
                             if ui.add(button).clicked() {
-                                common.vsettings.wifi.wifi_state =
+                                common.vsettings.wireless.wifi_state =
                                     uobradio_comms::wireless::WifiConnectStage::Idle;
                             }
                         }
@@ -284,7 +400,7 @@ impl SubwindowTrait for Config {
                             .corner_radius(12.0);
 
                             if ui.add(button).clicked() {
-                                common.vsettings.wifi.wifi_state =
+                                common.vsettings.wireless.wifi_state =
                                     uobradio_comms::wireless::WifiConnectStage::Idle;
                             }
                         }
@@ -325,7 +441,7 @@ impl SubwindowTrait for Config {
                                 if let Some(asdf) = common.available_networks.value() {
                                     for (i, w) in asdf.iter().enumerate() {
                                         if ui.button(format!("Wifi network {i} {}", w.ssid)).clicked() {
-                                            common.vsettings.wifi.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
+                                            common.vsettings.wireless.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
                                         }
                                     }
                                 }
@@ -376,10 +492,10 @@ impl SubwindowTrait for Config {
                         }
                     }
                     if let Some(state) = new_wifi_state {
-                        common.vsettings.wifi.wifi_state = state;
+                        common.vsettings.wireless.wifi_state = state;
                     }
                 }
-                if common.vsettings.wifi.show_keyboard {
+                if common.vsettings.wireless.show_keyboard {
                     egui::TopBottomPanel::bottom("KBD").show(ctx, |ui| {
                         ui.set_min_width(ui.available_width());
                         common.keyboard.show(ui);
@@ -387,6 +503,27 @@ impl SubwindowTrait for Config {
                 }
             });
         });
+            }
+            #[cfg(feature = "bluetooth")]
+            uobradio_comms::wireless::Submenu::Bluetooth => {}
+            #[cfg(feature = "wifi")]
+            uobradio_comms::wireless::Submenu::Wifi => {}
+            #[cfg(feature = "wifi")]
+            uobradio_comms::wireless::Submenu::ShareWifi => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    if let Some(t) = &common.vsettings.wireless.wifi_texture {
+                        let size = ui.available_size();
+                        let isize = t.size()[1];
+                        let zoom = isize as f32 / size.y;
+                        let dsize = t.size_vec2() / zoom;
+                        ui.add(egui::Image::from_texture(egui::load::SizedTexture {
+                            id: t.id(),
+                            size: dsize,
+                        }));
+                    }
+                });
+            }
+        }
         None
     }
 }

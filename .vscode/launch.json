@@ -6,7 +6,7 @@
             "request": "launch",
             "name": "radio_service",
             "cargo": {
-                "args": ["build", "--bin", "radio_service", "--all-features"],
+                "args": ["build", "--bin", "radio_service"],
                 "filter": {
                     "kind": "bin",
                     "name": "radio_service"
@@ -20,7 +20,7 @@
             "request": "launch",
             "name": "radio_gui",
             "cargo": {
-                "args": ["build", "--bin", "radio_gui", "--all-features"],
+                "args": ["build", "--bin", "radio_gui"],
                 "filter": {
                     "kind": "bin",
                     "name": "radio_gui"

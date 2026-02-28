@@ -1105,7 +1105,7 @@ pub struct VolatileSettings {
     pub which_video: u8,
     #[cfg(any(feature = "wifi", feature = "bluetooth"))]
     /// The wifi page settings
-    pub wifi: wireless::Settings,
+    pub wireless: wireless::Settings,
 }
 
 /// Non-volatile settings that should be saved to nonvolatile storage of some kind

@@ -47,6 +47,23 @@ pub enum WifiConnectStage {
     Idle,
 }
 
+/// The submenu for the wireless page
+#[derive(Default, PartialEq)]
+pub enum Submenu {
+    #[default]
+    /// The normal page
+    Normal,
+    #[cfg(feature = "bluetooth")]
+    /// The bluetooth page
+    Bluetooth,
+    #[cfg(feature = "wifi")]
+    /// The wifi page
+    Wifi,
+    #[cfg(feature = "wifi")]
+    /// The share wifi page
+    ShareWifi,
+}
+
 /// The volatile wifi settings
 #[derive(Default)]
 pub struct Settings {
@@ -61,6 +78,8 @@ pub struct Settings {
     pub wifi_state: WifiConnectStage,
     /// Should the on-screen keyboard show
     pub show_keyboard: bool,
+    /// the subment that should be displayed
+    pub submenu: Submenu,
 }
 
 /// The non-volatile wifi settings
