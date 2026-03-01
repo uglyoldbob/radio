@@ -16,7 +16,11 @@ compile_error!("Wifi and bluetooth must be enabled if android-auto is enabled");
 #[cfg(feature = "androidauto")]
 use std::collections::HashSet;
 
-use std::{io::Read, path::PathBuf, sync::Arc};
+use std::{
+    io::{Read, Write},
+    path::PathBuf,
+    sync::Arc,
+};
 
 #[cfg(feature = "androidauto")]
 use android_auto::{
@@ -80,7 +84,18 @@ impl SystemSettings {
             }
         } else {
             log::error!("Config file {:?} not found", p.display());
-            Self::default()
+            let s = Self::default();
+            s.save();
+            s
+        }
+    }
+
+    /// Save the system settings to the current directory
+    pub fn save(&self) {
+        let s = toml::to_string_pretty(self).unwrap();
+        let p = std::path::Path::new("./settings.toml");
+        if let Ok(mut f) = std::fs::File::create_new(p) {
+            f.write_all(s.as_bytes());
         }
     }
 }
