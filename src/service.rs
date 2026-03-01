@@ -303,6 +303,8 @@ pub struct AppUserCommon {
     #[cfg(feature = "swupdate")]
     /// The communication for the swupdate websocket
     swupdate_channel: SwupdateChannelRecv,
+    /// the shutdown sender
+    shutdown_send: tokio::sync::mpsc::UnboundedSender<()>,
 }
 
 async fn receive_message_from_app(
@@ -360,6 +362,11 @@ async fn receive_message_from_app(
             }
         }
         match packet {
+            #[cfg(feature = "test")]
+            uobradio_comms::MessageFromApp::Exit => {
+                let common2 = common.lock().await;
+                return common2.shutdown_send.send(()).map_err(|e| e.to_string());
+            }
             #[cfg(feature = "wifi")]
             uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(ssid) => {
                 let common2 = common.lock().await;
@@ -1367,7 +1374,7 @@ async fn smain() {
             .level_filter(),
     );
 
-    let (_shutdown_send, mut shutdown_recv) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (shutdown_send, mut shutdown_recv) = tokio::sync::mpsc::unbounded_channel::<()>();
 
     let mut vs = Vec::new();
     if let Ok(d) = uobradio_comms::v4l::Device::new(0) {
@@ -1458,6 +1465,7 @@ async fn smain() {
             send: swc2.0,
             recv: swc1.1,
         },
+        shutdown_send,
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(auc));

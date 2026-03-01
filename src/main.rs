@@ -443,7 +443,13 @@ impl MyEguiApp {
 }
 
 impl eframe::App for MyEguiApp {
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {}
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        #[cfg(feature = "test")]
+        let _ = self
+            .common
+            .radio
+            .send_packet(uobradio_comms::MessageFromApp::Exit);
+    }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         self.common.keyboard.bump_events(ctx, raw_input);

@@ -370,6 +370,9 @@ pub enum RadioCommand {
 pub enum MessageFromApp {
     /// A ping message
     Ping(u16),
+    #[cfg(feature = "test")]
+    /// The service should exit
+    Exit,
     /// Request an image from the specified camera
     RequestCamera(u8),
     /// Request the entire btreemap of all cameras

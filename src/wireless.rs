@@ -171,7 +171,7 @@ impl SubwindowTrait for Config {
                 }
                 #[cfg(feature = "bluetooth")]
                 {
-                    let active = ccommon.vsettings.wifi.submenu
+                    let active = common.vsettings.wireless.submenu
                         == uobradio_comms::wireless::Submenu::Bluetooth;
                     let button_color = if active {
                         super::ACCENT_PRIMARY
@@ -241,18 +241,23 @@ impl SubwindowTrait for Config {
                         super::TEXT_SECONDARY
                     };
 
-                    let button = egui::Button::new(
-                        egui::RichText::new(format!("{}\n{}", "S", "Share Wifi"))
-                            .size(16.0)
-                            .color(text_color),
-                    )
-                    .fill(button_color)
-                    .min_size(egui::vec2(70.0, 70.0))
-                    .corner_radius(12.0);
+                    if common.vsettings.wireless.wifi_texture.is_some() {
+                        let button = egui::Button::new(
+                            egui::RichText::new(format!("{}\n{}", "S", "Share Wifi"))
+                                .size(16.0)
+                                .color(text_color),
+                        )
+                        .fill(button_color)
+                        .min_size(egui::vec2(70.0, 70.0))
+                        .corner_radius(12.0);
 
-                    if ui.add(button).clicked() {
+                        if ui.add(button).clicked() {
+                            common.vsettings.wireless.submenu =
+                                uobradio_comms::wireless::Submenu::ShareWifi;
+                        }
+                    } else if active {
                         common.vsettings.wireless.submenu =
-                            uobradio_comms::wireless::Submenu::ShareWifi;
+                            uobradio_comms::wireless::Submenu::Normal;
                     }
                 }
             });
@@ -260,170 +265,100 @@ impl SubwindowTrait for Config {
         match &common.vsettings.wireless.submenu {
             uobradio_comms::wireless::Submenu::Normal => {
                 egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                #[cfg(feature = "bluetooth")]
-                {
-                    ui.label("Future expansion here for bluetooth settings");
-                    if ui.button("Enable discovery").clicked() {
-                        let _ = common
-                            .radio
-                            .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(true));
-                    }
-                    if ui.button("Disable discovery").clicked() {
-                        let _ = common
-                            .radio
-                            .send_packet(uobradio_comms::MessageFromApp::SetBluetoothDiscovery(false));
-                    }
-                }
-                #[cfg(feature = "wifi")]
-                {
-                    ui.label("This is the wifi page".to_string());
-                    let mut save = false;
-                    let mut reconnect = false;
-                    common.known_networks.poll_action(|| {
-                        let _ = common.radio.send_packet(
-                            uobradio_comms::MessageFromApp::ListAllKnownWifiNetworks,
-                        );
-                    });
-                    ui.label("Wifi mode");
-                    {
-                        if ui
-                            .add(egui::SelectableLabel::new(
-                                common.settings.wifi_config.config
-                                    == uobradio_comms::wireless::WifiConfig::Disabled,
-                                "Disabled",
-                            ))
-                            .clicked()
-                        {
-                            save = true;
-                            reconnect = true;
-                            common.settings.wifi_config.config =
-                                uobradio_comms::wireless::WifiConfig::Disabled;
-                        }
-                        if ui
-                            .add(egui::SelectableLabel::new(
-                                common.settings.wifi_config.config
-                                    == uobradio_comms::wireless::WifiConfig::Hotspot,
-                                "Hotspot",
-                            ))
-                            .clicked()
-                        {
-                            save = true;
-                            reconnect = true;
-                            common.settings.wifi_config.config =
-                                uobradio_comms::wireless::WifiConfig::Hotspot;
-                        }
-                        if ui
-                            .add(egui::SelectableLabel::new(
-                                common.settings.wifi_config.config
-                                    == uobradio_comms::wireless::WifiConfig::Ready,
-                                "Regular network",
-                            ))
-                            .clicked()
-                        {
-                            save = true;
-                            reconnect = true;
-                            common.settings.wifi_config.config =
-                                uobradio_comms::wireless::WifiConfig::Ready;
-                        }
-                        if let Some((wn, _wp)) = &common.wifi_details.value() {
-                            ui.label(format!("Connected to wifi network {}", wn));
-                        }
-                    }
-                    common.vsettings.wireless.show_keyboard = false;
-                    let mut new_wifi_state = None;
-                    match &mut common.vsettings.wireless.wifi_state {
-                        uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w, pw) => {
-                            common.vsettings.wireless.show_keyboard = true;
-                            let t = egui::RichText::new("Wifi password...")
-                                .size(16.0)
-                                .color(super::TEXT_SECONDARY);
-                            ui.label(t);
-                            let edit = egui::text_edit::TextEdit::singleline(pw).password(true);
-                            ui.add(edit).request_focus();
-                            let button = egui::Button::new(
-                                egui::RichText::new("Connect")
-                                    .size(16.0)
-                                    .color(super::TEXT_SECONDARY),
-                            )
-                            .fill(super::BG_SECONDARY)
-                            .min_size(egui::vec2(70.0, 70.0))
-                            .corner_radius(12.0);
-
-                            if ui.add(button).clicked() {
-                                new_wifi_state = Some(uobradio_comms::wireless::WifiConnectStage::Connecting);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {});
+                });
+            }
+            #[cfg(feature = "bluetooth")]
+            uobradio_comms::wireless::Submenu::Bluetooth => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            ui.label("Future expansion here for bluetooth settings");
+                            if ui.button("Enable discovery").clicked() {
                                 let _ = common.radio.send_packet(
-                                    uobradio_comms::MessageFromApp::ConnectToNetwork {
-                                        network: w.clone(),
-                                        password: Some(pw.to_string()),
-                                    },
+                                    uobradio_comms::MessageFromApp::SetBluetoothDiscovery(true),
                                 );
                             }
+                            if ui.button("Disable discovery").clicked() {
+                                let _ = common.radio.send_packet(
+                                    uobradio_comms::MessageFromApp::SetBluetoothDiscovery(false),
+                                );
+                            }
+                        });
+                });
+            }
+            #[cfg(feature = "wifi")]
+            uobradio_comms::wireless::Submenu::Wifi => {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
+                        let mut save = false;
+                        let mut reconnect = false;
+                        common.known_networks.poll_action(|| {
+                            let _ = common.radio.send_packet(
+                                uobradio_comms::MessageFromApp::ListAllKnownWifiNetworks,
+                            );
+                        });
+                        ui.label("Wifi mode");
+                        {
+                            if ui
+                                .add(egui::SelectableLabel::new(
+                                    common.settings.wifi_config.config
+                                        == uobradio_comms::wireless::WifiConfig::Disabled,
+                                    "Disabled",
+                                ))
+                                .clicked()
+                            {
+                                save = true;
+                                reconnect = true;
+                                common.settings.wifi_config.config =
+                                    uobradio_comms::wireless::WifiConfig::Disabled;
+                            }
+                            if ui
+                                .add(egui::SelectableLabel::new(
+                                    common.settings.wifi_config.config
+                                        == uobradio_comms::wireless::WifiConfig::Hotspot,
+                                    "Hotspot",
+                                ))
+                                .clicked()
+                            {
+                                save = true;
+                                reconnect = true;
+                                common.settings.wifi_config.config =
+                                    uobradio_comms::wireless::WifiConfig::Hotspot;
+                            }
+                            if ui
+                                .add(egui::SelectableLabel::new(
+                                    common.settings.wifi_config.config
+                                        == uobradio_comms::wireless::WifiConfig::Ready,
+                                    "Regular network",
+                                ))
+                                .clicked()
+                            {
+                                save = true;
+                                reconnect = true;
+                                common.settings.wifi_config.config =
+                                    uobradio_comms::wireless::WifiConfig::Ready;
+                            }
+                            if let Some((wn, _wp)) = &common.wifi_details.value() {
+                                ui.label(format!("Connected to wifi network {}", wn));
+                            }
                         }
-                        uobradio_comms::wireless::WifiConnectStage::Connecting => {
-                            let t = egui::RichText::new("Connecting to wifi network...")
-                                .size(16.0)
-                                .color(super::TEXT_SECONDARY);
-                            ui.label(t);
-                        }
-                        uobradio_comms::wireless::WifiConnectStage::Connected => {
-                            let t = egui::RichText::new("Connected to wifi network...")
-                                .size(16.0)
-                                .color(super::TEXT_SECONDARY);
-                            ui.label(t);
-                            let button = egui::Button::new(
-                                egui::RichText::new("OK")
+                        common.vsettings.wireless.show_keyboard = false;
+                        let mut new_wifi_state = None;
+                        match &mut common.vsettings.wireless.wifi_state {
+                            uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w, pw) => {
+                                common.vsettings.wireless.show_keyboard = true;
+                                let t = egui::RichText::new("Wifi password...")
                                     .size(16.0)
-                                    .color(super::TEXT_SECONDARY),
-                            )
-                            .fill(super::BG_SECONDARY)
-                            .min_size(egui::vec2(70.0, 70.0))
-                            .corner_radius(12.0);
-
-                            if ui.add(button).clicked() {
-                                common.vsettings.wireless.wifi_state =
-                                    uobradio_comms::wireless::WifiConnectStage::Idle;
-                            }
-                        }
-                        uobradio_comms::wireless::WifiConnectStage::FailedConnection => {
-                            let t = egui::RichText::new("Failed to connect to wifi network...")
-                                .size(16.0)
-                                .color(super::TEXT_SECONDARY);
-                            ui.label(t);
-                            let button = egui::Button::new(
-                                egui::RichText::new("OK")
-                                    .size(16.0)
-                                    .color(super::TEXT_SECONDARY),
-                            )
-                            .fill(super::BG_SECONDARY)
-                            .min_size(egui::vec2(70.0, 70.0))
-                            .corner_radius(12.0);
-
-                            if ui.add(button).clicked() {
-                                common.vsettings.wireless.wifi_state =
-                                    uobradio_comms::wireless::WifiConnectStage::Idle;
-                            }
-                        }
-                        uobradio_comms::wireless::WifiConnectStage::Idle => {
-                            ui.label("Saved wifi networks");
-                            if let Some(wifi_nets) = common.known_networks.value() {
-                                for (i, w) in wifi_nets.iter().enumerate() {
-                                    ui.label(format!(" * {}: {}", i, w));
-                                    if ui.button("Forget").clicked() {
-                                        let _ = common.radio.send_packet(
-                                            uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.clone()),
-                                        );
-                                    }
-                                    if ui.button("Connect").clicked() {
-                                        let _ = common.radio.send_packet(
-                                            uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(w.clone()),
-                                        );
-                                    }
-                                }
-                            }
-                            let mut scan = || {
+                                    .color(super::TEXT_SECONDARY);
+                                ui.label(t);
+                                let edit = egui::text_edit::TextEdit::singleline(pw).password(true);
+                                ui.add(edit).request_focus();
                                 let button = egui::Button::new(
-                                    egui::RichText::new("Scan for networks")
+                                    egui::RichText::new("Connect")
                                         .size(16.0)
                                         .color(super::TEXT_SECONDARY),
                                 )
@@ -432,82 +367,158 @@ impl SubwindowTrait for Config {
                                 .corner_radius(12.0);
 
                                 if ui.add(button).clicked() {
-                                    common.available_networks.poll_action(|| {
-                                        let _ = common.radio.send_packet(
-                                            uobradio_comms::MessageFromApp::ScanForWifiNetworks,
-                                        );
-                                    });
+                                    new_wifi_state = Some(uobradio_comms::wireless::WifiConnectStage::Connecting);
+                                    let _ = common.radio.send_packet(
+                                        uobradio_comms::MessageFromApp::ConnectToNetwork {
+                                            network: w.clone(),
+                                            password: Some(pw.to_string()),
+                                        },
+                                    );
                                 }
-                                if let Some(asdf) = common.available_networks.value() {
-                                    for (i, w) in asdf.iter().enumerate() {
-                                        if ui.button(format!("Wifi network {i} {}", w.ssid)).clicked() {
-                                            common.vsettings.wireless.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
+                            }
+                            uobradio_comms::wireless::WifiConnectStage::Connecting => {
+                                let t = egui::RichText::new("Connecting to wifi network...")
+                                    .size(16.0)
+                                    .color(super::TEXT_SECONDARY);
+                                ui.label(t);
+                            }
+                            uobradio_comms::wireless::WifiConnectStage::Connected => {
+                                let t = egui::RichText::new("Connected to wifi network...")
+                                    .size(16.0)
+                                    .color(super::TEXT_SECONDARY);
+                                ui.label(t);
+                                let button = egui::Button::new(
+                                    egui::RichText::new("OK")
+                                        .size(16.0)
+                                        .color(super::TEXT_SECONDARY),
+                                )
+                                .fill(super::BG_SECONDARY)
+                                .min_size(egui::vec2(70.0, 70.0))
+                                .corner_radius(12.0);
+
+                                if ui.add(button).clicked() {
+                                    common.vsettings.wireless.wifi_state =
+                                        uobradio_comms::wireless::WifiConnectStage::Idle;
+                                }
+                            }
+                            uobradio_comms::wireless::WifiConnectStage::FailedConnection => {
+                                let t = egui::RichText::new("Failed to connect to wifi network...")
+                                    .size(16.0)
+                                    .color(super::TEXT_SECONDARY);
+                                ui.label(t);
+                                let button = egui::Button::new(
+                                    egui::RichText::new("OK")
+                                        .size(16.0)
+                                        .color(super::TEXT_SECONDARY),
+                                )
+                                .fill(super::BG_SECONDARY)
+                                .min_size(egui::vec2(70.0, 70.0))
+                                .corner_radius(12.0);
+
+                                if ui.add(button).clicked() {
+                                    common.vsettings.wireless.wifi_state =
+                                        uobradio_comms::wireless::WifiConnectStage::Idle;
+                                }
+                            }
+                            uobradio_comms::wireless::WifiConnectStage::Idle => {
+                                ui.label("Saved wifi networks");
+                                if let Some(wifi_nets) = common.known_networks.value() {
+                                    for (i, w) in wifi_nets.iter().enumerate() {
+                                        ui.label(format!(" * {}: {}", i, w));
+                                        if ui.button("Forget").clicked() {
+                                            let _ = common.radio.send_packet(
+                                                uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.clone()),
+                                            );
+                                        }
+                                        if ui.button("Connect").clicked() {
+                                            let _ = common.radio.send_packet(
+                                                uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(w.clone()),
+                                            );
                                         }
                                     }
                                 }
-                            };
-                            match &common.settings.wifi_config.config {
-                                uobradio_comms::wireless::WifiConfig::RegularNetwork => {
-                                    scan();
+                                let mut scan = || {
+                                    let button = egui::Button::new(
+                                        egui::RichText::new("Scan for networks")
+                                            .size(16.0)
+                                            .color(super::TEXT_SECONDARY),
+                                    )
+                                    .fill(super::BG_SECONDARY)
+                                    .min_size(egui::vec2(70.0, 70.0))
+                                    .corner_radius(12.0);
+
+                                    if ui.add(button).clicked() {
+                                        common.available_networks.poll_action(|| {
+                                            let _ = common.radio.send_packet(
+                                                uobradio_comms::MessageFromApp::ScanForWifiNetworks,
+                                            );
+                                        });
+                                    }
+                                    if let Some(asdf) = common.available_networks.value() {
+                                        for (i, w) in asdf.iter().enumerate() {
+                                            if ui.button(format!("Wifi network {i} {}", w.ssid)).clicked() {
+                                                common.vsettings.wireless.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
+                                            }
+                                        }
+                                    }
+                                };
+                                match &common.settings.wifi_config.config {
+                                    uobradio_comms::wireless::WifiConfig::RegularNetwork => {
+                                        scan();
+                                    }
+                                    uobradio_comms::wireless::WifiConfig::Ready => {
+                                        scan();
+                                    }
+                                    _ => {}
                                 }
-                                uobradio_comms::wireless::WifiConfig::Ready => {
-                                    scan();
-                                }
-                                _ => {}
-                            }
-                            let mut hotspot = common.settings.hotspot_enabled.is_some();
-                            if ui.checkbox(&mut hotspot, "Configure hotspot").changed() {
-                                if hotspot {
-                                    common.settings.hotspot_enabled = Some((
-                                        "UobRadio Hotspot".to_string(),
-                                        "qwertyuiop".to_string(),
-                                    ));
-                                } else {
-                                    common.settings.hotspot_enabled = None;
-                                }
-                                reconnect = true;
-                                save = true;
-                            }
-                            if let Some(hs) = &mut common.settings.hotspot_enabled {
-                                ui.label("Hotspot name");
-                                if ui.text_edit_singleline(&mut hs.0).changed() {
+                                let mut hotspot = common.settings.hotspot_enabled.is_some();
+                                if ui.checkbox(&mut hotspot, "Configure hotspot").changed() {
+                                    if hotspot {
+                                        common.settings.hotspot_enabled = Some((
+                                            "UobRadio Hotspot".to_string(),
+                                            "qwertyuiop".to_string(),
+                                        ));
+                                    } else {
+                                        common.settings.hotspot_enabled = None;
+                                    }
                                     reconnect = true;
                                     save = true;
                                 }
-                                ui.label("Hotspot password");
-                                if ui.text_edit_singleline(&mut hs.1).changed() {
-                                    reconnect = true;
-                                    save = true;
+                                if let Some(hs) = &mut common.settings.hotspot_enabled {
+                                    ui.label("Hotspot name");
+                                    if ui.text_edit_singleline(&mut hs.0).changed() {
+                                        reconnect = true;
+                                        save = true;
+                                    }
+                                    ui.label("Hotspot password");
+                                    if ui.text_edit_singleline(&mut hs.1).changed() {
+                                        reconnect = true;
+                                        save = true;
+                                    }
                                 }
-                            }
-                            if save {
-                                log::info!("Sending new settings: {:?}", common.settings);
-                                let _ = common.radio.send_packet(
-                                    uobradio_comms::MessageFromApp::NewSettings {
-                                        settings: common.settings.clone(),
-                                        wifi_reconnect: reconnect,
-                                    },
-                                );
+                                if save {
+                                    log::info!("Sending new settings: {:?}", common.settings);
+                                    let _ = common.radio.send_packet(
+                                        uobradio_comms::MessageFromApp::NewSettings {
+                                            settings: common.settings.clone(),
+                                            wifi_reconnect: reconnect,
+                                        },
+                                    );
+                                }
                             }
                         }
-                    }
-                    if let Some(state) = new_wifi_state {
-                        common.vsettings.wireless.wifi_state = state;
-                    }
-                }
-                if common.vsettings.wireless.show_keyboard {
-                    egui::TopBottomPanel::bottom("KBD").show(ctx, |ui| {
-                        ui.set_min_width(ui.available_width());
-                        common.keyboard.show(ui);
+                        if let Some(state) = new_wifi_state {
+                            common.vsettings.wireless.wifi_state = state;
+                        }
+                        if common.vsettings.wireless.show_keyboard {
+                            egui::TopBottomPanel::bottom("KBD").show(ctx, |ui| {
+                                ui.set_min_width(ui.available_width());
+                                common.keyboard.show(ui);
+                            });
+                        }
                     });
-                }
-            });
-        });
+                });
             }
-            #[cfg(feature = "bluetooth")]
-            uobradio_comms::wireless::Submenu::Bluetooth => {}
-            #[cfg(feature = "wifi")]
-            uobradio_comms::wireless::Submenu::Wifi => {}
             #[cfg(feature = "wifi")]
             uobradio_comms::wireless::Submenu::ShareWifi => {
                 egui::CentralPanel::default().show(ctx, |ui| {
