@@ -1117,12 +1117,6 @@ pub struct NonvolatileSettings {
     /// The hvac settings
     pub hvac: hvac::Settings,
     #[cfg(feature = "wifi")]
-    /// Optional wifi name and password for wifi hotspot
-    pub hotspot_enabled: Option<(String, String)>,
-    #[cfg(feature = "wifi")]
-    /// List of wifi names and passwords for regular wifi networks, in order of connection priority
-    pub wifi_network: Vec<(String, String)>,
-    #[cfg(feature = "wifi")]
     /// The wifi configuration
     pub wifi_config: wireless::NvSettings,
 }
@@ -1134,7 +1128,7 @@ impl NonvolatileSettings {
         let f = if let Some(p) = path_override {
             std::fs::File::create(p)
         } else {
-            std::fs::File::create("./settings.toml")
+            std::fs::File::create("./service-settings.toml")
         };
         if let Ok(mut f) = f {
             let _ = f.write_all(d.as_bytes());
@@ -1146,7 +1140,7 @@ impl NonvolatileSettings {
         let f = if let Some(p) = path_override {
             std::fs::File::open(p)
         } else {
-            std::fs::File::open("./settings.toml")
+            std::fs::File::open("./service-settings.toml")
         };
         match f {
             Ok(mut f) => {
@@ -1171,7 +1165,9 @@ impl NonvolatileSettings {
             }
             Err(e) => {
                 log::error!("Nonvolatile settings error {e}");
-                Self::default()
+                let a = Self::default();
+                a.save(path_override);
+                a
             }
         }
     }

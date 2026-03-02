@@ -83,9 +83,28 @@ pub struct Settings {
 }
 
 /// The non-volatile wifi settings
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct NvSettings {
     #[cfg(feature = "wifi")]
     /// The wifi configuration that is currently active
     pub config: WifiConfig,
+    #[cfg(feature = "wifi")]
+    /// Wifi name and password for wifi hotspot
+    pub hotspot_configuration: (String, String),
+    #[cfg(feature = "wifi")]
+    /// List of wifi names and passwords for regular wifi networks, in order of connection priority
+    pub wifi_network: Vec<(String, String)>,
+}
+
+impl Default for NvSettings {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "wifi")]
+            hotspot_configuration: ("Hotspot".to_string(), "qwertyuiop".to_string()),
+            #[cfg(feature = "wifi")]
+            config: WifiConfig::Ready,
+            #[cfg(feature = "wifi")]
+            wifi_network: Vec::new(),
+        }
+    }
 }

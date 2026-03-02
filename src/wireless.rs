@@ -471,27 +471,14 @@ impl SubwindowTrait for Config {
                                     }
                                     _ => {}
                                 }
-                                let mut hotspot = common.settings.hotspot_enabled.is_some();
-                                if ui.checkbox(&mut hotspot, "Configure hotspot").changed() {
-                                    if hotspot {
-                                        common.settings.hotspot_enabled = Some((
-                                            "UobRadio Hotspot".to_string(),
-                                            "qwertyuiop".to_string(),
-                                        ));
-                                    } else {
-                                        common.settings.hotspot_enabled = None;
-                                    }
-                                    reconnect = true;
-                                    save = true;
-                                }
-                                if let Some(hs) = &mut common.settings.hotspot_enabled {
+                                {
                                     ui.label("Hotspot name");
-                                    if ui.text_edit_singleline(&mut hs.0).changed() {
+                                    if ui.text_edit_singleline(&mut common.settings.wifi_config.hotspot_configuration.0).changed() {
                                         reconnect = true;
                                         save = true;
                                     }
                                     ui.label("Hotspot password");
-                                    if ui.text_edit_singleline(&mut hs.1).changed() {
+                                    if ui.text_edit_singleline(&mut common.settings.wifi_config.hotspot_configuration.1).changed() {
                                         reconnect = true;
                                         save = true;
                                     }

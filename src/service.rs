@@ -758,9 +758,11 @@ async fn receive_message_from_app(
                 #[cfg(feature = "wifi")]
                 {
                     let mut wifi_changed = false;
-                    if common2.old_settings.hotspot_enabled != common2.settings.hotspot_enabled {
-                        common2.old_settings.hotspot_enabled =
-                            common2.settings.hotspot_enabled.clone();
+                    if common2.old_settings.wifi_config.hotspot_configuration
+                        != common2.settings.wifi_config.hotspot_configuration
+                    {
+                        common2.old_settings.wifi_config.hotspot_configuration =
+                            common2.settings.wifi_config.hotspot_configuration.clone();
                         wifi_changed = true;
                     }
                     if common2.old_settings.wifi_config != common2.settings.wifi_config {
@@ -1327,28 +1329,34 @@ async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
                 .await;
         }
     }
+    if matches!(common2.settings.wifi_config.config, WifiConfig::Hotspot) {
+        if let Some(wd) = &common2.wifi_device {
+            let wifi_dev_path = wd.path.clone();
+            if nmrs_extensions::start_hotspot(
+                common2.settings.wifi_config.hotspot_configuration.0.clone(),
+                common2.settings.wifi_config.hotspot_configuration.1.clone(),
+                &wifi_dev_path,
+            )
+            .await
+            .is_ok()
+            {
+                common2.wifi_setup = Some(uobradio_comms::wireless::WifiMode::Hotspot {
+                    ssid: common2.settings.wifi_config.hotspot_configuration.0.clone(),
+                    password: Some(common2.settings.wifi_config.hotspot_configuration.1.clone()),
+                });
+            }
+        }
+    } else {
+        if let Some(nm) = &common2.wifi {
+            nm.forget(&common2.settings.wifi_config.hotspot_configuration.0)
+                .await;
+        }
+    }
     match &common2.settings.wifi_config.config {
         WifiConfig::Ready => {
             common2.wifi_setup = Some(uobradio_comms::wireless::WifiMode::RegularNetwork);
         }
-        WifiConfig::Hotspot => {
-            let hotspot = common2.settings.hotspot_enabled.clone();
-            if let Some((n, p)) = hotspot {
-                common2.wifi_setup.take();
-                if let Some(wd) = &common2.wifi_device {
-                    let wifi_dev_path = wd.path.clone();
-                    if nmrs_extensions::start_hotspot(n.clone(), p.clone(), &wifi_dev_path)
-                        .await
-                        .is_ok()
-                    {
-                        common2.wifi_setup = Some(uobradio_comms::wireless::WifiMode::Hotspot {
-                            ssid: n,
-                            password: Some(p),
-                        });
-                    }
-                }
-            }
-        }
+        WifiConfig::Hotspot => {}
         WifiConfig::RegularNetwork => {
             common2.wifi_setup = Some(uobradio_comms::wireless::WifiMode::RegularNetwork);
         }
@@ -1411,7 +1419,7 @@ async fn smain() {
 
     #[cfg(all(feature = "wifi", feature = "androidauto"))]
     let mut network = {
-        s.hotspot_enabled
+        s.hotspot_configuration
             .as_ref()
             .map(|a| android_auto::NetworkInformation {
                 ssid: a.0.clone(),
