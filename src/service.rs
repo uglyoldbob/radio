@@ -536,33 +536,31 @@ async fn receive_message_from_app(
             uobradio_comms::MessageFromApp::GetWifiDetails => {
                 let common2 = common.lock().await;
                 service::log::info!("Wifi mode is {:?}", common2.wifi_setup);
+                let mut packet = None;
                 if let Some(wifi) = &common2.wifi_setup {
                     match wifi {
                         uobradio_comms::wireless::WifiMode::Hotspot { ssid, password } => {
-                            let packet = uobradio_comms::MessageToApp::WifiDetails {
+                            packet = Some(uobradio_comms::MessageToApp::WifiDetails {
                                 ssid: ssid.clone(),
                                 password: password.clone(),
-                            };
-                            packet.send_to_stream(&streamw).await?;
+                            });
                         }
                         uobradio_comms::wireless::WifiMode::RegularNetwork => {
                             if let Some(nm) = &common2.wifi {
                                 let n = nm.current_network().await;
                                 service::log::info!("Network is {:?}", n);
                                 if let Ok(Some(net)) = n {
-                                    let packet = uobradio_comms::MessageToApp::WifiDetails {
+                                    packet = Some(uobradio_comms::MessageToApp::WifiDetails {
                                         ssid: net.ssid,
                                         password: None,
-                                    };
-                                    packet.send_to_stream(&streamw).await?;
+                                    });
                                 }
                             }
                         }
                     }
-                } else {
-                    let packet = uobradio_comms::MessageToApp::NoCurrentWifiNetwork;
-                    packet.send_to_stream(&streamw).await?;
                 }
+                let packet = packet.unwrap_or(uobradio_comms::MessageToApp::NoCurrentWifiNetwork);
+                packet.send_to_stream(&streamw).await?;
             }
             #[cfg(feature = "wifi")]
             uobradio_comms::MessageFromApp::ConnectToNetwork { network, password } => {
@@ -1348,7 +1346,8 @@ async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
         }
     } else {
         if let Some(nm) = &common2.wifi {
-            nm.forget(&common2.settings.wifi_config.hotspot_configuration.0)
+            let _ = nm
+                .forget(&common2.settings.wifi_config.hotspot_configuration.0)
                 .await;
         }
     }
@@ -1419,17 +1418,15 @@ async fn smain() {
 
     #[cfg(all(feature = "wifi", feature = "androidauto"))]
     let mut network = {
-        s.hotspot_configuration
-            .as_ref()
-            .map(|a| android_auto::NetworkInformation {
-                ssid: a.0.clone(),
-                psk: a.1.clone(),
-                mac_addr: String::new(), //to be populated later
-                ip: "10.42.0.1".to_string(),
-                port: 5277,
-                security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
-                ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
-            })
+        android_auto::NetworkInformation {
+            ssid: s.wifi_config.hotspot_configuration.0.clone(),
+            psk: s.wifi_config.hotspot_configuration.1.clone(),
+            mac_addr: String::new(), //to be populated later
+            ip: "10.42.0.1".to_string(),
+            port: 5277,
+            security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
+            ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
+        }
     };
 
     #[cfg(feature = "wifi")]
@@ -1438,8 +1435,8 @@ async fn smain() {
     if let Some(wifi) = &wifi {
         if let Some(dev) = get_wifi_interface(wifi).await {
             #[cfg(feature = "androidauto")]
-            if let Some(ni) = &mut network {
-                ni.mac_addr = dev.identity.current_mac.clone();
+            {
+                network.mac_addr = dev.identity.current_mac.clone();
             }
             wifi_device = Some(dev);
         }
@@ -1468,7 +1465,7 @@ async fn smain() {
         #[cfg(feature = "androidauto")]
         aauto_service: None,
         #[cfg(feature = "androidauto")]
-        aa_network: network,
+        aa_network: Some(network),
         system: sys,
         #[cfg(feature = "wifi")]
         wifi_setup: None,
