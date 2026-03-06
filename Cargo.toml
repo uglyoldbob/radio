@@ -52,9 +52,13 @@ name = "radio_gui"
 path = "src/main.rs"
 
 [features]
-default = ["wifi", "bluetooth"]
-wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi"]
+default = ["wifi", "bluetooth", "androidauto"]
+wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi", "android-auto?/wireless"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]
 androidauto = ["dep:android-auto", "uobradio-comms/androidauto"]
 swupdate = ["dep:swupdate-ipc"]
 test = ["uobradio-comms/test"]
+
+#this patch is needed for the v1 certificate in the android-auto crate of src/cert.rs
+[patch.crates-io]
+rustls-webpki = { git = "https://github.com/uglyoldbob/webpki", branch = "main5" }
