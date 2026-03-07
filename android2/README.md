@@ -1,5 +1,32 @@
-# egui
+# egui Android Demo
 
-This is an example based on [agdk-egui example](https://github.com/rust-mobile/rust-android-examples), using `egui`, `winit` and `wgpu` to run [egui_demo_app](https://github.com/emilk/egui/tree/master/egui_demo_app).
+Built using [`xbuild`](https://github.com/uglyoldbob/xbuild)
 
-To run this on desktop, just do `cargo run` like normal! For mobile, use `cargo android run` and `cargo apple run` respectively (or use `cargo android open` and `cargo apple open` to open in Android Studio and Xcode respectively).
+## Dependencies
+
+`xbuild` requires additional tools that cannot be automatically installed
+with `cargo install xbuild`. Consider installing with a system package
+manager instead.  For instance, `pacman -Si xbuild` for Arch Linux.
+
+You can use `x doctor` to check which tools are detected by `xbuild`.
+Not all are required to build this project, but at least `lld` and
+`llvm-readobj` is needed. 
+
+Please check on how to install these tools with your preferred
+distribution's documentation.
+
+
+## Building
+
+    x build --arch arm64 --platform android
+
+## Running
+
+    x run --device <DEVICE>
+
+### Example
+
+    $ x devices
+    host                                              Linux               linux x64           Arch Linux 6.6.2-arch1-1
+    adb:d535946                                       OnePlus5T           android arm64       Android 10 (API 29)
+    $ x run --device adb:d535946 

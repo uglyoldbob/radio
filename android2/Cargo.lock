@@ -690,9 +690,13 @@ dependencies = [
 
 [[package]]
 name = "bluetooth-rust"
-version = "0.1.0"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2020b2ccb7c7e07966332acaf6d314b0ccccd7a933341370d4ce2626f43475db"
 dependencies = [
+ "async-trait",
  "bluer",
+ "enum_dispatch",
  "futures",
  "jni",
  "jni-min-helper",
@@ -1300,6 +1304,18 @@ name = "endi"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a3d8a32ae18130a3c84dd492d4215c3d913c3b07c6b63c2eb3eb7ff1101ab7bf"
+
+[[package]]
+name = "enum_dispatch"
+version = "0.3.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa18ce2bc66555b3218614519ac839ddb759a7d6720732f979ef8d13be147ecd"
+dependencies = [
+ "once_cell",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "enumflags2"
@@ -4093,6 +4109,7 @@ dependencies = [
  "log",
  "serde",
  "tokio",
+ "toml",
  "v4l",
 ]
 

@@ -14,6 +14,8 @@ use bluetooth_rust::Java;
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
+use bluetooth_rust::SyncBluetoothAdapterTrait;
+
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize)]
 struct AppConfig {
     asdf: bool,
@@ -44,7 +46,7 @@ pub struct UobRadioMainWindow {
     nvsettings: uobradio_comms::NonvolatileSettings,
     _java: Arc<Mutex<Java>>,
     bluetooth: bluetooth_rust::BluetoothAdapter,
-    known_uuids: BTreeMap<String, Vec<bluetooth_rust::Uuid>>,
+    known_uuids: BTreeMap<String, Vec<bluetooth_rust::BluetoothUuid>>,
     bluetooth_devs: BTreeMap<String, BluetoothConfig>,
     radios: uobradio_comms::UobRadios,
     texture: Option<egui::TextureHandle>,
@@ -94,6 +96,12 @@ impl eframe::App for UobRadioMainWindow {
         for (address, radio) in self.radios.iter_mut() {
             if radio
                 .process_received(|packet| match packet {
+                    uobradio_comms::MessageToApp::Ac(_) => {}
+                    uobradio_comms::MessageToApp::ListOfServerUpdateFiles { files } => {}
+                    uobradio_comms::MessageToApp::ServerFileDownloadComplete(_) => {}
+                    uobradio_comms::MessageToApp::ServerFileDownloadProgress(_) => {}
+                    uobradio_comms::MessageToApp::UpdateProgress(_, _) => {}
+                    uobradio_comms::MessageToApp::NoUpdateInProgress => {}
                     uobradio_comms::MessageToApp::NewSettings(s) => {
                         self.nvsettings = s.clone();
                     }
@@ -181,60 +189,60 @@ impl eframe::App for UobRadioMainWindow {
                         },
                     }));
                 }
-                for mut d in self.bluetooth.get_paired_devices().unwrap() {
-                    d.run_sdp();
-                    let uuids = d.get_uuids();
-                    if let Ok(uuids) = uuids {
-                        if true {
-                            let address = d.get_address().unwrap();
-                            if !self.bluetooth_devs.contains_key(&address) {
-                                self.bluetooth_devs
-                                    .insert(address.clone(), BluetoothConfig::new());
-                            }
-                            if let Some(config) = self.bluetooth_devs.get_mut(&address) {
-                                ui.label(format!("Config is {:?}", config));
-                                if ui
-                                    .add(egui::Button::new("Connect").min_size(min_size))
-                                    .clicked()
-                                {
-                                    config.connect_nap = true;
+                use bluetooth_rust::BluetoothAdapterTrait;
+                if let Some(b) = self.bluetooth.supports_sync() {
+                    use bluetooth_rust::BluetoothDeviceTrait;
+                    for mut d in b.get_paired_devices().unwrap() {
+                        d.run_sdp();
+                        let uuids = d.get_uuids();
+                        if let Ok(uuids) = uuids {
+                            if true {
+                                let address = d.get_address().unwrap();
+                                if !self.bluetooth_devs.contains_key(&address) {
+                                    self.bluetooth_devs
+                                        .insert(address.clone(), BluetoothConfig::new());
                                 }
-                                if config.connect_nap {
-                                    self.bluetooth.cancel_discovery();
-                                    log::warn!("About to connect");
-                                    let socket = d.get_rfcomm_socket(
-                                        bluetooth_rust::Uuid::NetworkingNap,
-                                        true,
-                                    );
-                                    if let Some(mut socket) = socket {
-                                        if socket.connect().is_ok() {
-                                            ui.label("Connection is ok");
-                                            config.connect_nap = false;
-                                        } else {
-                                            ctx.request_repaint_after(
-                                                std::time::Duration::from_millis(100),
-                                            );
+                                if let Some(config) = self.bluetooth_devs.get_mut(&address) {
+                                    ui.label(format!("Config is {:?}", config));
+                                    if ui
+                                        .add(egui::Button::new("Connect").min_size(min_size))
+                                        .clicked()
+                                    {
+                                        config.connect_nap = true;
+                                    }
+                                    if config.connect_nap {
+                                        log::warn!("About to connect");
+                                        let socket = d.get_rfcomm_socket(
+                                            bluetooth_rust::BluetoothUuid::NetworkingNap,
+                                            true,
+                                        );
+                                        if let Ok(mut socket) = socket {
+                                            use bluetooth_rust::BluetoothSocketTrait;
+                                            if socket.connect().is_ok() {
+                                                ui.label("Connection is ok");
+                                                config.connect_nap = false;
+                                            } else {
+                                                ctx.request_repaint_after(
+                                                    std::time::Duration::from_millis(100),
+                                                );
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            ui.label(format!(
-                                "bluetooth device: {:?} {:?}",
-                                d.get_name(),
-                                d.get_bond_state()
-                            ));
-                            if let Some(uuids) = self.known_uuids.get(&address) {
-                                for uuid in uuids {
-                                    ui.label(format!("UUID: {:?}", uuid));
+                                ui.label(format!("bluetooth device: {:?}", d.get_name()));
+                                if let Some(uuids) = self.known_uuids.get(&address) {
+                                    for uuid in uuids {
+                                        ui.label(format!("UUID: {:?}", uuid));
+                                    }
                                 }
-                            }
-                            if ui
-                                .add(egui::Button::new("UUIDS").min_size(min_size))
-                                .clicked()
-                            {
-                                let uuids = d.get_uuids();
-                                if let Ok(uuids) = uuids {
-                                    self.known_uuids.insert(address.clone(), uuids);
+                                if ui
+                                    .add(egui::Button::new("UUIDS").min_size(min_size))
+                                    .clicked()
+                                {
+                                    let uuids = d.get_uuids();
+                                    if let Ok(uuids) = uuids {
+                                        self.known_uuids.insert(address.clone(), uuids);
+                                    }
                                 }
                             }
                         }
@@ -287,12 +295,14 @@ impl UobRadioMainWindow {
 
     fn new(_cc: &eframe::CreationContext<'_>, options: NativeOptions, app: AndroidApp) -> Self {
         let java = Java::make(app.clone());
+        let mut bab = bluetooth_rust::BluetoothAdapterBuilder::new();
+        bab.with_android_app(app);
         let mut s = Self {
             local_storage: options.android_app.unwrap().internal_data_path(),
             settings: Err(AppConfigError::NotLoaded),
             nvsettings: uobradio_comms::NonvolatileSettings::default(),
             _java: Arc::new(Mutex::new(java)),
-            bluetooth: bluetooth_rust::BluetoothAdapter::new(app),
+            bluetooth: bab.build().expect("Failed to get bluetooth adapter"),
             known_uuids: BTreeMap::new(),
             bluetooth_devs: BTreeMap::new(),
             radios: uobradio_comms::UobRadios::new(),

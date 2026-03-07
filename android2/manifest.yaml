@@ -1,0 +1,15 @@
+android:
+  gradle: false
+  manifest:
+    package: "com.uglyoldbob.RustRadio"
+    uses_permission: [
+      { name: android.permission.BLUETOOTH, max_sdk_version: 30 },
+      { name: android.permission.BLUETOOTH_ADMIN, max_sdk_version: 30 },
+      name: android.permission.BLUETOOTH_SCAN,
+      name: android.permission.INTERNET,
+      name: android.permission.BLUETOOTH_CONNECT,
+    ]
+    uses_feature: [
+        { name: android.hardware.camera, required: false },
+        { name: android.hardware.bluetooth, required: true }
+    ]

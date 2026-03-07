@@ -19,7 +19,7 @@ app-theme-parent = "Theme.MaterialComponents.DayNight.DarkActionBar"
 [dependencies]
 android-properties = "0.2"
 bincode = {version = "2.0.1", features = ["serde"]}
-bluetooth-rust = { path="../bluetooth"}
+bluetooth-rust = { version = "0.3.2"}
 egui = "0.31.1"
 eframe = { version = "0.31.1", features = [ "wgpu" ] }
 image = { version = "0.25.2", features = ["jpeg", "png"] } # Add the types you want support for
