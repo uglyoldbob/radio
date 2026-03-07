@@ -542,7 +542,7 @@ pub enum MessageToApp {
     /// The list of files on the remote update server
     ListOfServerUpdateFiles {
         /// The files
-        files: Vec<String>,
+        files: Result<Vec<String>, String>,
     },
     /// The requested file download successfully completed?
     ServerFileDownloadComplete(bool),

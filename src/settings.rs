@@ -293,23 +293,30 @@ impl SubwindowTrait for Settings {
                                         ),
                                     );
                                 }
-                                for f in &common.vsettings.settings.list {
-                                    let button = egui::Button::new(
-                                        egui::RichText::new(f)
-                                            .size(16.0)
-                                            .color(super::TEXT_SECONDARY),
-                                    )
-                                    .fill(super::BG_SECONDARY)
-                                    .min_size(egui::vec2(70.0, 70.0))
-                                    .corner_radius(12.0);
+                                match &common.vsettings.settings.list {
+                                    Ok(list) => {
+                                        for f in  list {
+                                            let button = egui::Button::new(
+                                                egui::RichText::new(f)
+                                                    .size(16.0)
+                                                    .color(super::TEXT_SECONDARY),
+                                            )
+                                            .fill(super::BG_SECONDARY)
+                                            .min_size(egui::vec2(70.0, 70.0))
+                                            .corner_radius(12.0);
 
-                                    if ui.add(button).clicked() {
-                                        common.vsettings.settings.download_status =
-                                            uobradio_comms::settings::UpdateStatus::DownloadStarted;
-                                        let url = format!("{update_url}/{f}");
-                                        let _ = common.radio.send_packet(
-                                            uobradio_comms::MessageFromApp::DownloadServerFile(url),
-                                        );
+                                            if ui.add(button).clicked() {
+                                                common.vsettings.settings.download_status =
+                                                    uobradio_comms::settings::UpdateStatus::DownloadStarted;
+                                                let url = format!("{update_url}/{f}");
+                                                let _ = common.radio.send_packet(
+                                                    uobradio_comms::MessageFromApp::DownloadServerFile(url),
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        ui.label(&format!("Failed to get update list: {}", e));
                                     }
                                 }
                             }

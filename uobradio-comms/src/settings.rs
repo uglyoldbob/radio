@@ -31,16 +31,27 @@ pub enum UpdateStatus {
 }
 
 /// The settings for the settings page
-#[derive(Default)]
 pub struct Settings {
     /// The video stream selected
     pub selected_video: u8,
     /// The currently selected subtab
     pub tab: Subsetting,
     /// The list of files on the update server
-    pub list: Vec<String>,
+    pub list: Result<Vec<String>, String>,
     /// The status of the download
     pub download_status: UpdateStatus,
     /// update progress pending a reply
     pub update_status_pending: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            selected_video: 0,
+            tab: Subsetting::General,
+            list: Ok(Vec::new()),
+            download_status: UpdateStatus::Idle,
+            update_status_pending: false,
+        }
+    }
 }

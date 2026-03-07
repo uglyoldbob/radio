@@ -481,16 +481,26 @@ async fn receive_message_from_app(
             }
             uobradio_comms::MessageFromApp::DownloadServerFileList(url) => {
                 let files = reqwest::get(url).await;
-                let mut files_out = Vec::new();
-                if let Ok(r) = files {
-                    if let Ok(list) = r.text().await {
-                        for file in list.lines() {
-                            files_out.push(file.to_string());
+                match files {
+                    Ok(r) => {
+                        let mut files_out = Vec::new();
+                        if let Ok(list) = r.text().await {
+                            for file in list.lines() {
+                                files_out.push(file.to_string());
+                            }
                         }
+                        let packet = MessageToApp::ListOfServerUpdateFiles {
+                            files: Ok(files_out),
+                        };
+                        packet.send_to_stream(&streamw).await?;
+                    }
+                    Err(e) => {
+                        let packet = MessageToApp::ListOfServerUpdateFiles {
+                            files: Err(e.to_string()),
+                        };
+                        packet.send_to_stream(&streamw).await?;
                     }
                 }
-                let packet = MessageToApp::ListOfServerUpdateFiles { files: files_out };
-                packet.send_to_stream(&streamw).await?;
             }
             uobradio_comms::MessageFromApp::Hvac(c) => {
                 let mut common2 = common.lock().await;
@@ -714,14 +724,13 @@ async fn receive_message_from_app(
             #[cfg(feature = "bluetooth")]
             uobradio_comms::MessageFromApp::SetBluetoothDiscovery(val) => {
                 let common2 = common.lock().await;
-                if Some(addr) == common2.blue_addr {
-                    if common2.bluetooth.set_discoverable(val).await.is_ok() {
-                        let a = uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val);
-                        let packet = uobradio_comms::MessageToApp::BluetoothMessage(a);
-                        packet.send_to_stream(&streamw).await?;
-                    } else {
-                        log::error!("Failed to change bluetooth discoverable to {}", val);
-                    }
+                if common2.bluetooth.set_discoverable(val).await.is_ok() {
+                    let a = uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val);
+                    let packet = uobradio_comms::MessageToApp::BluetoothMessage(a);
+                    packet.send_to_stream(&streamw).await?;
+                    log::info!("Set bluetooth discoverable success");
+                } else {
+                    log::error!("Failed to change bluetooth discoverable to {}", val);
                 }
             }
             #[cfg(feature = "bluetooth")]
@@ -1397,16 +1406,15 @@ async fn smain() {
     let wifi = nmrs::NetworkManager::new().await.ok();
 
     #[cfg(all(feature = "wifi", feature = "androidauto"))]
-    let mut network =
-        android_auto::NetworkInformation {
-            ssid: s.wifi_config.hotspot_configuration.0.clone(),
-            psk: s.wifi_config.hotspot_configuration.1.clone(),
-            mac_addr: String::new(), //to be populated later
-            ip: "10.42.0.1".to_string(),
-            port: 5277,
-            security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
-            ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
-        };
+    let mut network = android_auto::NetworkInformation {
+        ssid: s.wifi_config.hotspot_configuration.0.clone(),
+        psk: s.wifi_config.hotspot_configuration.1.clone(),
+        mac_addr: String::new(), //to be populated later
+        ip: "10.42.0.1".to_string(),
+        port: 5277,
+        security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
+        ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
+    };
 
     #[cfg(feature = "wifi")]
     let mut wifi_device = None;
@@ -1517,7 +1525,7 @@ service::ServiceAsyncMacro!(service_starter, smain, u64);
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<(), u32> {
     let service = service::Service::new("uobradio".to_string());
-    service.new_log(service::LogLevel::Debug);
+    service.new_log(service::LogLevel::Info);
     if let Err(e) = service::DispatchAsync!(service, service_starter) {
         Err(e)
     } else {
