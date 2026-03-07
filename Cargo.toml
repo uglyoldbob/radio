@@ -61,4 +61,4 @@ test = ["uobradio-comms/test"]
 
 #this patch is needed for the v1 certificate in the android-auto crate of src/cert.rs
 [patch.crates-io]
-rustls-webpki = { git = "https://github.com/uglyoldbob/webpki", branch = "main5" }
+rustls-webpki = { path = "./webpki" }

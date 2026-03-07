@@ -1551,7 +1551,7 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab8ecd87370524b461f8557c119c405552c396ed91fc0a8eec68679eab26f94a"
 dependencies = [
- "libloading 0.8.9",
+ "libloading 0.7.4",
 ]
 
 [[package]]
@@ -4868,7 +4868,6 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 [[package]]
 name = "rustls-webpki"
 version = "0.103.9"
-source = "git+https://github.com/uglyoldbob/webpki?branch=main5#94030fb9fbebf9a2fe53167d53624f4f2a6dd704"
 dependencies = [
  "aws-lc-rs",
  "log",
