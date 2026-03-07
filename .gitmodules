@@ -4,6 +4,3 @@
 [submodule "service"]
 	path = service
 	url = https://github.com/uglyoldbob/service.git
-[submodule "android-auto"]
-	path = android-auto
-	url = https://github.com/uglyoldbob/android-auto.git
