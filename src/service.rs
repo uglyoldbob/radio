@@ -171,9 +171,7 @@ impl AndroidAutoService {
         );
         tokio::spawn(async move {
             let mut joinset = tokio::task::JoinSet::new();
-            let _ = android_auto_server
-            .run(config, &mut joinset, main)
-            .await;
+            let _ = android_auto_server.run(config, &mut joinset, main).await;
             joinset.abort_all();
         });
         Ok(Self {
@@ -1146,9 +1144,7 @@ impl android_auto::AndroidAutoAudioInputTrait for AndroidAutoStuff {
     async fn open_input_channel(&self) -> Result<(), ()> {
         Ok(())
     }
-    async fn audio_input_ack(&self, chan: u8, ack: android_auto::Wifi::AVMediaAckIndication) {
-
-    }
+    async fn audio_input_ack(&self, chan: u8, ack: android_auto::Wifi::AVMediaAckIndication) {}
 
     async fn close_input_channel(&self) -> Result<(), ()> {
         Ok(())
@@ -1403,14 +1399,14 @@ async fn smain() {
 
     #[cfg(all(feature = "wifi", feature = "androidauto"))]
     let mut network = android_auto::NetworkInformation {
-                ssid: s.wifi_config.hotspot_configuration.0.clone(),
-                psk: s.wifi_config.hotspot_configuration.1.clone(),
-                mac_addr: String::new(), //to be populated later
-                ip: "10.42.0.1".to_string(),
-                port: 5277,
-                security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
-                ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
-            };
+        ssid: s.wifi_config.hotspot_configuration.0.clone(),
+        psk: s.wifi_config.hotspot_configuration.1.clone(),
+        mac_addr: String::new(), //to be populated later
+        ip: "10.42.0.1".to_string(),
+        port: 5277,
+        security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
+        ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
+    };
 
     #[cfg(feature = "wifi")]
     let mut wifi_device = None;
