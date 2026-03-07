@@ -213,10 +213,13 @@ dependencies = [
 [[package]]
 name = "android-auto"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17dbbfa5c8221807485a30fbc5671e6c9c1c6023325fc8c1bf768062b097516f"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
  "bitfield",
+ "bluetooth-rust",
  "enum_dispatch",
  "futures",
  "log",
@@ -4865,10 +4868,10 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 [[package]]
 name = "rustls-webpki"
 version = "0.103.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7df23109aa6c1567d1c575b9952556388da57401e4ace1d15f79eedad0d8f53"
+source = "git+https://github.com/uglyoldbob/webpki?branch=main5#94030fb9fbebf9a2fe53167d53624f4f2a6dd704"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "ring",
  "rustls-pki-types",
  "untrusted 0.9.0",

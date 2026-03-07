@@ -64,12 +64,89 @@ impl SubwindowTrait for MainPage {
         &mut self,
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
-        _common: &mut CommonWindowProperties,
+        common: &mut CommonWindowProperties,
     ) -> Option<Subwindow> {
         let r = None;
         egui::CentralPanel::default().show(ctx, |ui| {
             let min_size = CommonWindowProperties::min_size(ui);
-            ui.label(format!("Size 1: {}", ui.pixels_per_point()));
+
+            #[cfg(feature = "androidauto")]
+            {
+                if common.radio.android_auto_frontend() {
+                    let size = ui.available_size();
+                    if let Some(t) = &common.android_auto_texture {
+                        let isize = t.size();
+                        let zoom = isize[1] as f32 / size.y;
+                        let zoom2 = isize[0] as f32 / size.x;
+                        let zoom = zoom.max(zoom2);
+                        let dsize = t.size_vec2() / zoom;
+                        let p = ui.cursor();
+                        let r = ui.add(
+                            egui::Image::from_texture(egui::load::SizedTexture {
+                                id: t.id(),
+                                size: dsize,
+                            })
+                            .sense(egui::Sense::drag()),
+                        );
+                        let o = if let Some(mut o) = r.interact_pointer_pos() {
+                            o.x -= p.left();
+                            o.y -= p.top();
+                            o.x *= zoom;
+                            o.y *= zoom;
+                            Some(o)
+                        } else if let Some(mut o) = r.hover_pos() {
+                            o.x -= p.left();
+                            o.y -= p.top();
+                            o.x *= zoom;
+                            o.y *= zoom;
+                            Some(o)
+                        } else {
+                            None
+                        };
+                        if let Some(o) = o {
+                            let mut i_event = android_auto::Wifi::InputEventIndication::new();
+                            let timestamp: u64 = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_micros()
+                                as u64;
+                            i_event.set_timestamp(timestamp);
+                            let mut te = android_auto::Wifi::TouchEvent::new();
+                            let mut tl = android_auto::Wifi::TouchLocation::new();
+                            tl.set_x(o.x as u32);
+                            tl.set_y(o.y as u32);
+                            tl.set_pointer_id(0);
+                            te.touch_location = vec![tl];
+                            let mut do_touch = true;
+                            if r.drag_started() {
+                                te.set_touch_action(android_auto::Wifi::touch_action::Enum::PRESS);
+                            } else if r.drag_stopped() {
+                                te.set_touch_action(
+                                    android_auto::Wifi::touch_action::Enum::RELEASE,
+                                );
+                            } else if r.dragged() {
+                                te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
+                            } else if r.hovered() {
+                                te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
+                            } else {
+                                do_touch = false;
+                            }
+                            if do_touch {
+                                i_event.touch_event =
+                                    android_auto::protobuf::MessageField::some(te);
+                                let e = android_auto::AndroidAutoMessage::Input(i_event);
+                                let m2 = uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(
+                                    e.sendable(),
+                                );
+                                let _ = common.radio.send_packet(
+                                    uobradio_comms::MessageFromApp::AndroidAutoMessage(m2),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+
             let quit = ui.add(egui::Button::new("Quit").min_size(min_size));
             if quit.clicked() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
@@ -544,26 +621,24 @@ impl eframe::App for MyEguiApp {
                         log::error!("Failed to decode android auto video {:?}", e);
                     }
                     Ok(Some(image)) => {
-                        if units.peek().is_none() {
-                            use openh264::formats::YUVSource;
-                            let rgb_len = image.rgb8_len();
-                            let mut rgb_raw = vec![0; rgb_len];
-                            image.write_rgb8(&mut rgb_raw);
-                            let (w, h) = image.dimensions_uv();
-                            let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
-                            let image = egui::ColorImage {
-                                size: [w * 2usize, h * 2usize],
-                                pixels: ei.get_egui(),
-                            };
-                            if self.common.android_auto_texture.is_none() {
-                                self.common.android_auto_texture = Some(ctx.load_texture(
-                                    "android_auto",
-                                    image,
-                                    egui::TextureOptions::LINEAR,
-                                ));
-                            } else if let Some(t) = &mut self.common.android_auto_texture {
-                                t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
-                            }
+                        use openh264::formats::YUVSource;
+                        let rgb_len = image.rgb8_len();
+                        let mut rgb_raw = vec![0; rgb_len];
+                        image.write_rgb8(&mut rgb_raw);
+                        let (w, h) = image.dimensions_uv();
+                        let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
+                        let image = egui::ColorImage {
+                            size: [w * 2usize, h * 2usize],
+                            pixels: ei.get_egui(),
+                        };
+                        if self.common.android_auto_texture.is_none() {
+                            self.common.android_auto_texture = Some(ctx.load_texture(
+                                "android_auto",
+                                image,
+                                egui::TextureOptions::LINEAR,
+                            ));
+                        } else if let Some(t) = &mut self.common.android_auto_texture {
+                            t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
                         }
                     }
                     _ => {}
@@ -740,76 +815,6 @@ impl eframe::App for MyEguiApp {
                 });
             });
         }
-        #[cfg(feature = "androidauto")]
-        if self.common.radio.android_auto_frontend() {
-            egui::CentralPanel::default().show(ctx, |ui| {
-                let size = ui.available_size();
-                if let Some(t) = &self.common.android_auto_texture {
-                    let isize = t.size()[1];
-                    let zoom = isize as f32 / size.y;
-                    let dsize = t.size_vec2() / zoom;
-                    let p = ui.cursor();
-                    let r = ui.add(
-                        egui::Image::from_texture(egui::load::SizedTexture {
-                            id: t.id(),
-                            size: dsize,
-                        })
-                        .sense(egui::Sense::drag()),
-                    );
-                    let o = if let Some(mut o) = r.interact_pointer_pos() {
-                        o.x -= p.left();
-                        o.y -= p.top();
-                        o.x *= zoom;
-                        o.y *= zoom;
-                        Some(o)
-                    } else if let Some(mut o) = r.hover_pos() {
-                        o.x -= p.left();
-                        o.y -= p.top();
-                        o.x *= zoom;
-                        o.y *= zoom;
-                        Some(o)
-                    } else {
-                        None
-                    };
-                    if let Some(o) = o {
-                        let mut i_event = android_auto::Wifi::InputEventIndication::new();
-                        let timestamp: u64 = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_micros() as u64;
-                        i_event.set_timestamp(timestamp);
-                        let mut te = android_auto::Wifi::TouchEvent::new();
-                        let mut tl = android_auto::Wifi::TouchLocation::new();
-                        tl.set_x(o.x as u32);
-                        tl.set_y(o.y as u32);
-                        tl.set_pointer_id(0);
-                        te.touch_location = vec![tl];
-                        let mut do_touch = true;
-                        if r.drag_started() {
-                            te.set_touch_action(android_auto::Wifi::touch_action::Enum::PRESS);
-                        } else if r.drag_stopped() {
-                            te.set_touch_action(android_auto::Wifi::touch_action::Enum::RELEASE);
-                        } else if r.dragged() {
-                            te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
-                        } else if r.hovered() {
-                            te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
-                        } else {
-                            do_touch = false;
-                        }
-                        if do_touch {
-                            i_event.touch_event = android_auto::protobuf::MessageField::some(te);
-                            let e = android_auto::AndroidAutoMessage::Input(i_event);
-                            let m2 = uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(
-                                e.sendable(),
-                            );
-                            let _ = self.common.radio.send_packet(
-                                uobradio_comms::MessageFromApp::AndroidAutoMessage(m2),
-                            );
-                        }
-                    }
-                }
-            });
-        }
         {
             egui::TopBottomPanel::top("status_bar")
                 .frame(egui::Frame::new().fill(BG_PRIMARY).inner_margin(10.0))
@@ -882,6 +887,7 @@ impl eframe::App for MyEguiApp {
                         }
                     }
                 });
+
             if let Some(sub) = self.subwindow.update(ctx, frame, &mut self.common) {
                 self.subwindow = sub;
             }

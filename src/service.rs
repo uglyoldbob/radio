@@ -169,13 +169,11 @@ impl AndroidAutoService {
             com.aa_network.clone().unwrap(),
             bluetooth_address,
         );
-        android_auto_server
-            .run(config, &mut tasks, main)
-            .await
-            .inspect_err(|_| {
-                log::error!("Failure starting up android auto service");
-                tasks.abort_all();
-            })?;
+        tokio::spawn(async move {
+            let mut joinset = tokio::task::JoinSet::new();
+            let _ = android_auto_server.run(config, &mut joinset, main).await;
+            joinset.abort_all();
+        });
         Ok(Self {
             addr,
             tasks,
@@ -1083,7 +1081,7 @@ impl AndroidAutoStuff {
 #[cfg(feature = "androidauto")]
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
-    async fn open_channel(&self, t: android_auto::AudioChannelType) -> Result<(), ()> {
+    async fn open_output_channel(&self, t: android_auto::AudioChannelType) -> Result<(), ()> {
         let s = self.inner.lock().await;
         let _ = s
             .sendr
@@ -1092,7 +1090,7 @@ impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
         Ok(())
     }
 
-    async fn close_channel(&self, t: android_auto::AudioChannelType) -> Result<(), ()> {
+    async fn close_output_channel(&self, t: android_auto::AudioChannelType) -> Result<(), ()> {
         let s = self.inner.lock().await;
         let _ = s
             .sendr
@@ -1101,7 +1099,7 @@ impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
         Ok(())
     }
 
-    async fn receive_audio(&self, t: android_auto::AudioChannelType, data: Vec<u8>) {
+    async fn receive_output_audio(&self, t: android_auto::AudioChannelType, data: Vec<u8>) {
         let s = self.inner.lock().await;
         let _ = s
             .sendr
@@ -1109,7 +1107,7 @@ impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
             .await;
     }
 
-    async fn start_audio(&self, t: android_auto::AudioChannelType) {
+    async fn start_output_audio(&self, t: android_auto::AudioChannelType) {
         let s = self.inner.lock().await;
         let _ = s
             .sendr
@@ -1117,7 +1115,7 @@ impl android_auto::AndroidAutoAudioOutputTrait for AndroidAutoStuff {
             .await;
     }
 
-    async fn stop_audio(&self, t: android_auto::AudioChannelType) {
+    async fn stop_output_audio(&self, t: android_auto::AudioChannelType) {
         let s = self.inner.lock().await;
         let _ = s
             .sendr
@@ -1141,16 +1139,18 @@ impl android_auto::AndroidAutoInputChannelTrait for AndroidAutoStuff {
 #[cfg(feature = "androidauto")]
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoAudioInputTrait for AndroidAutoStuff {
-    async fn open_channel(&self) -> Result<(), ()> {
+    async fn open_input_channel(&self) -> Result<(), ()> {
         Ok(())
     }
-    async fn close_channel(&self) -> Result<(), ()> {
+    async fn audio_input_ack(&self, chan: u8, ack: android_auto::Wifi::AVMediaAckIndication) {}
+
+    async fn close_input_channel(&self) -> Result<(), ()> {
         Ok(())
     }
-    async fn start_audio(&self) {
+    async fn start_input_audio(&self) {
         log::error!("Start audio input channel");
     }
-    async fn stop_audio(&self) {
+    async fn stop_input_audio(&self) {
         log::error!("Stop audio input channel");
     }
 }
@@ -1175,10 +1175,6 @@ impl android_auto::AndroidAutoWirelessTrait for AndroidAutoStuff {
 #[cfg(feature = "androidauto")]
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
-    fn supports_video(&self) -> Option<&dyn android_auto::AndroidAutoVideoChannelTrait> {
-        Some(self)
-    }
-
     fn supports_bluetooth(&self) -> Option<&dyn android_auto::AndroidAutoBluetoothTrait> {
         if self.bluetooth_config.is_some() {
             Some(self)
@@ -1189,22 +1185,6 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
 
     fn supports_wireless(&self) -> Option<Arc<dyn AndroidAutoWirelessTrait>> {
         Some(Arc::new(self.clone()))
-    }
-
-    fn supports_input(&self) -> Option<&dyn AndroidAutoInputChannelTrait> {
-        Some(self)
-    }
-
-    fn supports_audio_output(&self) -> Option<&dyn AndroidAutoAudioOutputTrait> {
-        Some(self)
-    }
-
-    fn supports_audio_input(&self) -> Option<&dyn AndroidAutoAudioInputTrait> {
-        Some(self)
-    }
-
-    fn supports_sensors(&self) -> Option<&dyn android_auto::AndroidAutoSensorTrait> {
-        Some(self)
     }
 
     async fn get_receiver(
@@ -1417,7 +1397,7 @@ async fn smain() {
     let wifi = nmrs::NetworkManager::new().await.ok();
 
     #[cfg(all(feature = "wifi", feature = "androidauto"))]
-    let mut network = {
+    let mut network =
         android_auto::NetworkInformation {
             ssid: s.wifi_config.hotspot_configuration.0.clone(),
             psk: s.wifi_config.hotspot_configuration.1.clone(),
@@ -1426,8 +1406,7 @@ async fn smain() {
             port: 5277,
             security_mode: android_auto::Bluetooth::SecurityMode::WPA2_PERSONAL,
             ap_type: android_auto::Bluetooth::AccessPointType::STATIC,
-        }
-    };
+        };
 
     #[cfg(feature = "wifi")]
     let mut wifi_device = None;
