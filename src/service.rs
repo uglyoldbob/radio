@@ -1377,14 +1377,6 @@ async fn smain() {
         MainConfiguration::default()
     };
 
-    service::log::set_max_level(
-        settings
-            .debug_level
-            .as_ref()
-            .unwrap_or(&service::LogLevel::Info)
-            .level_filter(),
-    );
-
     let (shutdown_send, mut shutdown_recv) = tokio::sync::mpsc::unbounded_channel::<()>();
 
     let mut vs = Vec::new();

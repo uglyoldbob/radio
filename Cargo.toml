@@ -52,7 +52,8 @@ name = "radio_gui"
 path = "src/main.rs"
 
 [features]
-default = ["wifi", "bluetooth", "androidauto"]
+default = []
+usb = ["android-auto?/usb"]
 wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi", "android-auto?/wireless"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]
 androidauto = ["dep:android-auto", "uobradio-comms/androidauto"]
