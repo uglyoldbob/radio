@@ -7,12 +7,6 @@
 #[cfg(feature = "wifi")]
 mod nmrs_extensions;
 
-#[cfg(all(
-    feature = "androidauto",
-    not(any(feature = "wifi", feature = "bluetooth"))
-))]
-compile_error!("Wifi and bluetooth must be enabled if android-auto is enabled");
-
 #[cfg(feature = "androidauto")]
 use std::collections::HashSet;
 
@@ -25,7 +19,7 @@ use std::{
 #[cfg(feature = "androidauto")]
 use android_auto::{
     AndroidAutoAudioInputTrait, AndroidAutoAudioOutputTrait, AndroidAutoInputChannelTrait,
-    AndroidAutoWirelessTrait, HeadUnitInfo, NetworkInformation,
+    HeadUnitInfo, NetworkInformation,
 };
 #[cfg(feature = "bluetooth")]
 use bluetooth_rust::{BluetoothAdapterTrait, ResponseToPasskey};
@@ -124,15 +118,13 @@ impl Drop for AndroidAutoService {
 impl AndroidAutoService {
     /// Construct and start an android auto service
     pub async fn new(com: &AppUserCommon, addr: std::net::SocketAddr) -> Result<Self, String> {
-        if com.aa_network.is_none() {
-            return Err("No wireless network details defined".to_string());
-        }
-
         let mut tasks = tokio::task::JoinSet::new();
 
         let aautochan = tokio::sync::mpsc::channel(5);
 
+        #[cfg(feature = "bluetooth")]
         let blue_addresses: Vec<[u8; 6]> = com.bluetooth.addresses().await;
+        #[cfg(feature = "bluetooth")]
         let bluetooth_address = blue_addresses.first().map(|b| {
             let a = format!(
                 "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
@@ -165,8 +157,11 @@ impl AndroidAutoService {
             aautochan.0,
             aa_chan.1,
             aa_chan.0.clone(),
+            #[cfg(feature = "bluetooth")]
             com.bluetooth.clone(),
+            #[cfg(feature = "wifi")]
             com.aa_network.clone().unwrap(),
+            #[cfg(feature = "bluetooth")]
             bluetooth_address,
         );
         tokio::spawn(async move {
@@ -283,7 +278,7 @@ pub struct AppUserCommon {
     /// The system specific (not user set) settings.
     system: SystemSettings,
     /// The network details for android auto
-    #[cfg(feature = "androidauto")]
+    #[cfg(all(feature = "androidauto", feature = "wifi"))]
     aa_network: Option<NetworkInformation>,
     #[cfg(all(feature = "wifi", target_os = "linux"))]
     /// Used for wifi operations
@@ -1028,11 +1023,14 @@ struct InternalAndroidAutoStuff {
 struct AndroidAutoStuff {
     /// The protected internals
     inner: Arc<tokio::sync::Mutex<InternalAndroidAutoStuff>>,
+    #[cfg(feature = "bluetooth")]
     /// The bluetooth reference
     bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
+    #[cfg(feature = "bluetooth")]
     /// This is defined if there is actually a bluetooth adapter present
     bluetooth_config: Option<android_auto::BluetoothInformation>,
     /// The network information
+    #[cfg(feature = "wifi")]
     network: Arc<android_auto::NetworkInformation>,
     /// The input channel config
     input_config: android_auto::InputConfiguration,
@@ -1056,8 +1054,11 @@ impl AndroidAutoStuff {
         sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
         recvr: tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>,
         frame_sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
+        #[cfg(feature = "bluetooth")]
         bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
+        #[cfg(feature = "wifi")]
         network: android_auto::NetworkInformation,
+        #[cfg(feature = "bluetooth")]
         bluetooth_config: Option<android_auto::BluetoothInformation>,
     ) -> Self {
         let inner = InternalAndroidAutoStuff {
@@ -1070,7 +1071,9 @@ impl AndroidAutoStuff {
         s.insert(android_auto::Wifi::sensor_type::Enum::NIGHT_DATA);
         Self {
             inner: Arc::new(tokio::sync::Mutex::new(inner)),
+            #[cfg(feature = "bluetooth")]
             bluetooth,
+            #[cfg(feature = "wifi")]
             network: Arc::new(network),
             input_config: android_auto::InputConfiguration {
                 touchscreen: Some((800, 480)),
@@ -1082,6 +1085,7 @@ impl AndroidAutoStuff {
                 dpi: 111,
             },
             sensors: android_auto::SensorInformation { sensors: s },
+            #[cfg(feature = "bluetooth")]
             bluetooth_config,
         }
     }
@@ -1164,7 +1168,7 @@ impl android_auto::AndroidAutoAudioInputTrait for AndroidAutoStuff {
     }
 }
 
-#[cfg(feature = "androidauto")]
+#[cfg(all(feature = "androidauto", feature = "wifi"))]
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoWirelessTrait for AndroidAutoStuff {
     async fn setup_bluetooth_profile(
@@ -1184,6 +1188,7 @@ impl android_auto::AndroidAutoWirelessTrait for AndroidAutoStuff {
 #[cfg(feature = "androidauto")]
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
+    #[cfg(feature = "bluetooth")]
     fn supports_bluetooth(&self) -> Option<&dyn android_auto::AndroidAutoBluetoothTrait> {
         if self.bluetooth_config.is_some() {
             Some(self)
@@ -1192,7 +1197,8 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
         }
     }
 
-    fn supports_wireless(&self) -> Option<Arc<dyn AndroidAutoWirelessTrait>> {
+    #[cfg(feature = "wifi")]
+    fn supports_wireless(&self) -> Option<Arc<dyn android_auto::AndroidAutoWirelessTrait>> {
         Some(Arc::new(self.clone()))
     }
 
@@ -1214,7 +1220,7 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
     }
 }
 
-#[cfg(feature = "androidauto")]
+#[cfg(all(feature = "androidauto", feature = "bluetooth"))]
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoBluetoothTrait for AndroidAutoStuff {
     async fn do_stuff(&self) {}
@@ -1443,7 +1449,7 @@ async fn smain() {
         wifi_device,
         #[cfg(feature = "androidauto")]
         aauto_service: None,
-        #[cfg(feature = "androidauto")]
+        #[cfg(all(feature = "androidauto", feature = "wifi"))]
         aa_network: Some(network),
         system: sys,
         #[cfg(feature = "wifi")]
