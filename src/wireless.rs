@@ -85,7 +85,7 @@ impl SubwindowTrait for Config {
         }
     }
 
-    fn card(&self, active: bool, theme: &super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
+    fn card(&self, active: bool, theme: &mut super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
         let button_color = if active {
             theme.accent_primary
         } else {
@@ -114,7 +114,7 @@ impl SubwindowTrait for Config {
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
-        theme: &super::GraphicsTheme,
+        theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
         let _ = common
             .radio
@@ -137,7 +137,7 @@ impl SubwindowTrait for Config {
             .resizable(false)
             .frame(
                 egui::Frame::side_top_panel(&ctx.style())
-                    .fill(super::BG_PRIMARY)
+                    .fill(theme.bg_primary)
                     .inner_margin(10.0)
                     .outer_margin(0.0),
             )
@@ -146,9 +146,9 @@ impl SubwindowTrait for Config {
                     let active = common.vsettings.wireless.submenu
                         == uobradio_comms::wireless::Submenu::Normal;
                     let button_color = if active {
-                        super::ACCENT_PRIMARY
+                        theme.accent_primary
                     } else {
-                        super::BG_SECONDARY
+                        theme.bg_secondary
                     };
                     let text_color = if active {
                         egui::Color32::WHITE
@@ -175,9 +175,9 @@ impl SubwindowTrait for Config {
                     let active = common.vsettings.wireless.submenu
                         == uobradio_comms::wireless::Submenu::Bluetooth;
                     let button_color = if active {
-                        super::ACCENT_PRIMARY
+                        theme.accent_primary
                     } else {
-                        super::BG_SECONDARY
+                        theme.bg_secondary
                     };
                     let text_color = if active {
                         egui::Color32::WHITE
@@ -204,9 +204,9 @@ impl SubwindowTrait for Config {
                     let active = common.vsettings.wireless.submenu
                         == uobradio_comms::wireless::Submenu::Wifi;
                     let button_color = if active {
-                        super::ACCENT_PRIMARY
+                        theme.accent_primary
                     } else {
-                        super::BG_SECONDARY
+                        theme.bg_secondary
                     };
                     let text_color = if active {
                         egui::Color32::WHITE
@@ -232,9 +232,9 @@ impl SubwindowTrait for Config {
                     let active = common.vsettings.wireless.submenu
                         == uobradio_comms::wireless::Submenu::ShareWifi;
                     let button_color = if active {
-                        super::ACCENT_PRIMARY
+                        theme.accent_primary
                     } else {
-                        super::BG_SECONDARY
+                        theme.bg_secondary
                     };
                     let text_color = if active {
                         egui::Color32::WHITE
@@ -363,7 +363,7 @@ impl SubwindowTrait for Config {
                                         .size(16.0)
                                         .color(theme.text_secondary),
                                 )
-                                .fill(super::BG_SECONDARY)
+                                .fill(theme.bg_secondary)
                                 .min_size(egui::vec2(70.0, 70.0))
                                 .corner_radius(12.0);
 
@@ -393,7 +393,7 @@ impl SubwindowTrait for Config {
                                         .size(16.0)
                                         .color(theme.text_secondary),
                                 )
-                                .fill(super::BG_SECONDARY)
+                                .fill(theme.bg_secondary)
                                 .min_size(egui::vec2(70.0, 70.0))
                                 .corner_radius(12.0);
 
@@ -412,7 +412,7 @@ impl SubwindowTrait for Config {
                                         .size(16.0)
                                         .color(theme.text_secondary),
                                 )
-                                .fill(super::BG_SECONDARY)
+                                .fill(theme.bg_secondary)
                                 .min_size(egui::vec2(70.0, 70.0))
                                 .corner_radius(12.0);
 
@@ -446,7 +446,7 @@ impl SubwindowTrait for Config {
                                             .size(16.0)
                                             .color(theme.text_secondary),
                                     )
-                                    .fill(super::BG_SECONDARY)
+                                    .fill(theme.bg_secondary)
                                     .min_size(egui::vec2(70.0, 70.0))
                                     .corner_radius(12.0);
 

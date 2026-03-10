@@ -28,7 +28,7 @@ trait SubwindowTrait {
         ctx: &egui::Context,
         frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
-        theme: &GraphicsTheme,
+        theme: &mut GraphicsTheme,
     ) -> Option<Subwindow>;
     /// Perform and processing required for a received packet
     fn process_packet(
@@ -38,7 +38,7 @@ trait SubwindowTrait {
         packet: &uobradio_comms::MessageToApp,
     );
     /// Get the icon for the left panel of the gui
-    fn card(&self, active: bool, theme: &GraphicsTheme, ui: &mut egui::Ui) -> bool;
+    fn card(&self, active: bool, theme: &mut GraphicsTheme, ui: &mut egui::Ui) -> bool;
 }
 
 /// The main page for the gui
@@ -75,7 +75,7 @@ impl SubwindowTrait for MainPage {
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
-        theme: &GraphicsTheme,
+        theme: &mut GraphicsTheme,
     ) -> Option<Subwindow> {
         let r = None;
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -166,7 +166,7 @@ impl SubwindowTrait for MainPage {
         r
     }
 
-    fn card(&self, active: bool, theme: &GraphicsTheme, ui: &mut egui::Ui) -> bool {
+    fn card(&self, active: bool, theme: &mut GraphicsTheme, ui: &mut egui::Ui) -> bool {
         let button_color = if active {
             theme.accent_primary
         } else {
@@ -877,7 +877,7 @@ impl eframe::App for MyEguiApp {
                         let vw = Subwindow::MainPage(MainPage {});
                         if vw.card(
                             matches!(self.subwindow, Subwindow::MainPage(_)),
-                            &self.theme,
+                            &mut self.theme,
                             ui,
                         ) {
                             self.subwindow = vw;
@@ -888,7 +888,7 @@ impl eframe::App for MyEguiApp {
                             let vw = Subwindow::Video(video::Video::new());
                             if vw.card(
                                 matches!(self.subwindow, Subwindow::Video(_)),
-                                &self.theme,
+                                &mut self.theme,
                                 ui,
                             ) {
                                 self.subwindow = vw;
@@ -900,7 +900,7 @@ impl eframe::App for MyEguiApp {
                         let vw = Subwindow::Wireless(wireless::Config::new());
                         if vw.card(
                             matches!(self.subwindow, Subwindow::Wireless(_)),
-                            &self.theme,
+                            &mut self.theme,
                             ui,
                         ) {
                             self.subwindow = vw;
@@ -910,7 +910,7 @@ impl eframe::App for MyEguiApp {
                         let vw = Subwindow::Hvac(hvac::Window::new());
                         if vw.card(
                             matches!(self.subwindow, Subwindow::Hvac(_)),
-                            &self.theme,
+                            &mut self.theme,
                             ui,
                         ) {
                             self.subwindow = vw;
@@ -920,7 +920,7 @@ impl eframe::App for MyEguiApp {
                         let vw = Subwindow::Offroad(offroad::Window::new());
                         if vw.card(
                             matches!(self.subwindow, Subwindow::Offroad(_)),
-                            &self.theme,
+                            &mut self.theme,
                             ui,
                         ) {
                             self.subwindow = vw;
@@ -930,7 +930,7 @@ impl eframe::App for MyEguiApp {
                         let vw = Subwindow::Settings(settings::Settings::new());
                         if vw.card(
                             matches!(self.subwindow, Subwindow::Settings(_)),
-                            &self.theme,
+                            &mut self.theme,
                             ui,
                         ) {
                             self.subwindow = vw;
@@ -940,7 +940,7 @@ impl eframe::App for MyEguiApp {
 
             if let Some(sub) = self
                 .subwindow
-                .update(ctx, frame, &mut self.common, &self.theme)
+                .update(ctx, frame, &mut self.common, &mut self.theme)
             {
                 self.subwindow = sub;
             }

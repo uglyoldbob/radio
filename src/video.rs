@@ -25,7 +25,7 @@ impl SubwindowTrait for Video {
     ) {
     }
 
-    fn card(&self, active: bool, theme: &super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
+    fn card(&self, active: bool, theme: &mut super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
         let button_color = if active {
             theme.accent_primary
         } else {
@@ -54,7 +54,7 @@ impl SubwindowTrait for Video {
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
-        theme: &super::GraphicsTheme,
+        theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
         let h = ctx.screen_rect().height();
         egui::SidePanel::right("Camera view").show(ctx, |ui| {

@@ -25,7 +25,7 @@ impl SubwindowTrait for Window {
     ) {
     }
 
-    fn card(&self, active: bool, theme: &super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
+    fn card(&self, active: bool, theme: &mut super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
         let button_color = if active {
             theme.accent_primary
         } else {
@@ -54,7 +54,7 @@ impl SubwindowTrait for Window {
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
-        theme: &super::GraphicsTheme,
+        theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme.bg_primary))
