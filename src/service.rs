@@ -133,8 +133,6 @@ impl AndroidAutoService {
             android_auto::BluetoothInformation { address: a }
         });
 
-        let android_auto_server = android_auto::AndroidAutoServer::new().await;
-
         let config = android_auto::AndroidAutoConfiguration {
             unit: HeadUnitInfo {
                 name: "UobRadio".to_string(),
@@ -166,7 +164,10 @@ impl AndroidAutoService {
         );
         tokio::spawn(async move {
             let mut joinset = tokio::task::JoinSet::new();
-            let _ = android_auto_server.run(config, &mut joinset, main).await;
+            let main = Box::new(main);
+            use android_auto::AndroidAutoMainTrait;
+            let a = main.run(config, &mut joinset).await;
+            log::error!("Android auto run finished with {:?}", a);
             joinset.abort_all();
         });
         Ok(Self {
@@ -1054,12 +1055,9 @@ impl AndroidAutoStuff {
         sendr: tokio::sync::mpsc::Sender<uobradio_comms::aauto::AndroidAutoMessageFromPhone>,
         recvr: tokio::sync::mpsc::Receiver<android_auto::SendableAndroidAutoMessage>,
         frame_sender: tokio::sync::mpsc::Sender<android_auto::SendableAndroidAutoMessage>,
-        #[cfg(feature = "bluetooth")]
-        bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
-        #[cfg(feature = "wifi")]
-        network: android_auto::NetworkInformation,
-        #[cfg(feature = "bluetooth")]
-        bluetooth_config: Option<android_auto::BluetoothInformation>,
+        #[cfg(feature = "bluetooth")] bluetooth: Arc<bluetooth_rust::BluetoothAdapter>,
+        #[cfg(feature = "wifi")] network: android_auto::NetworkInformation,
+        #[cfg(feature = "bluetooth")] bluetooth_config: Option<android_auto::BluetoothInformation>,
     ) -> Self {
         let inner = InternalAndroidAutoStuff {
             sendr,
@@ -1185,6 +1183,10 @@ impl android_auto::AndroidAutoWirelessTrait for AndroidAutoStuff {
     }
 }
 
+#[cfg(all(feature = "androidauto", feature = "usb"))]
+#[async_trait::async_trait]
+impl android_auto::AndroidAutoWiredTrait for AndroidAutoStuff {}
+
 #[cfg(feature = "androidauto")]
 #[async_trait::async_trait]
 impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
@@ -1199,6 +1201,11 @@ impl android_auto::AndroidAutoMainTrait for AndroidAutoStuff {
 
     #[cfg(feature = "wifi")]
     fn supports_wireless(&self) -> Option<Arc<dyn android_auto::AndroidAutoWirelessTrait>> {
+        Some(Arc::new(self.clone()))
+    }
+
+    #[cfg(feature = "usb")]
+    fn supports_wired(&self) -> Option<Arc<dyn android_auto::AndroidAutoWiredTrait>> {
         Some(Arc::new(self.clone()))
     }
 
