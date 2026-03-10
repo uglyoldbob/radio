@@ -25,16 +25,16 @@ impl SubwindowTrait for Settings {
     ) {
     }
 
-    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool {
+    fn card(&self, active: bool, theme: &super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
         let button_color = if active {
-            super::ACCENT_PRIMARY
+            theme.accent_primary
         } else {
-            super::BG_SECONDARY
+            theme.bg_secondary
         };
         let text_color = if active {
             egui::Color32::WHITE
         } else {
-            super::TEXT_SECONDARY
+            theme.text_secondary
         };
 
         let button = egui::Button::new(
@@ -54,12 +54,13 @@ impl SubwindowTrait for Settings {
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
+        theme: &super::GraphicsTheme,
     ) -> Option<Subwindow> {
         egui::SidePanel::left("Settings tabs")
             .resizable(false)
             .frame(
                 egui::Frame::side_top_panel(&ctx.style())
-                    .fill(super::BG_PRIMARY)
+                    .fill(theme.bg_primary)
                     .inner_margin(10.0)
                     .outer_margin(0.0),
             )
@@ -68,14 +69,14 @@ impl SubwindowTrait for Settings {
                     let active = common.vsettings.settings.tab
                         == uobradio_comms::settings::Subsetting::General;
                     let button_color = if active {
-                        super::ACCENT_PRIMARY
+                        theme.accent_primary
                     } else {
-                        super::BG_SECONDARY
+                        theme.bg_secondary
                     };
                     let text_color = if active {
                         egui::Color32::WHITE
                     } else {
-                        super::TEXT_SECONDARY
+                        theme.text_secondary
                     };
 
                     let button = egui::Button::new(
@@ -97,14 +98,14 @@ impl SubwindowTrait for Settings {
                         let active = common.vsettings.settings.tab
                             == uobradio_comms::settings::Subsetting::Video;
                         let button_color = if active {
-                            super::ACCENT_PRIMARY
+                            theme.accent_primary
                         } else {
-                            super::BG_SECONDARY
+                            theme.bg_secondary
                         };
                         let text_color = if active {
                             egui::Color32::WHITE
                         } else {
-                            super::TEXT_SECONDARY
+                            theme.text_secondary
                         };
 
                         let button = egui::Button::new(
@@ -126,14 +127,14 @@ impl SubwindowTrait for Settings {
                     let active = common.vsettings.settings.tab
                         == uobradio_comms::settings::Subsetting::Update;
                     let button_color = if active {
-                        super::ACCENT_PRIMARY
+                        theme.accent_primary
                     } else {
-                        super::BG_SECONDARY
+                        theme.bg_secondary
                     };
                     let text_color = if active {
                         egui::Color32::WHITE
                     } else {
-                        super::TEXT_SECONDARY
+                        theme.text_secondary
                     };
 
                     let button = egui::Button::new(
@@ -245,7 +246,7 @@ impl SubwindowTrait for Settings {
                     if let Some(version) = std::option_env!("SOFTWARE_VERSION") {
                         let t = egui::RichText::new(format!("Version {version}"))
                             .size(16.0)
-                            .color(super::TEXT_SECONDARY);
+                            .color(theme.text_secondary);
                         ui.label(t);
                     }
                     if !common.vsettings.settings.update_status_pending {
@@ -262,9 +263,9 @@ impl SubwindowTrait for Settings {
                                 let button = egui::Button::new(
                                     egui::RichText::new("Install downloaded version")
                                         .size(16.0)
-                                        .color(super::TEXT_SECONDARY),
+                                        .color(theme.text_secondary),
                                 )
-                                .fill(super::BG_SECONDARY)
+                                .fill(theme.bg_secondary)
                                 .min_size(egui::vec2(70.0, 70.0))
                                 .corner_radius(12.0);
 
@@ -280,9 +281,9 @@ impl SubwindowTrait for Settings {
                                 let button = egui::Button::new(
                                     egui::RichText::new("Check for updates")
                                         .size(16.0)
-                                        .color(super::TEXT_SECONDARY),
+                                        .color(theme.text_secondary),
                                 )
-                                .fill(super::BG_SECONDARY)
+                                .fill(theme.bg_secondary)
                                 .min_size(egui::vec2(70.0, 70.0))
                                 .corner_radius(12.0);
 
@@ -299,9 +300,9 @@ impl SubwindowTrait for Settings {
                                             let button = egui::Button::new(
                                                 egui::RichText::new(f)
                                                     .size(16.0)
-                                                    .color(super::TEXT_SECONDARY),
+                                                    .color(theme.text_secondary),
                                             )
-                                            .fill(super::BG_SECONDARY)
+                                            .fill(theme.bg_secondary)
                                             .min_size(egui::vec2(70.0, 70.0))
                                             .corner_radius(12.0);
 
@@ -324,13 +325,13 @@ impl SubwindowTrait for Settings {
                         uobradio_comms::settings::UpdateStatus::DownloadStarted => {
                             let t = egui::RichText::new("Download Started")
                                 .size(16.0)
-                                .color(super::TEXT_SECONDARY);
+                                .color(theme.text_secondary);
                             ui.label(t);
                         }
                         uobradio_comms::settings::UpdateStatus::Downloading(p) => {
                             let t = egui::RichText::new("Download Progress")
                                 .size(16.0)
-                                .color(super::TEXT_SECONDARY);
+                                .color(theme.text_secondary);
                             ui.label(t);
                             let pb = egui::ProgressBar::new(p).corner_radius(5).show_percentage();
                             ui.add(pb);
@@ -344,29 +345,29 @@ impl SubwindowTrait for Settings {
                                     .send_packet(uobradio_comms::MessageFromApp::StartUpdate);
                                 egui::RichText::new("Download complete")
                                     .size(16.0)
-                                    .color(super::TEXT_SECONDARY)
+                                    .color(theme.text_secondary)
                             } else {
                                 egui::RichText::new("Download failed")
                                     .size(16.0)
-                                    .color(super::TEXT_SECONDARY)
+                                    .color(theme.text_secondary)
                             };
                             ui.label(t);
                         }
                         uobradio_comms::settings::UpdateStatus::UpdateStarted => {
                             let t = egui::RichText::new("Update Started")
                                 .size(16.0)
-                                .color(super::TEXT_SECONDARY);
+                                .color(theme.text_secondary);
                             ui.label(t);
                         }
                         uobradio_comms::settings::UpdateStatus::UpdateProgress(step, percent) => {
                             let t = egui::RichText::new("Update Progress")
                                 .size(16.0)
-                                .color(super::TEXT_SECONDARY);
+                                .color(theme.text_secondary);
                             ui.label(t);
                             let p = percent as f32 / 100.0;
                             let t = egui::RichText::new(format!("Update Step {step}"))
                                 .size(16.0)
-                                .color(super::TEXT_SECONDARY);
+                                .color(theme.text_secondary);
                             ui.label(t);
                             let pb = egui::ProgressBar::new(p).corner_radius(5).show_percentage();
                             ui.add(pb);

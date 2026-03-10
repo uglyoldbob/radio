@@ -28,6 +28,7 @@ trait SubwindowTrait {
         ctx: &egui::Context,
         frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
+        theme: &GraphicsTheme,
     ) -> Option<Subwindow>;
     /// Perform and processing required for a received packet
     fn process_packet(
@@ -37,27 +38,36 @@ trait SubwindowTrait {
         packet: &uobradio_comms::MessageToApp,
     );
     /// Get the icon for the left panel of the gui
-    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool;
+    fn card(&self, active: bool, theme: &GraphicsTheme, ui: &mut egui::Ui) -> bool;
 }
 
 /// The main page for the gui
 #[derive(Clone, Copy)]
 struct MainPage {}
 
-/// A color for the gui to use
-const BG_PRIMARY: egui::Color32 = egui::Color32::from_rgb(12, 14, 18);
-/// A color for the gui to use
-const BG_SECONDARY: egui::Color32 = egui::Color32::from_rgb(20, 24, 30);
-/// A color for the gui to use
-const BG_CARD: egui::Color32 = egui::Color32::from_rgb(28, 32, 40);
-/// A color for the gui to use
-const ACCENT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(0, 180, 255);
-/// A color for the gui to use
-const ACCENT_WARM: egui::Color32 = egui::Color32::from_rgb(255, 140, 60);
-/// A color for the gui to use
-const TEXT_PRIMARY: egui::Color32 = egui::Color32::from_rgb(240, 242, 245);
-/// A color for the gui to use
-const TEXT_SECONDARY: egui::Color32 = egui::Color32::from_rgb(160, 165, 175);
+struct GraphicsTheme {
+    bg_primary: egui::Color32,
+    bg_secondary: egui::Color32,
+    bg_card: egui::Color32,
+    accent_primary: egui::Color32,
+    accent_warm: egui::Color32,
+    text_primary: egui::Color32,
+    text_secondary: egui::Color32,
+}
+
+impl GraphicsTheme {
+    fn dark() -> Self {
+        Self {
+            bg_primary: egui::Color32::from_rgb(12, 14, 18),
+            bg_secondary: egui::Color32::from_rgb(20, 24, 30),
+            bg_card: egui::Color32::from_rgb(28, 32, 40),
+            accent_primary: egui::Color32::from_rgb(0, 180, 255),
+            accent_warm: egui::Color32::from_rgb(255, 140, 60),
+            text_primary: egui::Color32::from_rgb(240, 242, 245),
+            text_secondary: egui::Color32::from_rgb(160, 165, 175),
+        }
+    }
+}
 
 impl SubwindowTrait for MainPage {
     fn update(
@@ -65,6 +75,7 @@ impl SubwindowTrait for MainPage {
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
+        theme: &GraphicsTheme,
     ) -> Option<Subwindow> {
         let r = None;
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -155,12 +166,16 @@ impl SubwindowTrait for MainPage {
         r
     }
 
-    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool {
-        let button_color = if active { ACCENT_PRIMARY } else { BG_SECONDARY };
+    fn card(&self, active: bool, theme: &GraphicsTheme, ui: &mut egui::Ui) -> bool {
+        let button_color = if active {
+            theme.accent_primary
+        } else {
+            theme.bg_secondary
+        };
         let text_color = if active {
             egui::Color32::WHITE
         } else {
-            TEXT_SECONDARY
+            theme.text_secondary
         };
 
         let button = egui::Button::new(
@@ -288,6 +303,8 @@ impl CommonWindowProperties {
 
 /// The main struct for the application
 struct MyEguiApp {
+    /// the color theme
+    theme: GraphicsTheme,
     /// The specific subwindow being displayed in the gui
     subwindow: Subwindow,
     /// The properties common to all windows in the application
@@ -499,6 +516,7 @@ impl MyEguiApp {
             )
         };
         Self {
+            theme: GraphicsTheme::dark(),
             subwindow: Subwindow::MainPage(MainPage {}),
             common: CommonWindowProperties::new(),
             #[cfg(feature = "androidauto")]
@@ -817,14 +835,22 @@ impl eframe::App for MyEguiApp {
         }
         {
             egui::TopBottomPanel::top("status_bar")
-                .frame(egui::Frame::new().fill(BG_PRIMARY).inner_margin(10.0))
+                .frame(
+                    egui::Frame::new()
+                        .fill(self.theme.bg_primary)
+                        .inner_margin(10.0),
+                )
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 20.0;
 
                         let time = chrono::Local::now().format("%I:%M %p").to_string();
                         // Time
-                        ui.label(egui::RichText::new(time).size(18.0).color(TEXT_PRIMARY));
+                        ui.label(
+                            egui::RichText::new(time)
+                                .size(18.0)
+                                .color(self.theme.text_primary),
+                        );
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             // Temperature
@@ -832,7 +858,7 @@ impl eframe::App for MyEguiApp {
                                 ui.label(
                                     egui::RichText::new(format!("{:.1}°F", t))
                                         .size(16.0)
-                                        .color(TEXT_SECONDARY),
+                                        .color(self.theme.text_secondary),
                                 );
                             }
                         });
@@ -842,21 +868,29 @@ impl eframe::App for MyEguiApp {
                 .resizable(false)
                 .frame(
                     egui::Frame::side_top_panel(&ctx.style())
-                        .fill(BG_PRIMARY)
+                        .fill(self.theme.bg_primary)
                         .inner_margin(10.0)
                         .outer_margin(0.0),
                 )
                 .show(ctx, |ui| {
                     {
                         let vw = Subwindow::MainPage(MainPage {});
-                        if vw.card(matches!(self.subwindow, Subwindow::MainPage(_)), ui) {
+                        if vw.card(
+                            matches!(self.subwindow, Subwindow::MainPage(_)),
+                            &self.theme,
+                            ui,
+                        ) {
                             self.subwindow = vw;
                         }
                     }
                     if let Some(cameras) = self.common.radio.cameras() {
                         if !cameras.is_empty() {
                             let vw = Subwindow::Video(video::Video::new());
-                            if vw.card(matches!(self.subwindow, Subwindow::Video(_)), ui) {
+                            if vw.card(
+                                matches!(self.subwindow, Subwindow::Video(_)),
+                                &self.theme,
+                                ui,
+                            ) {
                                 self.subwindow = vw;
                             }
                         }
@@ -864,31 +898,50 @@ impl eframe::App for MyEguiApp {
                     #[cfg(any(feature = "wifi", feature = "bluetooth"))]
                     {
                         let vw = Subwindow::Wireless(wireless::Config::new());
-                        if vw.card(matches!(self.subwindow, Subwindow::Wireless(_)), ui) {
+                        if vw.card(
+                            matches!(self.subwindow, Subwindow::Wireless(_)),
+                            &self.theme,
+                            ui,
+                        ) {
                             self.subwindow = vw;
                         }
                     }
                     {
                         let vw = Subwindow::Hvac(hvac::Window::new());
-                        if vw.card(matches!(self.subwindow, Subwindow::Hvac(_)), ui) {
+                        if vw.card(
+                            matches!(self.subwindow, Subwindow::Hvac(_)),
+                            &self.theme,
+                            ui,
+                        ) {
                             self.subwindow = vw;
                         }
                     }
                     {
                         let vw = Subwindow::Offroad(offroad::Window::new());
-                        if vw.card(matches!(self.subwindow, Subwindow::Offroad(_)), ui) {
+                        if vw.card(
+                            matches!(self.subwindow, Subwindow::Offroad(_)),
+                            &self.theme,
+                            ui,
+                        ) {
                             self.subwindow = vw;
                         }
                     }
                     {
                         let vw = Subwindow::Settings(settings::Settings::new());
-                        if vw.card(matches!(self.subwindow, Subwindow::Settings(_)), ui) {
+                        if vw.card(
+                            matches!(self.subwindow, Subwindow::Settings(_)),
+                            &self.theme,
+                            ui,
+                        ) {
                             self.subwindow = vw;
                         }
                     }
                 });
 
-            if let Some(sub) = self.subwindow.update(ctx, frame, &mut self.common) {
+            if let Some(sub) = self
+                .subwindow
+                .update(ctx, frame, &mut self.common, &self.theme)
+            {
                 self.subwindow = sub;
             }
         }
