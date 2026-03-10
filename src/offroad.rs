@@ -25,16 +25,16 @@ impl SubwindowTrait for Window {
     ) {
     }
 
-    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool {
+    fn card(&self, active: bool, theme: &super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
         let button_color = if active {
-            super::ACCENT_PRIMARY
+            theme.accent_primary
         } else {
-            super::BG_SECONDARY
+            theme.bg_secondary
         };
         let text_color = if active {
             egui::Color32::WHITE
         } else {
-            super::TEXT_SECONDARY
+            theme.text_secondary
         };
 
         let button = egui::Button::new(
@@ -54,6 +54,7 @@ impl SubwindowTrait for Window {
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
+        theme: &super::GraphicsTheme,
     ) -> Option<Subwindow> {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label(egui::RichText::new("Current mode").size(32.0));

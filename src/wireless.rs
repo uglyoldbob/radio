@@ -85,16 +85,16 @@ impl SubwindowTrait for Config {
         }
     }
 
-    fn card(&self, active: bool, ui: &mut egui::Ui) -> bool {
+    fn card(&self, active: bool, theme: &super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
         let button_color = if active {
-            super::ACCENT_PRIMARY
+            theme.accent_primary
         } else {
-            super::BG_SECONDARY
+            theme.bg_secondary
         };
         let text_color = if active {
             egui::Color32::WHITE
         } else {
-            super::TEXT_SECONDARY
+            theme.text_secondary
         };
 
         let button = egui::Button::new(
@@ -114,6 +114,7 @@ impl SubwindowTrait for Config {
         ctx: &egui::Context,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
+        theme: &super::GraphicsTheme,
     ) -> Option<Subwindow> {
         let _ = common
             .radio
@@ -152,7 +153,7 @@ impl SubwindowTrait for Config {
                     let text_color = if active {
                         egui::Color32::WHITE
                     } else {
-                        super::TEXT_SECONDARY
+                        theme.text_secondary
                     };
 
                     let button = egui::Button::new(
@@ -181,7 +182,7 @@ impl SubwindowTrait for Config {
                     let text_color = if active {
                         egui::Color32::WHITE
                     } else {
-                        super::TEXT_SECONDARY
+                        theme.text_secondary
                     };
 
                     let button = egui::Button::new(
@@ -210,7 +211,7 @@ impl SubwindowTrait for Config {
                     let text_color = if active {
                         egui::Color32::WHITE
                     } else {
-                        super::TEXT_SECONDARY
+                        theme.text_secondary
                     };
 
                     let button = egui::Button::new(
@@ -238,7 +239,7 @@ impl SubwindowTrait for Config {
                     let text_color = if active {
                         egui::Color32::WHITE
                     } else {
-                        super::TEXT_SECONDARY
+                        theme.text_secondary
                     };
 
                     if common.vsettings.wireless.wifi_texture.is_some() {
@@ -353,14 +354,14 @@ impl SubwindowTrait for Config {
                                 common.vsettings.wireless.show_keyboard = true;
                                 let t = egui::RichText::new("Wifi password...")
                                     .size(16.0)
-                                    .color(super::TEXT_SECONDARY);
+                                    .color(theme.text_secondary);
                                 ui.label(t);
                                 let edit = egui::text_edit::TextEdit::singleline(pw).password(true);
                                 ui.add(edit).request_focus();
                                 let button = egui::Button::new(
                                     egui::RichText::new("Connect")
                                         .size(16.0)
-                                        .color(super::TEXT_SECONDARY),
+                                        .color(theme.text_secondary),
                                 )
                                 .fill(super::BG_SECONDARY)
                                 .min_size(egui::vec2(70.0, 70.0))
@@ -379,18 +380,18 @@ impl SubwindowTrait for Config {
                             uobradio_comms::wireless::WifiConnectStage::Connecting => {
                                 let t = egui::RichText::new("Connecting to wifi network...")
                                     .size(16.0)
-                                    .color(super::TEXT_SECONDARY);
+                                    .color(theme.text_secondary);
                                 ui.label(t);
                             }
                             uobradio_comms::wireless::WifiConnectStage::Connected => {
                                 let t = egui::RichText::new("Connected to wifi network...")
                                     .size(16.0)
-                                    .color(super::TEXT_SECONDARY);
+                                    .color(theme.text_secondary);
                                 ui.label(t);
                                 let button = egui::Button::new(
                                     egui::RichText::new("OK")
                                         .size(16.0)
-                                        .color(super::TEXT_SECONDARY),
+                                        .color(theme.text_secondary),
                                 )
                                 .fill(super::BG_SECONDARY)
                                 .min_size(egui::vec2(70.0, 70.0))
@@ -404,12 +405,12 @@ impl SubwindowTrait for Config {
                             uobradio_comms::wireless::WifiConnectStage::FailedConnection => {
                                 let t = egui::RichText::new("Failed to connect to wifi network...")
                                     .size(16.0)
-                                    .color(super::TEXT_SECONDARY);
+                                    .color(theme.text_secondary);
                                 ui.label(t);
                                 let button = egui::Button::new(
                                     egui::RichText::new("OK")
                                         .size(16.0)
-                                        .color(super::TEXT_SECONDARY),
+                                        .color(theme.text_secondary),
                                 )
                                 .fill(super::BG_SECONDARY)
                                 .min_size(egui::vec2(70.0, 70.0))
@@ -425,23 +426,25 @@ impl SubwindowTrait for Config {
                                 if let Some(wifi_nets) = common.known_networks.value() {
                                     for (i, w) in wifi_nets.iter().enumerate() {
                                         ui.label(format!(" * {}: {}", i, w));
-                                        if ui.button("Forget").clicked() {
-                                            let _ = common.radio.send_packet(
-                                                uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.clone()),
-                                            );
-                                        }
-                                        if ui.button("Connect").clicked() {
-                                            let _ = common.radio.send_packet(
-                                                uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(w.clone()),
-                                            );
-                                        }
+                                        ui.horizontal(|ui| {
+                                            if ui.button("Forget").clicked() {
+                                                let _ = common.radio.send_packet(
+                                                    uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.clone()),
+                                                );
+                                            }
+                                            if ui.button("Connect").clicked() {
+                                                let _ = common.radio.send_packet(
+                                                    uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(w.clone()),
+                                                );
+                                            }
+                                        });
                                     }
                                 }
                                 let mut scan = || {
                                     let button = egui::Button::new(
                                         egui::RichText::new("Scan for networks")
                                             .size(16.0)
-                                            .color(super::TEXT_SECONDARY),
+                                            .color(theme.text_secondary),
                                     )
                                     .fill(super::BG_SECONDARY)
                                     .min_size(egui::vec2(70.0, 70.0))
