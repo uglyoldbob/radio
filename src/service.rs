@@ -162,11 +162,12 @@ impl AndroidAutoService {
             #[cfg(feature = "bluetooth")]
             bluetooth_address,
         );
+        let com2 = com.token.clone();
         tokio::spawn(async move {
             let mut joinset = tokio::task::JoinSet::new();
             let main = Box::new(main);
             use android_auto::AndroidAutoMainTrait;
-            let a = main.run(config, &mut joinset).await;
+            let a = main.run(config, &mut joinset, &com2).await;
             log::error!("Android auto run finished with {:?}", a);
             joinset.abort_all();
         });
@@ -314,6 +315,8 @@ pub struct AppUserCommon {
     swupdate_channel: SwupdateChannelRecv,
     /// the shutdown sender
     shutdown_send: tokio::sync::mpsc::UnboundedSender<()>,
+    #[cfg(feature = "androidauto")]
+    token: android_auto::AndroidAutoSetup,
 }
 
 async fn receive_message_from_app(
@@ -1378,7 +1381,7 @@ async fn smain() {
 
     let args = <Arguments as clap::Parser>::parse();
     #[cfg(feature = "androidauto")]
-    android_auto::setup();
+    let token = android_auto::setup();
 
     let f = tokio::fs::File::open("./service.toml").await;
     let settings = if let Ok(mut f) = f {
@@ -1478,6 +1481,8 @@ async fn smain() {
             recv: swc1.1,
         },
         shutdown_send,
+        #[cfg(feature = "androidauto")]
+        token,
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(auc));
