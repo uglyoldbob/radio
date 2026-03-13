@@ -75,7 +75,8 @@ fn to_owned_settings(
 pub async fn start_hotspot(ssid: String, psk: String, wifi_dev_path: &str) -> Result<(), String> {
     let hotspot = nmrs::builders::WifiConnectionBuilder::new(&ssid)
         .wpa_psk(&psk)
-        .autoconnect(false)
+        .band(nmrs::builders::WifiBand::Bg)
+        .autoconnect(true)
         .mode(nmrs::builders::WifiMode::Ap)
         .build();
     let hr = build_hotspot(wifi_dev_path, hotspot).await;
