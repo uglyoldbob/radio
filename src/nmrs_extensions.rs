@@ -76,6 +76,8 @@ pub async fn start_hotspot(ssid: String, psk: String, wifi_dev_path: &str) -> Re
     let hotspot = nmrs::builders::WifiConnectionBuilder::new(&ssid)
         .wpa_psk(&psk)
         .band(nmrs::builders::WifiBand::Bg)
+        .ipv4_shared()
+        .ipv6_ignore()
         .autoconnect(true)
         .mode(nmrs::builders::WifiMode::Ap)
         .build();
