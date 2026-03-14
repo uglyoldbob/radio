@@ -14,8 +14,6 @@ mod wireless;
 
 #[cfg(feature = "ffmpeg")]
 mod ffmpeg;
-#[cfg(feature = "ffmpeg")]
-use ffmpeg::*;
 
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -327,16 +325,18 @@ fn main() {
 pub enum H264Decoder {
     Openh264(openh264::decoder::Decoder),
     #[cfg(feature = "ffmpeg")]
-    Ffmpeg(ffmpeg::Decoder),
+    Ffmpeg(ffmpeg::NalDecoder),
 }
 
 impl H264Decoder {
     pub fn new() -> Result<Self, String> {
         #[cfg(feature = "ffmpeg")]
         {
-            
+            return Ok(H264Decoder::Ffmpeg(
+                ffmpeg::NalDecoder::new(ffmpeg_next::codec::Id::H264, ffmpeg::DecoderConfig::auto()).expect("failed to init hw h264 decoder")
+            ));
         }
-        Ok(Self::Openh264(openh264::decoder::Decoder::new().map_err(|e| e.to_string())?))
+        Ok(Self::Openh264(openh264::decoder::Decoder::new().map_err(|_| "openh264 unknown error".to_string())?))
     }
 }
 

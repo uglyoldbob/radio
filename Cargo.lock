@@ -4513,6 +4513,7 @@ dependencies = [
  "service",
  "simple_logger 5.2.0",
  "swupdate-ipc",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite",
  "toml",

@@ -30,6 +30,7 @@ serde = {version = "1.0.219", features = ["derive"]}
 serde_json = "1.0.149"
 simple_logger = "5.0.0"
 swupdate-ipc = { path = "./swupdate-ipc", optional=true }
+thiserror = { version = "2.0.18", optional = true}
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-tungstenite = "0.28.0"
 toml = "0.8.20"
@@ -54,7 +55,7 @@ path = "src/main.rs"
 
 [features]
 default = ["usb", "wifi", "bluetooth", "androidauto", "ffmpeg"]
-ffmpeg = ["dep:ffmpeg-next"]
+ffmpeg = ["dep:ffmpeg-next", "dep:thiserror"]
 usb = ["android-auto?/usb"]
 wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi", "android-auto?/wireless"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]
