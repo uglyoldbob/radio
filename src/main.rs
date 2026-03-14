@@ -322,13 +322,17 @@ fn main() {
     .unwrap();
 }
 
+/// An h264 decoder
 pub enum H264Decoder {
+    /// Software decoding
     Openh264(openh264::decoder::Decoder),
+    /// Probably hardware decoding with ffmpeg
     #[cfg(feature = "ffmpeg")]
     Ffmpeg(ffmpeg::NalDecoder),
 }
 
 impl H264Decoder {
+    /// Construct a new decoder
     pub fn new() -> Result<Self, String> {
         #[cfg(feature = "ffmpeg")]
         {
@@ -337,6 +341,42 @@ impl H264Decoder {
             ));
         }
         Ok(Self::Openh264(openh264::decoder::Decoder::new().map_err(|_| "openh264 unknown error".to_string())?))
+    }
+
+    /// Decode nal data to frames
+    pub fn decode(&mut self, data: &[u8]) -> Vec<egui::ColorImage> {
+        let mut frames = Vec::new();
+        match self {
+            #[cfg(feature = "ffmpeg")]
+            Self::Ffmpeg(v) => {
+                todo!()
+            }
+            Self::Openh264(v) => {
+                let mut units = openh264::nal_units(data).peekable();
+                while let Some(p) = units.next() {
+                    match v.decode(p) {
+                        Err(e) => {
+                            log::error!("Failed to decode android auto video {:?}", e);
+                        }
+                        Ok(Some(image)) => {
+                            use openh264::formats::YUVSource;
+                            let rgb_len = image.rgb8_len();
+                            let mut rgb_raw = vec![0; rgb_len];
+                            image.write_rgb8(&mut rgb_raw);
+                            let (w, h) = image.dimensions_uv();
+                            let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
+                            let image = egui::ColorImage {
+                                size: [w * 2usize, h * 2usize],
+                                pixels: ei.get_egui(),
+                            };
+                            frames.push(image);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        frames
     }
 }
 
@@ -718,6 +758,7 @@ impl eframe::App for MyEguiApp {
         });
         #[cfg(feature = "androidauto")]
         if let Some(vdata) = self.common.radio.get_android_auto_video_buf() {
+
             let mut units = openh264::nal_units(&vdata).peekable();
             while let Some(p) = units.next() {
                 match self.common.android_auto_video_decoder.decode(p) {

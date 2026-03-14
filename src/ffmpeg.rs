@@ -138,7 +138,11 @@ pub enum HwDeviceType {
 impl HwDeviceType {
     pub fn as_av_hw_device_type(self) -> ffi::AVHWDeviceType {
         match self {
-            HwDeviceType::V4l2M2m => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_V4L2M2M,
+            // V4L2M2M = 13, defined in FFmpeg >= 4.0
+            // May be missing from bindgen output if FFmpeg was built without --enable-v4l2-m2m
+            HwDeviceType::V4l2M2m => unsafe {
+                std::mem::transmute::<u32, ffi::AVHWDeviceType>(13u32)
+            },
             HwDeviceType::Vaapi   => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI,
             HwDeviceType::Cuda    => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA,
             HwDeviceType::Qsv     => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_QSV,
