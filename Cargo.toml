@@ -17,6 +17,7 @@ egui_extras = { version = "0.31.1", features = ["all_loaders"] }
 enum_dispatch = "0.3.13"
 ffimage = "0.10.0"
 ffimage_yuv = "0.10.0"
+ffmpeg-next = { version = "8.0.0", optional = true }
 futures-util = "0.3.32"
 image = { version = "0.25.2", features = ["jpeg", "png"] }
 json = "0.12.4"
@@ -52,7 +53,8 @@ name = "radio_gui"
 path = "src/main.rs"
 
 [features]
-default = ["usb", "wifi", "bluetooth", "androidauto"]
+default = ["usb", "wifi", "bluetooth", "androidauto", "ffmpeg"]
+ffmpeg = ["dep:ffmpeg-next"]
 usb = ["android-auto?/usb"]
 wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi", "android-auto?/wireless"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]

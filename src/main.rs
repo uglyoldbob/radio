@@ -12,10 +12,14 @@ mod video;
 #[cfg(any(feature = "wifi", feature = "bluetooth"))]
 mod wireless;
 
+#[cfg(feature = "ffmpeg")]
+mod ffmpeg;
+#[cfg(feature = "ffmpeg")]
+use ffmpeg::*;
+
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui::{self};
-use egui::SelectableLabel;
 #[cfg(feature = "androidauto")]
 use ringbuf::traits::{Consumer, Observer, Producer};
 #[cfg(feature = "androidauto")]
@@ -43,6 +47,7 @@ trait SubwindowTrait {
     fn card(&self, active: bool, theme: &mut GraphicsTheme, ui: &mut egui::Ui) -> bool;
 }
 
+/// A trait to add functionality to egui ui object
 trait ConvenienceGui {
     /// Make a button big enough for fingers to touch
     fn big_button(&mut self, theme: &GraphicsTheme, text: &str) -> egui::Response;
@@ -319,6 +324,22 @@ fn main() {
     .unwrap();
 }
 
+pub enum H264Decoder {
+    Openh264(openh264::decoder::Decoder),
+    #[cfg(feature = "ffmpeg")]
+    Ffmpeg(ffmpeg::Decoder),
+}
+
+impl H264Decoder {
+    pub fn new() -> Result<Self, String> {
+        #[cfg(feature = "ffmpeg")]
+        {
+            
+        }
+        Ok(Self::Openh264(openh264::decoder::Decoder::new().map_err(|e| e.to_string())?))
+    }
+}
+
 /// The properties common to every window in the application
 struct CommonWindowProperties {
     /// The object to communicate with the radio service
@@ -337,7 +358,7 @@ struct CommonWindowProperties {
     /// The details for the current wifi network, ssid and password
     wifi_details: uobradio_comms::Pollable<(String, Option<String>)>,
     #[cfg(feature = "androidauto")]
-    android_auto_video_decoder: openh264::decoder::Decoder,
+    android_auto_video_decoder: H264Decoder,
     #[cfg(feature = "androidauto")]
     android_auto_texture: Option<egui::TextureHandle>,
     /// the onscreen keyboard
@@ -358,7 +379,7 @@ impl CommonWindowProperties {
             #[cfg(feature = "wifi")]
             wifi_details: Default::default(),
             #[cfg(feature = "androidauto")]
-            android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
+            android_auto_video_decoder: H264Decoder::new().expect("No h264 decoder"),
             #[cfg(feature = "androidauto")]
             android_auto_texture: None,
             keyboard: Default::default(),
