@@ -68,7 +68,7 @@ pub enum Modifier {
     Alt,
     Shift,
     /// Control key on most machines (except Macs).
-    /// Using Command because it souns cooler.
+    /// Using Command because it sounds cooler.
     Command,
 }
 

@@ -332,21 +332,26 @@ impl SubwindowTrait for Config {
                         match &mut common.vsettings.wireless.wifi_state {
                             uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w, pw) => {
                                 common.vsettings.wireless.show_keyboard = true;
-                                let t = egui::RichText::new("Wifi password...")
+                                let t = egui::RichText::new(&format!("Wifi password for {}", w.ssid))
                                     .size(16.0)
                                     .color(theme.text_secondary);
                                 ui.label(t);
                                 let edit = egui::text_edit::TextEdit::singleline(pw).password(true);
                                 ui.add(edit).request_focus();
-                                if ui.big_button(&theme,"Connect").clicked() {
-                                    new_wifi_state = Some(uobradio_comms::wireless::WifiConnectStage::Connecting);
-                                    let _ = common.radio.send_packet(
-                                        uobradio_comms::MessageFromApp::ConnectToNetwork {
-                                            network: w.clone(),
-                                            password: Some(pw.to_string()),
-                                        },
-                                    );
-                                }
+                                ui.horizontal(|ui| {
+                                    if ui.big_button(&theme,"Connect").clicked() {
+                                        new_wifi_state = Some(uobradio_comms::wireless::WifiConnectStage::Connecting);
+                                        let _ = common.radio.send_packet(
+                                            uobradio_comms::MessageFromApp::ConnectToNetwork {
+                                                network: w.clone(),
+                                                password: Some(pw.to_string()),
+                                            },
+                                        );
+                                    }
+                                    if ui.big_button(&theme,"Cancel").clicked() {
+                                        new_wifi_state = Some(uobradio_comms::wireless::WifiConnectStage::Idle);
+                                    }
+                                });
                             }
                             uobradio_comms::wireless::WifiConnectStage::Connecting => {
                                 let t = egui::RichText::new("Connecting to wifi network...")
