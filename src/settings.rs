@@ -233,7 +233,6 @@ impl SubwindowTrait for Settings {
                         ui.label(t);
                     }
                     if !common.vsettings.settings.update_status_pending {
-                        service::log::error!("Sending query for update progress");
                         common.vsettings.settings.update_status_pending = common
                             .radio
                             .send_packet(uobradio_comms::MessageFromApp::GetUpdateProgress)

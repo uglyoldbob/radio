@@ -15,6 +15,7 @@ mod wireless;
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui::{self};
+use egui::SelectableLabel;
 #[cfg(feature = "androidauto")]
 use ringbuf::traits::{Consumer, Observer, Producer};
 #[cfg(feature = "androidauto")]
@@ -46,10 +47,19 @@ trait ConvenienceGui {
     /// Make a button big enough for fingers to touch
     fn big_button(&mut self, theme: &GraphicsTheme, text: &str) -> egui::Response;
 
+    /// A selectable button that is big enough for fingers
     fn selectable_button(
         &mut self,
         theme: &GraphicsTheme,
         selected: bool,
+        text: &str,
+    ) -> egui::Response;
+
+    fn big_selectable_value<T: PartialEq>(
+        &mut self,
+        theme: &GraphicsTheme,
+        val: &mut T,
+        select: T,
         text: &str,
     ) -> egui::Response;
 }
@@ -90,6 +100,37 @@ impl ConvenienceGui for egui::Ui {
             .corner_radius(12.0);
 
         self.add(button)
+    }
+
+    fn big_selectable_value<T: PartialEq>(
+        &mut self,
+        theme: &GraphicsTheme,
+        val: &mut T,
+        select: T,
+        text: &str,
+    ) -> egui::Response {
+        let selected = *val == select;
+        let button_color = if selected {
+            theme.accent_primary
+        } else {
+            theme.bg_secondary
+        };
+        let text_color = if selected {
+            egui::Color32::WHITE
+        } else {
+            theme.text_secondary
+        };
+        let button = egui::Button::new(egui::RichText::new(text).size(16.0).color(text_color))
+            .fill(button_color)
+            .selected(selected)
+            .min_size(egui::vec2(70.0, 70.0))
+            .corner_radius(12.0);
+        let mut r = self.add(button);
+        if r.clicked() {
+            *val = select;
+            r.mark_changed();
+        }
+        r
     }
 }
 
@@ -704,11 +745,9 @@ impl eframe::App for MyEguiApp {
                         .new_value_optional(Some(list.to_owned()));
                 }
                 uobradio_comms::MessageToApp::NoUpdateInProgress => {
-                    log::error!("There is no update in progress");
                     self.common.vsettings.settings.update_status_pending = false;
                 }
                 uobradio_comms::MessageToApp::UpdateProgress(step, percent) => {
-                    log::error!("Setting update progress of step {step} to {percent}");
                     self.common.vsettings.settings.update_status_pending = false;
                     self.common.vsettings.settings.download_status =
                         uobradio_comms::settings::UpdateStatus::UpdateProgress(*step, *percent);
@@ -763,7 +802,6 @@ impl eframe::App for MyEguiApp {
                 }
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::WifiDetails { ssid, password } => {
-                    service::log::info!("Wifi connected: {ssid}");
                     self.common
                         .wifi_details
                         .new_value_optional(Some((ssid.clone(), password.clone())));

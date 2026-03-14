@@ -45,28 +45,32 @@ impl SubwindowTrait for Window {
                 ui.label(egui::RichText::new("Current mode").size(32.0));
                 ui.horizontal(|ui| {
                     if ui
-                        .selectable_value(
+                        .big_selectable_value(
+                            &theme,
                             &mut common.settings.hvac.current_mode,
                             uobradio_comms::HvacMode::Off,
                             "OFF",
                         )
                         .changed()
                         || ui
-                            .selectable_value(
+                            .big_selectable_value(
+                                &theme,
                                 &mut common.settings.hvac.current_mode,
                                 uobradio_comms::HvacMode::AcAuto,
                                 "Auto AC",
                             )
                             .changed()
                         || ui
-                            .selectable_value(
+                            .big_selectable_value(
+                                &theme,
                                 &mut common.settings.hvac.current_mode,
                                 uobradio_comms::HvacMode::HeatAuto,
                                 "Auto Heat",
                             )
                             .changed()
                         || ui
-                            .selectable_value(
+                            .big_selectable_value(
+                                &theme,
                                 &mut common.settings.hvac.current_mode,
                                 uobradio_comms::HvacMode::AutoAuto,
                                 "Auto Auto",

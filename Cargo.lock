@@ -5116,9 +5116,9 @@ dependencies = [
 
 [[package]]
 name = "service"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be31c792fe670119d8610f4b7d503d88a24c72d133ce8882fce5ac67c8d7ac74"
+checksum = "370e86b215b2c58f1b7421b17a4d8e1107ee0211be17f0e5b472fab022682166"
 dependencies = [
  "cfg-if",
  "eventlog",
