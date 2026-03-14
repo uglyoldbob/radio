@@ -303,7 +303,7 @@ fn main() {
             .with_always_on_top()
     } else {
         egui::ViewportBuilder::default()
-            .with_inner_size([800.0, 600.0])
+            .with_inner_size([800.0, 480.0])
             .with_resizable(false)
             .with_position([0.0, 0.0])
     };
