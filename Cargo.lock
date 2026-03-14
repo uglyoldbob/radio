@@ -1739,15 +1739,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "egui_virtual_keyboard"
-version = "0.1.4"
-source = "git+https://github.com/guspower/egui_virtual_keyboard.git?branch=egui-0.31.0#c2f3cc26d1028cd23f0630a56c3e8c9173ed9ab8"
-dependencies = [
- "egui 0.31.1",
- "serde",
-]
-
-[[package]]
 name = "ehttp"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4467,8 +4458,8 @@ dependencies = [
  "clap",
  "cpal",
  "eframe",
+ "egui 0.31.1",
  "egui_extras",
- "egui_virtual_keyboard",
  "enum_dispatch",
  "ffimage",
  "ffimage_yuv",

@@ -5,6 +5,7 @@
 //! The gui portion of the automotive radio solution.
 
 mod hvac;
+mod keyboard;
 mod offroad;
 mod settings;
 mod video;
@@ -299,7 +300,7 @@ struct CommonWindowProperties {
     #[cfg(feature = "androidauto")]
     android_auto_texture: Option<egui::TextureHandle>,
     /// the onscreen keyboard
-    keyboard: egui_virtual_keyboard::VirtualKeyboard,
+    keyboard: crate::keyboard::VirtualKeyboard,
 }
 
 impl CommonWindowProperties {
