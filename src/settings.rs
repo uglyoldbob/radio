@@ -5,6 +5,8 @@ use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+use crate::ConvenienceGui;
+
 /// The settings page for the application, with sub-menus
 #[derive(Clone, Copy)]
 pub struct Settings {}
@@ -26,27 +28,8 @@ impl SubwindowTrait for Settings {
     }
 
     fn card(&self, active: bool, theme: &mut super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
-        let button_color = if active {
-            theme.accent_primary
-        } else {
-            theme.bg_secondary
-        };
-        let text_color = if active {
-            egui::Color32::WHITE
-        } else {
-            theme.text_secondary
-        };
-
-        let button = egui::Button::new(
-            egui::RichText::new(format!("{}\n{}", "🚗", "Settings"))
-                .size(16.0)
-                .color(text_color),
-        )
-        .fill(button_color)
-        .min_size(egui::vec2(70.0, 70.0))
-        .corner_radius(12.0);
-
-        ui.add(button).clicked()
+        ui.selectable_button(&theme, active, &format!("{}\n{}", "🚗", "Settings"))
+            .clicked()
     }
 
     fn update(
@@ -278,16 +261,7 @@ impl SubwindowTrait for Settings {
                                 }
                             }
                             if let Some(update_url) = std::option_env!("UPDATE_SERVER") {
-                                let button = egui::Button::new(
-                                    egui::RichText::new("Check for updates")
-                                        .size(16.0)
-                                        .color(theme.text_secondary),
-                                )
-                                .fill(theme.bg_secondary)
-                                .min_size(egui::vec2(70.0, 70.0))
-                                .corner_radius(12.0);
-
-                                if ui.add(button).clicked() {
+                                if ui.big_button(&theme, "Check for updates").clicked() {
                                     let _ = common.radio.send_packet(
                                         uobradio_comms::MessageFromApp::DownloadServerFileList(
                                             update_url.to_string(),
@@ -297,16 +271,7 @@ impl SubwindowTrait for Settings {
                                 match &common.vsettings.settings.list {
                                     Ok(list) => {
                                         for f in  list {
-                                            let button = egui::Button::new(
-                                                egui::RichText::new(f)
-                                                    .size(16.0)
-                                                    .color(theme.text_secondary),
-                                            )
-                                            .fill(theme.bg_secondary)
-                                            .min_size(egui::vec2(70.0, 70.0))
-                                            .corner_radius(12.0);
-
-                                            if ui.add(button).clicked() {
+                                            if ui.big_button(&theme, f).clicked() {
                                                 common.vsettings.settings.download_status =
                                                     uobradio_comms::settings::UpdateStatus::DownloadStarted;
                                                 let url = format!("{update_url}/{f}");

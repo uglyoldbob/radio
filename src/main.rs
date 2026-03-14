@@ -41,6 +41,57 @@ trait SubwindowTrait {
     fn card(&self, active: bool, theme: &mut GraphicsTheme, ui: &mut egui::Ui) -> bool;
 }
 
+trait ConvenienceGui {
+    /// Make a button big enough for fingers to touch
+    fn big_button(&mut self, theme: &GraphicsTheme, text: &str) -> egui::Response;
+
+    fn selectable_button(
+        &mut self,
+        theme: &GraphicsTheme,
+        selected: bool,
+        text: &str,
+    ) -> egui::Response;
+}
+
+impl ConvenienceGui for egui::Ui {
+    fn big_button(&mut self, theme: &GraphicsTheme, text: &str) -> egui::Response {
+        let button = egui::Button::new(
+            egui::RichText::new(text)
+                .size(16.0)
+                .color(theme.text_secondary),
+        )
+        .fill(theme.bg_secondary)
+        .min_size(egui::vec2(70.0, 70.0))
+        .corner_radius(12.0);
+        self.add(button)
+    }
+
+    fn selectable_button(
+        &mut self,
+        theme: &GraphicsTheme,
+        selected: bool,
+        text: &str,
+    ) -> egui::Response {
+        let button_color = if selected {
+            theme.accent_primary
+        } else {
+            theme.bg_secondary
+        };
+        let text_color = if selected {
+            egui::Color32::WHITE
+        } else {
+            theme.text_secondary
+        };
+
+        let button = egui::Button::new(egui::RichText::new(text).size(16.0).color(text_color))
+            .fill(button_color)
+            .min_size(egui::vec2(70.0, 70.0))
+            .corner_radius(12.0);
+
+        self.add(button)
+    }
+}
+
 /// The main page for the gui
 #[derive(Clone, Copy)]
 struct MainPage {}
@@ -79,8 +130,6 @@ impl SubwindowTrait for MainPage {
     ) -> Option<Subwindow> {
         let r = None;
         egui::CentralPanel::default().show(ctx, |ui| {
-            let min_size = CommonWindowProperties::min_size(ui);
-
             #[cfg(feature = "androidauto")]
             {
                 if common.radio.android_auto_frontend() {
@@ -158,8 +207,7 @@ impl SubwindowTrait for MainPage {
                 }
             }
 
-            let quit = ui.add(egui::Button::new("Quit").min_size(min_size));
-            if quit.clicked() {
+            if ui.big_button(&theme, "Quit").clicked() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             }
         });
@@ -167,27 +215,8 @@ impl SubwindowTrait for MainPage {
     }
 
     fn card(&self, active: bool, theme: &mut GraphicsTheme, ui: &mut egui::Ui) -> bool {
-        let button_color = if active {
-            theme.accent_primary
-        } else {
-            theme.bg_secondary
-        };
-        let text_color = if active {
-            egui::Color32::WHITE
-        } else {
-            theme.text_secondary
-        };
-
-        let button = egui::Button::new(
-            egui::RichText::new(format!("{}\n{}", "H", "Home"))
-                .size(16.0)
-                .color(text_color),
-        )
-        .fill(button_color)
-        .min_size(egui::vec2(70.0, 70.0))
-        .corner_radius(12.0);
-
-        ui.add(button).clicked()
+        ui.selectable_button(&theme, active, &format!("{}\n{}", "H", "Home"))
+            .clicked()
     }
 
     fn process_packet(
@@ -292,12 +321,6 @@ impl CommonWindowProperties {
             android_auto_texture: None,
             keyboard: Default::default(),
         }
-    }
-
-    /// Get the minimum size for ui elements
-    pub fn min_size(ui: &egui::Ui) -> egui::Vec2 {
-        let m = ui.pixels_per_point();
-        egui::vec2(30.0 * m, 30.0 * m)
     }
 }
 
@@ -798,31 +821,21 @@ impl eframe::App for MyEguiApp {
                     ui.vertical_centered(|ui| {
                         let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
                         ui.label(t);
-                        let min_size = CommonWindowProperties::min_size(ui);
-                        if ui
-                            .add(egui::Button::new("Confirm").min_size(min_size))
-                            .clicked()
-                        {
+                        if ui.big_button(&self.theme, "Confirm").clicked() {
                             let r = bluetooth_rust::ResponseToPasskey::Yes;
                             let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
                             let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
                             let _ = self.common.radio.send_packet(packet);
                             log::info!("Got confirm request from user for bluetooth passkey");
                         }
-                        if ui
-                            .add(egui::Button::new("Reject").min_size(min_size))
-                            .clicked()
-                        {
+                        if ui.big_button(&self.theme, "Reject").clicked() {
                             let r = bluetooth_rust::ResponseToPasskey::No;
                             let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
                             let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
                             let _ = self.common.radio.send_packet(packet);
                             log::info!("Got reject request from user for bluetooth passkey");
                         }
-                        if ui
-                            .add(egui::Button::new("Cancel").min_size(min_size))
-                            .clicked()
-                        {
+                        if ui.big_button(&self.theme, "Cancel").clicked() {
                             let r = bluetooth_rust::ResponseToPasskey::Cancel;
                             let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
                             let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);

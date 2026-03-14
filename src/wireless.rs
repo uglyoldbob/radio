@@ -5,6 +5,8 @@ use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+use crate::ConvenienceGui;
+
 /// The wireless config page
 #[derive(Clone, Copy)]
 pub struct Config {}
@@ -86,27 +88,8 @@ impl SubwindowTrait for Config {
     }
 
     fn card(&self, active: bool, theme: &mut super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
-        let button_color = if active {
-            theme.accent_primary
-        } else {
-            theme.bg_secondary
-        };
-        let text_color = if active {
-            egui::Color32::WHITE
-        } else {
-            theme.text_secondary
-        };
-
-        let button = egui::Button::new(
-            egui::RichText::new(format!("{}\n{}", "📱", "Wireless"))
-                .size(16.0)
-                .color(text_color),
-        )
-        .fill(button_color)
-        .min_size(egui::vec2(70.0, 70.0))
-        .corner_radius(12.0);
-
-        ui.add(button).clicked()
+        ui.selectable_button(&theme, active, &format!("{}\n{}", "📱", "Wireless"))
+            .clicked()
     }
 
     fn update(
@@ -122,13 +105,10 @@ impl SubwindowTrait for Config {
         #[cfg(feature = "wifi")]
         {
             common.wifi_details.poll_action(|| {
-                service::log::info!("Polling wifi details");
                 let a = common
                     .radio
                     .send_packet(uobradio_comms::MessageFromApp::GetWifiDetails);
-                service::log::info!("Send packet is {:?}", a);
             });
-            log::info!("WIFI IS {:?}", common.wifi_details);
         }
         #[cfg(feature = "wifi")]
         self.update_qr_code(ctx, common);
@@ -278,12 +258,12 @@ impl SubwindowTrait for Config {
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
                             ui.label("Future expansion here for bluetooth settings");
-                            if ui.button("Enable discovery").clicked() {
+                            if ui.big_button(&theme, "Enable discovery").clicked() {
                                 let _ = common.radio.send_packet(
                                     uobradio_comms::MessageFromApp::SetBluetoothDiscovery(true),
                                 );
                             }
-                            if ui.button("Disable discovery").clicked() {
+                            if ui.big_button(&theme, "Disable discovery").clicked() {
                                 let _ = common.radio.send_packet(
                                     uobradio_comms::MessageFromApp::SetBluetoothDiscovery(false),
                                 );
@@ -358,16 +338,7 @@ impl SubwindowTrait for Config {
                                 ui.label(t);
                                 let edit = egui::text_edit::TextEdit::singleline(pw).password(true);
                                 ui.add(edit).request_focus();
-                                let button = egui::Button::new(
-                                    egui::RichText::new("Connect")
-                                        .size(16.0)
-                                        .color(theme.text_secondary),
-                                )
-                                .fill(theme.bg_secondary)
-                                .min_size(egui::vec2(70.0, 70.0))
-                                .corner_radius(12.0);
-
-                                if ui.add(button).clicked() {
+                                if ui.big_button(&theme,"Connect").clicked() {
                                     new_wifi_state = Some(uobradio_comms::wireless::WifiConnectStage::Connecting);
                                     let _ = common.radio.send_packet(
                                         uobradio_comms::MessageFromApp::ConnectToNetwork {
@@ -388,16 +359,7 @@ impl SubwindowTrait for Config {
                                     .size(16.0)
                                     .color(theme.text_secondary);
                                 ui.label(t);
-                                let button = egui::Button::new(
-                                    egui::RichText::new("OK")
-                                        .size(16.0)
-                                        .color(theme.text_secondary),
-                                )
-                                .fill(theme.bg_secondary)
-                                .min_size(egui::vec2(70.0, 70.0))
-                                .corner_radius(12.0);
-
-                                if ui.add(button).clicked() {
+                                if ui.big_button(&theme, "OK").clicked() {
                                     common.vsettings.wireless.wifi_state =
                                         uobradio_comms::wireless::WifiConnectStage::Idle;
                                 }
@@ -407,16 +369,7 @@ impl SubwindowTrait for Config {
                                     .size(16.0)
                                     .color(theme.text_secondary);
                                 ui.label(t);
-                                let button = egui::Button::new(
-                                    egui::RichText::new("OK")
-                                        .size(16.0)
-                                        .color(theme.text_secondary),
-                                )
-                                .fill(theme.bg_secondary)
-                                .min_size(egui::vec2(70.0, 70.0))
-                                .corner_radius(12.0);
-
-                                if ui.add(button).clicked() {
+                                if ui.big_button(&theme, "OK").clicked() {
                                     common.vsettings.wireless.wifi_state =
                                         uobradio_comms::wireless::WifiConnectStage::Idle;
                                 }
@@ -427,12 +380,12 @@ impl SubwindowTrait for Config {
                                     for (i, w) in wifi_nets.iter().enumerate() {
                                         ui.label(format!(" * {}: {}", i, w));
                                         ui.horizontal(|ui| {
-                                            if ui.button("Forget").clicked() {
+                                            if ui.big_button(&theme, "Forget").clicked() {
                                                 let _ = common.radio.send_packet(
                                                     uobradio_comms::MessageFromApp::ForgetWifiNetwork(w.clone()),
                                                 );
                                             }
-                                            if ui.button("Connect").clicked() {
+                                            if ui.big_button(&theme, "Connect").clicked() {
                                                 let _ = common.radio.send_packet(
                                                     uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(w.clone()),
                                                 );
@@ -441,16 +394,7 @@ impl SubwindowTrait for Config {
                                     }
                                 }
                                 let mut scan = || {
-                                    let button = egui::Button::new(
-                                        egui::RichText::new("Scan for networks")
-                                            .size(16.0)
-                                            .color(theme.text_secondary),
-                                    )
-                                    .fill(theme.bg_secondary)
-                                    .min_size(egui::vec2(70.0, 70.0))
-                                    .corner_radius(12.0);
-
-                                    if ui.add(button).clicked() {
+                                    if ui.big_button(&theme, "Scan for networks").clicked() {
                                         common.available_networks.poll_action(|| {
                                             let _ = common.radio.send_packet(
                                                 uobradio_comms::MessageFromApp::ScanForWifiNetworks,
@@ -459,7 +403,7 @@ impl SubwindowTrait for Config {
                                     }
                                     if let Some(asdf) = common.available_networks.value() {
                                         for (i, w) in asdf.iter().enumerate() {
-                                            if ui.button(format!("Wifi network {i} {}", w.ssid)).clicked() {
+                                            if ui.big_button(&theme, &format!("Wifi network {i} {}", w.ssid)).clicked() {
                                                 common.vsettings.wireless.wifi_state = uobradio_comms::wireless::WifiConnectStage::PasswordPrompt(w.clone(), String::new());
                                             }
                                         }

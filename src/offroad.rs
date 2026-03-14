@@ -5,6 +5,8 @@ use super::Subwindow;
 use super::SubwindowTrait;
 use eframe::egui;
 
+use crate::ConvenienceGui;
+
 /// The offroad page for the application
 #[derive(Clone, Copy)]
 pub struct Window {}
@@ -26,27 +28,8 @@ impl SubwindowTrait for Window {
     }
 
     fn card(&self, active: bool, theme: &mut super::GraphicsTheme, ui: &mut egui::Ui) -> bool {
-        let button_color = if active {
-            theme.accent_primary
-        } else {
-            theme.bg_secondary
-        };
-        let text_color = if active {
-            egui::Color32::WHITE
-        } else {
-            theme.text_secondary
-        };
-
-        let button = egui::Button::new(
-            egui::RichText::new(format!("{}\n{}", "🚗", "4X4"))
-                .size(16.0)
-                .color(text_color),
-        )
-        .fill(button_color)
-        .min_size(egui::vec2(70.0, 70.0))
-        .corner_radius(12.0);
-
-        ui.add(button).clicked()
+        ui.selectable_button(&theme, active, &format!("{}\n{}", "🚗", "4X4"))
+            .clicked()
     }
 
     fn update(
