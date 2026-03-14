@@ -37,7 +37,7 @@ zbus = "5.13.2"
 zvariant = "5.9.2"
 
 [dependencies.service]
-path = "./service/service"
+version = "0.2.1"
 features = ["async", "serde", "prompt", "egui-prompt"]
 
 [target.'cfg(target_os = "linux")'.dependencies]

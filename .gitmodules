@@ -1,6 +1,3 @@
 [submodule "webpki"]
 	path = webpki
 	url = https://github.com/uglyoldbob/webpki.git
-[submodule "service"]
-	path = service
-	url = https://github.com/uglyoldbob/service.git
