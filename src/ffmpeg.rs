@@ -143,33 +143,33 @@ impl HwDeviceType {
             HwDeviceType::V4l2M2m => unsafe {
                 std::mem::transmute::<u32, ffi::AVHWDeviceType>(13u32)
             },
-            HwDeviceType::Vaapi   => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI,
-            HwDeviceType::Cuda    => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA,
-            HwDeviceType::Qsv     => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_QSV,
-            HwDeviceType::Drm     => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_DRM,
-            HwDeviceType::Vulkan  => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VULKAN,
-            HwDeviceType::Vdpau   => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VDPAU,
+            HwDeviceType::Vaapi => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI,
+            HwDeviceType::Cuda => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA,
+            HwDeviceType::Qsv => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_QSV,
+            HwDeviceType::Drm => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_DRM,
+            HwDeviceType::Vulkan => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VULKAN,
+            HwDeviceType::Vdpau => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VDPAU,
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
             HwDeviceType::V4l2M2m => "v4l2m2m",
-            HwDeviceType::Vaapi   => "vaapi",
-            HwDeviceType::Cuda    => "cuda",
-            HwDeviceType::Qsv     => "qsv",
-            HwDeviceType::Drm     => "drm",
-            HwDeviceType::Vulkan  => "vulkan",
-            HwDeviceType::Vdpau   => "vdpau",
+            HwDeviceType::Vaapi => "vaapi",
+            HwDeviceType::Cuda => "cuda",
+            HwDeviceType::Qsv => "qsv",
+            HwDeviceType::Drm => "drm",
+            HwDeviceType::Vulkan => "vulkan",
+            HwDeviceType::Vdpau => "vdpau",
         }
     }
 
     pub fn default_device(self) -> Option<&'static str> {
         match self {
             HwDeviceType::V4l2M2m => Some("/dev/video0"),
-            HwDeviceType::Vaapi   => Some("/dev/dri/renderD128"),
-            HwDeviceType::Drm     => Some("/dev/dri/card0"),
-            _                     => None,
+            HwDeviceType::Vaapi => Some("/dev/dri/renderD128"),
+            HwDeviceType::Drm => Some("/dev/dri/card0"),
+            _ => None,
         }
     }
 
@@ -220,20 +220,27 @@ impl HwBackend {
         match self {
             HwBackend::Auto | HwBackend::Software => None,
             HwBackend::V4l2m2m => Some(HwDeviceType::V4l2M2m),
-            HwBackend::Vaapi   => Some(HwDeviceType::Vaapi),
-            HwBackend::Cuda    => Some(HwDeviceType::Cuda),
-            HwBackend::Qsv     => Some(HwDeviceType::Qsv),
-            HwBackend::Drm     => Some(HwDeviceType::Drm),
-            HwBackend::Vulkan  => Some(HwDeviceType::Vulkan),
-            HwBackend::Vdpau   => Some(HwDeviceType::Vdpau),
+            HwBackend::Vaapi => Some(HwDeviceType::Vaapi),
+            HwBackend::Cuda => Some(HwDeviceType::Cuda),
+            HwBackend::Qsv => Some(HwDeviceType::Qsv),
+            HwBackend::Drm => Some(HwDeviceType::Drm),
+            HwBackend::Vulkan => Some(HwDeviceType::Vulkan),
+            HwBackend::Vdpau => Some(HwDeviceType::Vdpau),
         }
     }
 
-    pub fn is_software(self) -> bool { self == HwBackend::Software }
+    pub fn is_software(self) -> bool {
+        self == HwBackend::Software
+    }
 
-    pub fn to_config(self, device_path: Option<String>, no_fallback: bool, low_latency: bool) -> DecoderConfig {
+    pub fn to_config(
+        self,
+        device_path: Option<String>,
+        no_fallback: bool,
+        low_latency: bool,
+    ) -> DecoderConfig {
         DecoderConfig {
-            hw_device_type:       self.to_hw_device_type(),
+            hw_device_type: self.to_hw_device_type(),
             device_path,
             fallback_to_software: !no_fallback && !self.is_software(),
             low_latency,
@@ -251,12 +258,12 @@ impl HwBackend {
 /// Returns `None` for codecs not accelerated by the VPU.
 pub fn imx8mp_v4l2_device(codec_id: ffmpeg_next::codec::Id) -> Option<&'static str> {
     match codec_id {
-        ffmpeg_next::codec::Id::H264                          => Some("/dev/video0"),
-        ffmpeg_next::codec::Id::HEVC                          => Some("/dev/video1"),
-        ffmpeg_next::codec::Id::VP8                           => Some("/dev/video2"),
-        ffmpeg_next::codec::Id::VP9                           => Some("/dev/video3"),
+        ffmpeg_next::codec::Id::H264 => Some("/dev/video0"),
+        ffmpeg_next::codec::Id::HEVC => Some("/dev/video1"),
+        ffmpeg_next::codec::Id::VP8 => Some("/dev/video2"),
+        ffmpeg_next::codec::Id::VP9 => Some("/dev/video3"),
         ffmpeg_next::codec::Id::MPEG2VIDEO | ffmpeg_next::codec::Id::MPEG4 => Some("/dev/video4"),
-        _                                        => None,
+        _ => None,
     }
 }
 
@@ -275,13 +282,17 @@ unsafe impl Sync for HwDeviceContext {}
 
 impl HwDeviceContext {
     pub fn new(device_type: HwDeviceType, device: Option<&str>) -> Result<Self> {
-        let device_path = device.or_else(|| device_type.default_device()).unwrap_or("");
+        let device_path = device
+            .or_else(|| device_type.default_device())
+            .unwrap_or("");
 
         let c_device = if device_path.is_empty() {
             None
         } else {
-            Some(CString::new(device_path)
-                .map_err(|_| DecoderError::HwDeviceCreate(device_path.to_owned()))?)
+            Some(
+                CString::new(device_path)
+                    .map_err(|_| DecoderError::HwDeviceCreate(device_path.to_owned()))?,
+            )
         };
 
         let mut ptr: *mut ffi::AVBufferRef = std::ptr::null_mut();
@@ -289,7 +300,10 @@ impl HwDeviceContext {
             ffi::av_hwdevice_ctx_create(
                 &mut ptr,
                 device_type.as_av_hw_device_type(),
-                c_device.as_ref().map(|s| s.as_ptr()).unwrap_or(std::ptr::null()),
+                c_device
+                    .as_ref()
+                    .map(|s| s.as_ptr())
+                    .unwrap_or(std::ptr::null()),
                 std::ptr::null_mut(),
                 0,
             )
@@ -297,7 +311,10 @@ impl HwDeviceContext {
 
         if ret < 0 || ptr.is_null() {
             return Err(DecoderError::HwDeviceCreate(format!(
-                "{} (device={:?}, err={})", device_type.name(), device, ret
+                "{} (device={:?}, err={})",
+                device_type.name(),
+                device,
+                ret
             )));
         }
 
@@ -325,13 +342,17 @@ pub fn hw_pixel_formats_for_codec(codec: &codec::Codec, device_type: HwDeviceTyp
     let mut i = 0i32;
     loop {
         let cfg = unsafe { ffi::avcodec_get_hw_config(codec.as_ptr(), i) };
-        if cfg.is_null() { break; }
+        if cfg.is_null() {
+            break;
+        }
         let cfg = unsafe { &*cfg };
         if cfg.device_type == av_type
             && (cfg.methods & ffi::AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX as i32) != 0
         {
             let pix = Pixel::from(cfg.pix_fmt);
-            if pix != Pixel::None { out.push(pix); }
+            if pix != Pixel::None {
+                out.push(pix);
+            }
         }
         i += 1;
     }
@@ -352,12 +373,21 @@ impl SoftwareFrame {
     pub fn from_hw_frame(hw_frame: &VideoFrame) -> Result<Self> {
         if is_hardware_pixel_format(hw_frame.format()) {
             let mut sw = VideoFrame::empty();
-            let ret = unsafe {
-                ffi::av_hwframe_transfer_data(sw.as_mut_ptr(), hw_frame.as_ptr(), 0)
-            };
-            if ret < 0 { return Err(DecoderError::FrameTransfer); }
-            unsafe { ffi::av_frame_copy_props(sw.as_mut_ptr(), hw_frame.as_ptr()); }
-            log::trace!("hw transfer {:?}->{:?} {}x{}", hw_frame.format(), sw.format(), sw.width(), sw.height());
+            let ret =
+                unsafe { ffi::av_hwframe_transfer_data(sw.as_mut_ptr(), hw_frame.as_ptr(), 0) };
+            if ret < 0 {
+                return Err(DecoderError::FrameTransfer);
+            }
+            unsafe {
+                ffi::av_frame_copy_props(sw.as_mut_ptr(), hw_frame.as_ptr());
+            }
+            log::trace!(
+                "hw transfer {:?}->{:?} {}x{}",
+                hw_frame.format(),
+                sw.format(),
+                sw.width(),
+                sw.height()
+            );
             Ok(Self { inner: sw })
         } else {
             let mut sw = VideoFrame::empty();
@@ -368,23 +398,38 @@ impl SoftwareFrame {
         }
     }
 
-    pub fn width(&self)               -> u32         { self.inner.width() }
-    pub fn height(&self)              -> u32         { self.inner.height() }
-    pub fn format(&self)              -> Pixel       { self.inner.format() }
-    pub fn pts(&self)                 -> Option<i64> { self.inner.pts() }
-    pub fn as_video_frame(&self)      -> &VideoFrame { &self.inner }
-    pub fn plane_data(&self, i: usize) -> &[u8]      { self.inner.data(i) }
-    pub fn linesize(&self,   i: usize) -> usize       { self.inner.stride(i) }
+    pub fn width(&self) -> u32 {
+        self.inner.width()
+    }
+    pub fn height(&self) -> u32 {
+        self.inner.height()
+    }
+    pub fn format(&self) -> Pixel {
+        self.inner.format()
+    }
+    pub fn pts(&self) -> Option<i64> {
+        self.inner.pts()
+    }
+    pub fn as_video_frame(&self) -> &VideoFrame {
+        &self.inner
+    }
+    pub fn plane_data(&self, i: usize) -> &[u8] {
+        self.inner.data(i)
+    }
+    pub fn linesize(&self, i: usize) -> usize {
+        self.inner.stride(i)
+    }
 
     /// Convert to packed RGB24 via libswscale.
     pub fn to_rgb24(&self) -> Result<VideoFrame> {
         let src = self.inner.format();
-        let w   = self.inner.width();
-        let h   = self.inner.height();
+        let w = self.inner.width();
+        let h = self.inner.height();
         let mut sws = SwsContext::get(src, w, h, Pixel::RGB24, w, h, Flags::BILINEAR)
             .map_err(|_| DecoderError::UnsupportedPixelFormat(src))?;
         let mut dst = VideoFrame::new(Pixel::RGB24, w, h);
-        sws.run(&self.inner, &mut dst).map_err(|_| DecoderError::UnsupportedPixelFormat(src))?;
+        sws.run(&self.inner, &mut dst)
+            .map_err(|_| DecoderError::UnsupportedPixelFormat(src))?;
         Ok(dst)
     }
 }
@@ -392,7 +437,9 @@ impl SoftwareFrame {
 /// `true` if `pixel` has `AV_PIX_FMT_FLAG_HWACCEL`.
 pub fn is_hardware_pixel_format(pixel: Pixel) -> bool {
     let desc = unsafe { ffi::av_pix_fmt_desc_get(pixel.into()) };
-    if desc.is_null() { return false; }
+    if desc.is_null() {
+        return false;
+    }
     (unsafe { (*desc).flags } & ffi::AV_PIX_FMT_FLAG_HWACCEL as u64) != 0
 }
 
@@ -416,7 +463,10 @@ pub struct DecoderConfig {
 
 impl DecoderConfig {
     pub fn auto() -> Self {
-        Self { fallback_to_software: true, ..Default::default() }
+        Self {
+            fallback_to_software: true,
+            ..Default::default()
+        }
     }
 }
 
@@ -425,14 +475,18 @@ impl DecoderConfig {
 // ============================================================================
 
 mod get_format_state {
-    use std::cell::Cell;
     use ffmpeg_next::{ffi, format::Pixel};
+    use std::cell::Cell;
     thread_local! {
         static DESIRED: Cell<ffi::AVPixelFormat> =
             Cell::new(ffi::AVPixelFormat::AV_PIX_FMT_NONE);
     }
-    pub fn set(fmt: Pixel)             { DESIRED.with(|c| c.set(fmt.into())); }
-    pub fn get() -> ffi::AVPixelFormat { DESIRED.with(|c| c.get()) }
+    pub fn set(fmt: Pixel) {
+        DESIRED.with(|c| c.set(fmt.into()));
+    }
+    pub fn get() -> ffi::AVPixelFormat {
+        DESIRED.with(|c| c.get())
+    }
 }
 
 extern "C" fn get_format(
@@ -443,8 +497,12 @@ extern "C" fn get_format(
     let mut i = 0;
     loop {
         let fmt = unsafe { *fmt_list.add(i) };
-        if fmt == ffi::AVPixelFormat::AV_PIX_FMT_NONE { break; }
-        if fmt == desired { return fmt; }
+        if fmt == ffi::AVPixelFormat::AV_PIX_FMT_NONE {
+            break;
+        }
+        if fmt == desired {
+            return fmt;
+        }
         i += 1;
     }
     unsafe { *fmt_list }
@@ -455,21 +513,28 @@ extern "C" fn get_format(
 // ============================================================================
 
 fn probe_hw(
-    codec:     &codec::Codec,
-    codec_id:  ffmpeg_next::codec::Id,
+    codec: &codec::Codec,
+    codec_id: ffmpeg_next::codec::Id,
     codec_ctx: &mut ffmpeg_next::codec::context::Context,
-    config:    &DecoderConfig,
+    config: &DecoderConfig,
 ) -> (Option<HwDeviceContext>, Option<Pixel>) {
     let candidates: Vec<(HwDeviceType, Option<String>)> = if let Some(dt) = config.hw_device_type {
-        let node = config.device_path.clone()
+        let node = config
+            .device_path
+            .clone()
             .or_else(|| codec_device_node(dt, codec_id).map(str::to_owned));
         vec![(dt, node)]
     } else {
-        HwDeviceType::probe_order().iter().map(|&dt| {
-            let node = config.device_path.clone()
-                .or_else(|| codec_device_node(dt, codec_id).map(str::to_owned));
-            (dt, node)
-        }).collect()
+        HwDeviceType::probe_order()
+            .iter()
+            .map(|&dt| {
+                let node = config
+                    .device_path
+                    .clone()
+                    .or_else(|| codec_device_node(dt, codec_id).map(str::to_owned));
+                (dt, node)
+            })
+            .collect()
     };
 
     for (dt, node) in candidates {
@@ -477,13 +542,19 @@ fn probe_hw(
 
         let hw_ctx = match HwDeviceContext::new(dt, node_str) {
             Ok(ctx) => ctx,
-            Err(e)  => { log::debug!("skip {} {:?}: {}", dt.name(), node_str, e); continue; }
+            Err(e) => {
+                log::debug!("skip {} {:?}: {}", dt.name(), node_str, e);
+                continue;
+            }
         };
 
         let hw_fmts = hw_pixel_formats_for_codec(codec, dt);
-        let hw_fmt  = match hw_fmts.first().copied() {
+        let hw_fmt = match hw_fmts.first().copied() {
             Some(f) => f,
-            None    => { log::debug!("skip {}: no hw configs for {:?}", dt.name(), codec_id); continue; }
+            None => {
+                log::debug!("skip {}: no hw configs for {:?}", dt.name(), codec_id);
+                continue;
+            }
         };
 
         log::info!("hw: {} @ {:?}  fmt={:?}", dt.name(), node_str, hw_fmt);
@@ -491,7 +562,7 @@ fn probe_hw(
         unsafe {
             let p = codec_ctx.as_mut_ptr();
             (*p).hw_device_ctx = hw_ctx.ref_ptr();
-            (*p).get_format    = Some(get_format);
+            (*p).get_format = Some(get_format);
         }
         return (Some(hw_ctx), Some(hw_fmt));
     }
@@ -506,30 +577,37 @@ fn probe_hw(
 fn codec_device_node(dt: HwDeviceType, codec_id: ffmpeg_next::codec::Id) -> Option<&'static str> {
     match dt {
         HwDeviceType::V4l2M2m => imx8mp_v4l2_device(codec_id).or_else(|| dt.default_device()),
-        _                     => dt.default_device(),
+        _ => dt.default_device(),
     }
 }
 
 /// Apply thread count and low-latency flags to a raw `AVCodecContext`.
 fn apply_codec_flags(codec_ctx: &mut ffmpeg_next::codec::context::Context, config: &DecoderConfig) {
     if config.thread_count > 0 {
-        unsafe { (*codec_ctx.as_mut_ptr()).thread_count = config.thread_count as c_int; }
+        unsafe {
+            (*codec_ctx.as_mut_ptr()).thread_count = config.thread_count as c_int;
+        }
     }
     if config.low_latency {
         unsafe {
-            (*codec_ctx.as_mut_ptr()).flags  |= ffi::AV_CODEC_FLAG_LOW_DELAY as c_int;
-            (*codec_ctx.as_mut_ptr()).flags2 |= ffi::AV_CODEC_FLAG2_FAST     as c_int;
+            (*codec_ctx.as_mut_ptr()).flags |= ffi::AV_CODEC_FLAG_LOW_DELAY as c_int;
+            (*codec_ctx.as_mut_ptr()).flags2 |= ffi::AV_CODEC_FLAG2_FAST as c_int;
         }
     }
 }
 
 /// Drain all available frames from the codec into `out`.
-fn drain_frames(decoder: &mut ffmpeg_next::codec::decoder::Video, out: &mut Vec<SoftwareFrame>) -> Result<()> {
+fn drain_frames(
+    decoder: &mut ffmpeg_next::codec::decoder::Video,
+    out: &mut Vec<SoftwareFrame>,
+) -> Result<()> {
     loop {
         let mut hw_frame = VideoFrame::empty();
         match decoder.receive_frame(&mut hw_frame) {
             Ok(()) => out.push(SoftwareFrame::from_hw_frame(&hw_frame)?),
-            Err(ffmpeg_next::Error::Other { errno }) if errno == ffmpeg_next::error::EAGAIN => break,
+            Err(ffmpeg_next::Error::Other { errno }) if errno == ffmpeg_next::error::EAGAIN => {
+                break
+            }
             Err(ffmpeg_next::Error::Eof) => break,
             Err(e) => return Err(DecoderError::Ffmpeg(e)),
         }
@@ -565,12 +643,14 @@ impl Decoder {
 
         let input = format::input(&path).map_err(DecoderError::Ffmpeg)?;
 
-        let stream = input.streams().best(MediaType::Video)
+        let stream = input
+            .streams()
+            .best(MediaType::Video)
             .ok_or(DecoderError::NoVideoStream)?;
         let video_stream_index = stream.index();
 
         let codec_params = stream.parameters();
-        let codec_id     = codec_params.id();
+        let codec_id = codec_params.id();
 
         let codec = ffmpeg_next::codec::decoder::find(codec_id)
             .ok_or_else(|| DecoderError::CodecNotFound(format!("{:?}", codec_id)))?;
@@ -586,7 +666,14 @@ impl Decoder {
         let is_hardware = hw_ctx.is_some();
         let decoder = codec_ctx.decoder().video().map_err(DecoderError::Ffmpeg)?;
 
-        Ok(Self { input, video_stream_index, decoder, _hw_ctx: hw_ctx, is_hardware, hw_pixel_format })
+        Ok(Self {
+            input,
+            video_stream_index,
+            decoder,
+            _hw_ctx: hw_ctx,
+            is_hardware,
+            hw_pixel_format,
+        })
     }
 
     /// Decode the next frame from the container.  Returns `Ok(None)` at EOS.
@@ -595,7 +682,8 @@ impl Decoder {
             let mut hw = VideoFrame::empty();
             match self.decoder.receive_frame(&mut hw) {
                 Ok(()) => return Ok(Some(SoftwareFrame::from_hw_frame(&hw)?)),
-                Err(ffmpeg_next::Error::Other { errno }) if errno == ffmpeg_next::error::EAGAIN => {}
+                Err(ffmpeg_next::Error::Other { errno }) if errno == ffmpeg_next::error::EAGAIN => {
+                }
                 Err(ffmpeg_next::Error::Eof) => return Ok(None),
                 Err(e) => return Err(DecoderError::Ffmpeg(e)),
             }
@@ -604,7 +692,9 @@ impl Decoder {
             let mut sent = false;
             for (stream, packet) in self.input.packets() {
                 if stream.index() == self.video_stream_index {
-                    self.decoder.send_packet(&packet).map_err(DecoderError::Ffmpeg)?;
+                    self.decoder
+                        .send_packet(&packet)
+                        .map_err(DecoderError::Ffmpeg)?;
                     sent = true;
                     break;
                 }
@@ -614,8 +704,12 @@ impl Decoder {
                 self.decoder.send_eof().map_err(DecoderError::Ffmpeg)?;
                 let mut hw = VideoFrame::empty();
                 return match self.decoder.receive_frame(&mut hw) {
-                    Ok(())                  => Ok(Some(SoftwareFrame::from_hw_frame(&hw)?)),
-                    Err(ffmpeg_next::Error::Other { errno }) if errno == ffmpeg_next::error::EAGAIN => Ok(None),
+                    Ok(()) => Ok(Some(SoftwareFrame::from_hw_frame(&hw)?)),
+                    Err(ffmpeg_next::Error::Other { errno })
+                        if errno == ffmpeg_next::error::EAGAIN =>
+                    {
+                        Ok(None)
+                    }
                     Err(ffmpeg_next::Error::Eof) => Ok(None),
                     Err(e) => Err(DecoderError::Ffmpeg(e)),
                 };
@@ -624,12 +718,22 @@ impl Decoder {
     }
 
     /// Iterator over all decoded frames.
-    pub fn frames(&mut self) -> FrameIter<'_> { FrameIter { decoder: self } }
+    pub fn frames(&mut self) -> FrameIter<'_> {
+        FrameIter { decoder: self }
+    }
 
-    pub fn width(&self)           -> u32          { self.decoder.width() }
-    pub fn height(&self)          -> u32          { self.decoder.height() }
-    pub fn format(&self)          -> Pixel        { self.decoder.format() }
-    pub fn hw_pixel_format(&self) -> Option<Pixel> { self.hw_pixel_format }
+    pub fn width(&self) -> u32 {
+        self.decoder.width()
+    }
+    pub fn height(&self) -> u32 {
+        self.decoder.height()
+    }
+    pub fn format(&self) -> Pixel {
+        self.decoder.format()
+    }
+    pub fn hw_pixel_format(&self) -> Option<Pixel> {
+        self.hw_pixel_format
+    }
 }
 
 // ============================================================================
@@ -667,13 +771,13 @@ impl Decoder {
 /// }
 /// ```
 pub struct NalDecoder {
-    decoder:          ffmpeg_next::codec::decoder::Video,
-    _hw_ctx:          Option<HwDeviceContext>,
-    pub is_hardware:  bool,
-    hw_pixel_format:  Option<Pixel>,
+    decoder: ffmpeg_next::codec::decoder::Video,
+    _hw_ctx: Option<HwDeviceContext>,
+    pub is_hardware: bool,
+    hw_pixel_format: Option<Pixel>,
     /// Buffered decoded frames waiting to be returned by `next_frame`.
-    pending:          Vec<SoftwareFrame>,
-    flushed:          bool,
+    pending: Vec<SoftwareFrame>,
+    flushed: bool,
 }
 
 impl NalDecoder {
@@ -688,9 +792,9 @@ impl NalDecoder {
     /// Pass an empty slice when using Annex-B streams — FFmpeg will parse
     /// parameter sets from the stream itself.
     pub fn new_with_extradata(
-        codec_id:  ffmpeg_next::codec::Id,
+        codec_id: ffmpeg_next::codec::Id,
         extradata: &[u8],
-        config:    DecoderConfig,
+        config: DecoderConfig,
     ) -> Result<Self> {
         ffmpeg_next::init().map_err(DecoderError::Ffmpeg)?;
 
@@ -706,12 +810,16 @@ impl NalDecoder {
         if !extradata.is_empty() {
             unsafe {
                 let ctx = codec_ctx.as_mut_ptr();
-                let buf = ffi::av_mallocz((extradata.len() + ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize) as _) as *mut u8;
+                let buf = ffi::av_mallocz(
+                    (extradata.len() + ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize) as _,
+                ) as *mut u8;
                 if buf.is_null() {
-                    return Err(DecoderError::Ffmpeg(ffmpeg_next::Error::from(-12 /* ENOMEM */)));
+                    return Err(DecoderError::Ffmpeg(ffmpeg_next::Error::from(
+                        -12, /* ENOMEM */
+                    )));
                 }
                 std::ptr::copy_nonoverlapping(extradata.as_ptr(), buf, extradata.len());
-                (*ctx).extradata      = buf;
+                (*ctx).extradata = buf;
                 (*ctx).extradata_size = extradata.len() as c_int;
             }
         }
@@ -748,10 +856,16 @@ impl NalDecoder {
         // Build an AVPacket that borrows `data` (no copy — FFmpeg ref-counts it).
         let mut packet = Packet::copy(data);
 
-        if let Some(pts) = pts { packet.set_pts(Some(pts)); }
-        if let Some(dts) = dts { packet.set_dts(Some(dts)); }
+        if let Some(pts) = pts {
+            packet.set_pts(Some(pts));
+        }
+        if let Some(dts) = dts {
+            packet.set_dts(Some(dts));
+        }
 
-        self.decoder.send_packet(&packet).map_err(DecoderError::Ffmpeg)?;
+        self.decoder
+            .send_packet(&packet)
+            .map_err(DecoderError::Ffmpeg)?;
 
         // Eagerly drain whatever the codec has ready.
         drain_frames(&mut self.decoder, &mut self.pending)
@@ -763,7 +877,9 @@ impl NalDecoder {
     /// released.  Call [`next_frame`](Self::next_frame) after flushing to
     /// collect those final frames.
     pub fn flush(&mut self) -> Result<()> {
-        if self.flushed { return Ok(()); }
+        if self.flushed {
+            return Ok(());
+        }
         self.flushed = true;
         self.decoder.send_eof().map_err(DecoderError::Ffmpeg)?;
         drain_frames(&mut self.decoder, &mut self.pending)
@@ -779,13 +895,25 @@ impl NalDecoder {
         }
         // Try the codec once more in case pending was empty but more is ready.
         drain_frames(&mut self.decoder, &mut self.pending)?;
-        Ok(if self.pending.is_empty() { None } else { Some(self.pending.remove(0)) })
+        Ok(if self.pending.is_empty() {
+            None
+        } else {
+            Some(self.pending.remove(0))
+        })
     }
 
-    pub fn width(&self)           -> u32          { self.decoder.width() }
-    pub fn height(&self)          -> u32          { self.decoder.height() }
-    pub fn format(&self)          -> Pixel        { self.decoder.format() }
-    pub fn hw_pixel_format(&self) -> Option<Pixel> { self.hw_pixel_format }
+    pub fn width(&self) -> u32 {
+        self.decoder.width()
+    }
+    pub fn height(&self) -> u32 {
+        self.decoder.height()
+    }
+    pub fn format(&self) -> Pixel {
+        self.decoder.format()
+    }
+    pub fn hw_pixel_format(&self) -> Option<Pixel> {
+        self.hw_pixel_format
+    }
 }
 
 // ============================================================================
@@ -802,8 +930,8 @@ impl<'a> Iterator for FrameIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.decoder.next_frame() {
             Ok(Some(f)) => Some(Ok(f)),
-            Ok(None)    => None,
-            Err(e)      => Some(Err(e)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
         }
     }
 }

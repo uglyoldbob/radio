@@ -337,10 +337,16 @@ impl H264Decoder {
         #[cfg(feature = "ffmpeg")]
         {
             return Ok(H264Decoder::Ffmpeg(
-                ffmpeg::NalDecoder::new(ffmpeg_next::codec::Id::H264, ffmpeg::DecoderConfig::auto()).expect("failed to init hw h264 decoder")
+                ffmpeg::NalDecoder::new(
+                    ffmpeg_next::codec::Id::H264,
+                    ffmpeg::DecoderConfig::auto(),
+                )
+                .expect("failed to init hw h264 decoder"),
             ));
         }
-        Ok(Self::Openh264(openh264::decoder::Decoder::new().map_err(|_| "openh264 unknown error".to_string())?))
+        Ok(Self::Openh264(
+            openh264::decoder::Decoder::new().map_err(|_| "openh264 unknown error".to_string())?,
+        ))
     }
 
     /// Decode nal data to frames
@@ -758,35 +764,13 @@ impl eframe::App for MyEguiApp {
         });
         #[cfg(feature = "androidauto")]
         if let Some(vdata) = self.common.radio.get_android_auto_video_buf() {
-
-            let mut units = openh264::nal_units(&vdata).peekable();
-            while let Some(p) = units.next() {
-                match self.common.android_auto_video_decoder.decode(p) {
-                    Err(e) => {
-                        log::error!("Failed to decode android auto video {:?}", e);
-                    }
-                    Ok(Some(image)) => {
-                        use openh264::formats::YUVSource;
-                        let rgb_len = image.rgb8_len();
-                        let mut rgb_raw = vec![0; rgb_len];
-                        image.write_rgb8(&mut rgb_raw);
-                        let (w, h) = image.dimensions_uv();
-                        let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
-                        let image = egui::ColorImage {
-                            size: [w * 2usize, h * 2usize],
-                            pixels: ei.get_egui(),
-                        };
-                        if self.common.android_auto_texture.is_none() {
-                            self.common.android_auto_texture = Some(ctx.load_texture(
-                                "android_auto",
-                                image,
-                                egui::TextureOptions::LINEAR,
-                            ));
-                        } else if let Some(t) = &mut self.common.android_auto_texture {
-                            t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
-                        }
-                    }
-                    _ => {}
+            let frames = self.common.android_auto_video_decoder.decode(&vdata);
+            if let Some(image) = frames.last().cloned() {
+                if self.common.android_auto_texture.is_none() {
+                    self.common.android_auto_texture =
+                        Some(ctx.load_texture("android_auto", image, egui::TextureOptions::LINEAR));
+                } else if let Some(t) = &mut self.common.android_auto_texture {
+                    t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
                 }
             }
         }
