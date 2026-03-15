@@ -17,22 +17,12 @@
 //! use ffmpeg_next::codec::Id;
 //!
 //! let mut dec = NalDecoder::new(Id::H264, DecoderConfig::auto()).unwrap();
-//!
-//! // Feed Annex-B or AVCC NAL data from any source (camera, socket, …)
-//! for nal in incoming_nals() {
-//!     dec.push_nal(&nal.data, nal.pts, nal.dts).unwrap();
-//!     while let Some(frame) = dec.next_frame().unwrap() {
-//!         process(frame);
-//!     }
-//! }
-//! // Flush at end-of-stream
+//! dec.push_nal(&nal_data, Some(pts), None).unwrap();
+//! while let Some(frame) = dec.next_frame().unwrap() { process(frame); }
 //! dec.flush().unwrap();
-//! while let Some(frame) = dec.next_frame().unwrap() {
-//!     process(frame);
-//! }
-//! # fn incoming_nals() -> Vec<Nal> { vec![] }
+//! while let Some(frame) = dec.next_frame().unwrap() { process(frame); }
 //! # fn process(_: ffmpeg_hw_decoder::SoftwareFrame) {}
-//! # struct Nal { data: Vec<u8>, pts: Option<i64>, dts: Option<i64> }
+//! # let (nal_data, pts) = (vec![0u8], 0i64);
 //! ```
 //!
 //! # Probe order
@@ -66,8 +56,7 @@ use std::ffi::{c_int, CString};
 
 use clap::ValueEnum;
 use ffmpeg_next::{
-    codec::codec,
-    ffi,
+    codec, ffi,
     format::{self, Pixel},
     frame::Video as VideoFrame,
     media::Type as MediaType,
@@ -138,8 +127,9 @@ pub enum HwDeviceType {
 impl HwDeviceType {
     pub fn as_av_hw_device_type(self) -> ffi::AVHWDeviceType {
         match self {
-            // V4L2M2M = 13, defined in FFmpeg >= 4.0
-            // May be missing from bindgen output if FFmpeg was built without --enable-v4l2-m2m
+            // AV_HWDEVICE_TYPE_V4L2M2M = 13.  Some bindgen outputs omit it when
+            // FFmpeg was built without --enable-v4l2-m2m; transmute is safe
+            // because AVHWDeviceType is #[repr(u32)] and the value is stable.
             HwDeviceType::V4l2M2m => unsafe {
                 std::mem::transmute::<u32, ffi::AVHWDeviceType>(13u32)
             },
@@ -190,9 +180,6 @@ impl HwDeviceType {
 // HwBackend — user-facing selector (CLI / public API)
 // ============================================================================
 
-/// User-facing hardware back-end selector.
-///
-/// Convert to a [`DecoderConfig`] with [`HwBackend::to_config`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum HwBackend {
     /// Probe all back-ends automatically (recommended)
@@ -253,16 +240,13 @@ impl HwBackend {
 // i.MX8MP codec → V4L2 device mapping
 // ============================================================================
 
-/// V4L2 M2M device node for `codec_id` on an i.MX8MP.
-///
-/// Returns `None` for codecs not accelerated by the VPU.
-pub fn imx8mp_v4l2_device(codec_id: ffmpeg_next::codec::Id) -> Option<&'static str> {
+pub fn imx8mp_v4l2_device(codec_id: codec::Id) -> Option<&'static str> {
     match codec_id {
-        ffmpeg_next::codec::Id::H264 => Some("/dev/video0"),
-        ffmpeg_next::codec::Id::HEVC => Some("/dev/video1"),
-        ffmpeg_next::codec::Id::VP8 => Some("/dev/video2"),
-        ffmpeg_next::codec::Id::VP9 => Some("/dev/video3"),
-        ffmpeg_next::codec::Id::MPEG2VIDEO | ffmpeg_next::codec::Id::MPEG4 => Some("/dev/video4"),
+        codec::Id::H264 => Some("/dev/video0"),
+        codec::Id::HEVC => Some("/dev/video1"),
+        codec::Id::VP8 => Some("/dev/video2"),
+        codec::Id::VP9 => Some("/dev/video3"),
+        codec::Id::MPEG2VIDEO | codec::Id::MPEG4 => Some("/dev/video4"),
         _ => None,
     }
 }
@@ -271,7 +255,6 @@ pub fn imx8mp_v4l2_device(codec_id: ffmpeg_next::codec::Id) -> Option<&'static s
 // Hardware device context
 // ============================================================================
 
-/// Owned FFmpeg hardware device context (`AVBufferRef *`).
 pub struct HwDeviceContext {
     ptr: *mut ffi::AVBufferRef,
     pub device_type: HwDeviceType,
@@ -318,7 +301,7 @@ impl HwDeviceContext {
             )));
         }
 
-        log::debug!("hw device: {} @ {:?}", device_type.name(), device);
+        log::info!("hw device: {} @ {:?}", device_type.name(), device);
         Ok(Self { ptr, device_type })
     }
 
@@ -335,8 +318,10 @@ impl Drop for HwDeviceContext {
     }
 }
 
-/// Pixel formats `codec` can produce for `device_type` via hw device ctx.
-pub fn hw_pixel_formats_for_codec(codec: &codec::Codec, device_type: HwDeviceType) -> Vec<Pixel> {
+pub fn hw_pixel_formats_for_codec(
+    codec: &ffmpeg_next::codec::codec::Codec,
+    device_type: HwDeviceType,
+) -> Vec<Pixel> {
     let mut out = Vec::new();
     let av_type = device_type.as_av_hw_device_type();
     let mut i = 0i32;
@@ -363,13 +348,11 @@ pub fn hw_pixel_formats_for_codec(codec: &codec::Codec, device_type: HwDeviceTyp
 // SoftwareFrame
 // ============================================================================
 
-/// A decoded video frame guaranteed to be in CPU-accessible memory.
 pub struct SoftwareFrame {
     inner: VideoFrame,
 }
 
 impl SoftwareFrame {
-    /// Download from hw surface or wrap an already-software frame.
     pub fn from_hw_frame(hw_frame: &VideoFrame) -> Result<Self> {
         if is_hardware_pixel_format(hw_frame.format()) {
             let mut sw = VideoFrame::empty();
@@ -420,7 +403,6 @@ impl SoftwareFrame {
         self.inner.stride(i)
     }
 
-    /// Convert to packed RGB24 via libswscale.
     pub fn to_rgb24(&self) -> Result<VideoFrame> {
         let src = self.inner.format();
         let w = self.inner.width();
@@ -434,7 +416,6 @@ impl SoftwareFrame {
     }
 }
 
-/// `true` if `pixel` has `AV_PIX_FMT_FLAG_HWACCEL`.
 pub fn is_hardware_pixel_format(pixel: Pixel) -> bool {
     let desc = unsafe { ffi::av_pix_fmt_desc_get(pixel.into()) };
     if desc.is_null() {
@@ -449,15 +430,10 @@ pub fn is_hardware_pixel_format(pixel: Pixel) -> bool {
 
 #[derive(Debug, Clone, Default)]
 pub struct DecoderConfig {
-    /// Specific back-end to try first; `None` = auto-probe.
     pub hw_device_type: Option<HwDeviceType>,
-    /// Override device node (e.g. `/dev/video2`).
     pub device_path: Option<String>,
-    /// Fall back to software if all hw attempts fail. Default: `true`.
     pub fallback_to_software: bool,
-    /// Codec thread count for software decoding (0 = FFmpeg decides).
     pub thread_count: u32,
-    /// Disable b-frame reordering for low-latency / live pipelines.
     pub low_latency: bool,
 }
 
@@ -471,29 +447,34 @@ impl DecoderConfig {
 }
 
 // ============================================================================
-// get_format callback (thread-local state)
+// get_format callback
+//
+// Bug fix vs previous version: we store the desired pixel format in the
+// AVCodecContext's `opaque` pointer rather than thread-local storage.
+// TLS breaks when two NalDecoder instances are opened on different threads
+// because they share the same Cell and clobber each other's desired format.
+// Using opaque ties the state to the specific codec context instance.
 // ============================================================================
 
-mod get_format_state {
-    use ffmpeg_next::{ffi, format::Pixel};
-    use std::cell::Cell;
-    thread_local! {
-        static DESIRED: Cell<ffi::AVPixelFormat> =
-            Cell::new(ffi::AVPixelFormat::AV_PIX_FMT_NONE);
-    }
-    pub fn set(fmt: Pixel) {
-        DESIRED.with(|c| c.set(fmt.into()));
-    }
-    pub fn get() -> ffi::AVPixelFormat {
-        DESIRED.with(|c| c.get())
-    }
+/// Per-context state stored in `AVCodecContext::opaque`.
+struct GetFormatState {
+    desired: ffi::AVPixelFormat,
 }
 
 extern "C" fn get_format(
-    _ctx: *mut ffi::AVCodecContext,
+    ctx: *mut ffi::AVCodecContext,
     fmt_list: *const ffi::AVPixelFormat,
 ) -> ffi::AVPixelFormat {
-    let desired = get_format_state::get();
+    // Read the desired format from the opaque pointer we set before open.
+    let desired = unsafe {
+        let state = (*ctx).opaque as *const GetFormatState;
+        if state.is_null() {
+            ffi::AVPixelFormat::AV_PIX_FMT_NONE
+        } else {
+            (*state).desired
+        }
+    };
+
     let mut i = 0;
     loop {
         let fmt = unsafe { *fmt_list.add(i) };
@@ -505,19 +486,30 @@ extern "C" fn get_format(
         }
         i += 1;
     }
+    // Desired hw format not offered — fall back to first (software) format.
     unsafe { *fmt_list }
 }
 
 // ============================================================================
-// Shared hw-probe logic (used by both Decoder and NalDecoder)
+// Shared hw-probe logic
+//
+// Returns (hw_ctx, hw_pixel_format, codec_already_opened).
+//
+// When hw succeeds, avcodec_open2 is called INSIDE probe_hw under a silenced
+// log level to suppress "Invalid/Failed setup for format X" noise — those
+// messages are emitted at AV_LOG_ERROR for every non-matching format during
+// get_format negotiation and are not real errors.
+//
+// When codec_already_opened == false, the caller must still open the codec
+// (software fallback path via codec_ctx.decoder().video()).
 // ============================================================================
 
 fn probe_hw(
-    codec: &codec::Codec,
-    codec_id: ffmpeg_next::codec::Id,
-    codec_ctx: &mut ffmpeg_next::codec::context::Context,
+    codec: &ffmpeg_next::codec::codec::Codec,
+    codec_id: codec::Id,
+    codec_ctx: &mut codec::context::Context,
     config: &DecoderConfig,
-) -> (Option<HwDeviceContext>, Option<Pixel>) {
+) -> (Option<HwDeviceContext>, Option<Pixel>, bool) {
     let candidates: Vec<(HwDeviceType, Option<String>)> = if let Some(dt) = config.hw_device_type {
         let node = config
             .device_path
@@ -540,49 +532,93 @@ fn probe_hw(
     for (dt, node) in candidates {
         let node_str = node.as_deref();
 
+        // 1. Open the hw device (cheap, no codec involvement).
         let hw_ctx = match HwDeviceContext::new(dt, node_str) {
             Ok(ctx) => ctx,
             Err(e) => {
-                log::debug!("skip {} {:?}: {}", dt.name(), node_str, e);
+                log::info!("skip {} {:?}: {}", dt.name(), node_str, e);
                 continue;
             }
         };
 
+        // 2. Check the static codec hw-config table so we skip completely
+        //    before touching the codec context when there's no chance of success.
         let hw_fmts = hw_pixel_formats_for_codec(codec, dt);
         let hw_fmt = match hw_fmts.first().copied() {
             Some(f) => f,
             None => {
-                log::debug!("skip {}: no hw configs for {:?}", dt.name(), codec_id);
+                log::info!("skip {}: no hw configs for {:?}", dt.name(), codec_id);
                 continue;
             }
         };
 
-        log::info!("hw: {} @ {:?}  fmt={:?}", dt.name(), node_str, hw_fmt);
-        get_format_state::set(hw_fmt);
+        // 3. Wire device ctx + get_format callback using opaque for per-instance state.
+        //    Heap-allocate the state; it lives until we drop it after open (success or fail).
+        let state = Box::new(GetFormatState {
+            desired: hw_fmt.into(),
+        });
+        let state_ptr = Box::into_raw(state);
+
         unsafe {
             let p = codec_ctx.as_mut_ptr();
             (*p).hw_device_ctx = hw_ctx.ref_ptr();
             (*p).get_format = Some(get_format);
+            (*p).opaque = state_ptr as *mut std::ffi::c_void;
         }
-        return (Some(hw_ctx), Some(hw_fmt));
+
+        // 4. Attempt avcodec_open2.  Silence AV_LOG_ERROR messages during this
+        //    call: FFmpeg emits "Invalid/Failed setup for format X" for every
+        //    hw format that doesn't match our device type — these are normal
+        //    negotiation side-effects, not real errors.
+        //    AV_LOG_FATAL = 8, AV_LOG_ERROR = 16.
+        let open_ret = unsafe {
+            let saved = ffi::av_log_get_level();
+            ffi::av_log_set_level(8); // suppress everything below FATAL
+            let r =
+                ffi::avcodec_open2(codec_ctx.as_mut_ptr(), codec.as_ptr(), std::ptr::null_mut());
+            ffi::av_log_set_level(saved);
+            r
+        };
+
+        // Reclaim the state box — it's no longer needed after open.
+        unsafe {
+            drop(Box::from_raw(state_ptr));
+        }
+
+        if open_ret < 0 {
+            // This back-end was rejected (device exists but profile unsupported etc).
+            // Detach the hw ctx ref we gave to the codec context before we drop
+            // hw_ctx, otherwise the refcount goes negative.
+            log::info!("skip {}: avcodec_open2 failed ({})", dt.name(), open_ret);
+            unsafe {
+                let p = codec_ctx.as_mut_ptr();
+                if !(*p).hw_device_ctx.is_null() {
+                    ffi::av_buffer_unref(&mut (*p).hw_device_ctx);
+                }
+                (*p).get_format = None;
+                (*p).opaque = std::ptr::null_mut();
+            }
+            continue;
+        }
+
+        log::info!("hw: {} @ {:?}  fmt={:?}", dt.name(), node_str, hw_fmt);
+        return (Some(hw_ctx), Some(hw_fmt), true);
     }
 
     if config.fallback_to_software {
         log::info!("no hw back-end available, using software decoding");
     }
-    (None, None)
+    (None, None, false)
 }
 
-/// Best device node for `(device_type, codec_id)`, using i.MX8MP layout for V4L2 M2M.
-fn codec_device_node(dt: HwDeviceType, codec_id: ffmpeg_next::codec::Id) -> Option<&'static str> {
+fn codec_device_node(dt: HwDeviceType, codec_id: codec::Id) -> Option<&'static str> {
     match dt {
         HwDeviceType::V4l2M2m => imx8mp_v4l2_device(codec_id).or_else(|| dt.default_device()),
         _ => dt.default_device(),
     }
 }
 
-/// Apply thread count and low-latency flags to a raw `AVCodecContext`.
-fn apply_codec_flags(codec_ctx: &mut ffmpeg_next::codec::context::Context, config: &DecoderConfig) {
+fn apply_codec_flags(codec_ctx: &mut codec::context::Context, config: &DecoderConfig) {
     if config.thread_count > 0 {
         unsafe {
             (*codec_ctx.as_mut_ptr()).thread_count = config.thread_count as c_int;
@@ -596,11 +632,7 @@ fn apply_codec_flags(codec_ctx: &mut ffmpeg_next::codec::context::Context, confi
     }
 }
 
-/// Drain all available frames from the codec into `out`.
-fn drain_frames(
-    decoder: &mut ffmpeg_next::codec::decoder::Video,
-    out: &mut Vec<SoftwareFrame>,
-) -> Result<()> {
+fn drain_frames(decoder: &mut codec::decoder::Video, out: &mut Vec<SoftwareFrame>) -> Result<()> {
     loop {
         let mut hw_frame = VideoFrame::empty();
         match decoder.receive_frame(&mut hw_frame) {
@@ -616,28 +648,47 @@ fn drain_frames(
 }
 
 // ============================================================================
+// open_codec_ctx — shared finalisation after probe_hw
+//
+// If probe_hw already opened the codec (hw path, already_opened == true),
+// we reinterpret the Context as a decoder::Video without calling open2 again.
+// If it didn't (sw path), we call decoder().video() which calls open2.
+// ============================================================================
+
+fn finish_open(
+    codec_ctx: codec::context::Context,
+    already_opened: bool,
+) -> std::result::Result<codec::decoder::Video, ffmpeg_next::Error> {
+    if already_opened {
+        // SAFETY: codec::context::Context and codec::decoder::Video are both
+        // #[repr(transparent)] wrappers over the same NonNull<AVCodecContext>.
+        // The codec is already open so reinterpreting the wrapper is valid.
+        Ok(unsafe {
+            std::mem::transmute::<codec::context::Context, codec::decoder::Video>(codec_ctx)
+        })
+    } else {
+        codec_ctx.decoder().video()
+    }
+}
+
+// ============================================================================
 // Decoder — container / URL mode
 // ============================================================================
 
-/// Hardware-accelerated decoder that demuxes a container (file, RTSP, HLS, …).
-///
-/// Use [`NalDecoder`] instead when you own the transport and push raw NAL data.
 pub struct Decoder {
     input: format::context::Input,
     video_stream_index: usize,
-    decoder: ffmpeg_next::codec::decoder::Video,
+    decoder: codec::decoder::Video,
     _hw_ctx: Option<HwDeviceContext>,
     pub is_hardware: bool,
     hw_pixel_format: Option<Pixel>,
 }
 
 impl Decoder {
-    /// Open with fully automatic hardware detection.
     pub fn open_auto(path: &str) -> Result<Self> {
         Self::open(path, DecoderConfig::auto())
     }
 
-    /// Open with explicit config.
     pub fn open(path: &str, config: DecoderConfig) -> Result<Self> {
         ffmpeg_next::init().map_err(DecoderError::Ffmpeg)?;
 
@@ -652,19 +703,21 @@ impl Decoder {
         let codec_params = stream.parameters();
         let codec_id = codec_params.id();
 
-        let codec = ffmpeg_next::codec::decoder::find(codec_id)
+        let codec = codec::decoder::find(codec_id)
             .ok_or_else(|| DecoderError::CodecNotFound(format!("{:?}", codec_id)))?;
 
         log::info!("container codec: {:?}", codec_id);
 
-        let mut codec_ctx = ffmpeg_next::codec::context::Context::from_parameters(codec_params)
-            .map_err(DecoderError::Ffmpeg)?;
+        let mut codec_ctx =
+            codec::context::Context::from_parameters(codec_params).map_err(DecoderError::Ffmpeg)?;
 
         apply_codec_flags(&mut codec_ctx, &config);
 
-        let (hw_ctx, hw_pixel_format) = probe_hw(&codec, codec_id, &mut codec_ctx, &config);
+        let (hw_ctx, hw_pixel_format, already_opened) =
+            probe_hw(&codec, codec_id, &mut codec_ctx, &config);
         let is_hardware = hw_ctx.is_some();
-        let decoder = codec_ctx.decoder().video().map_err(DecoderError::Ffmpeg)?;
+
+        let decoder = finish_open(codec_ctx, already_opened).map_err(DecoderError::Ffmpeg)?;
 
         Ok(Self {
             input,
@@ -676,7 +729,6 @@ impl Decoder {
         })
     }
 
-    /// Decode the next frame from the container.  Returns `Ok(None)` at EOS.
     pub fn next_frame(&mut self) -> Result<Option<SoftwareFrame>> {
         loop {
             let mut hw = VideoFrame::empty();
@@ -688,7 +740,6 @@ impl Decoder {
                 Err(e) => return Err(DecoderError::Ffmpeg(e)),
             }
 
-            // Need more data — pull the next video packet from the demuxer.
             let mut sent = false;
             for (stream, packet) in self.input.packets() {
                 if stream.index() == self.video_stream_index {
@@ -700,7 +751,6 @@ impl Decoder {
                 }
             }
             if !sent {
-                // Demuxer exhausted — flush remaining frames.
                 self.decoder.send_eof().map_err(DecoderError::Ffmpeg)?;
                 let mut hw = VideoFrame::empty();
                 return match self.decoder.receive_frame(&mut hw) {
@@ -717,7 +767,6 @@ impl Decoder {
         }
     }
 
-    /// Iterator over all decoded frames.
     pub fn frames(&mut self) -> FrameIter<'_> {
         FrameIter { decoder: self }
     }
@@ -742,71 +791,40 @@ impl Decoder {
 
 /// Hardware-accelerated decoder for raw NAL packet streams.
 ///
-/// The caller is responsible for transport and framing.  Each call to
-/// [`push_nal`](NalDecoder::push_nal) sends one access unit (one or more NAL
-/// units that together form a single picture) directly into the codec,
-/// bypassing FFmpeg's demuxer entirely.
+/// The caller owns transport and framing. Each [`push_nal`](Self::push_nal)
+/// sends one access unit directly to the codec, bypassing FFmpeg's demuxer.
 ///
-/// # Annex-B vs AVCC
-///
-/// - **Annex-B** (start codes `00 00 00 01` or `00 00 01`): pass the raw bytes
-///   directly; FFmpeg's H.264/HEVC parsers handle them natively.
-/// - **AVCC / length-prefixed**: either convert to Annex-B first, or set
-///   `extradata` (SPS/PPS in AVCC format) via [`NalDecoder::new_with_extradata`]
-///   so FFmpeg can interpret length prefixes correctly.
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use ffmpeg_hw_decoder::{NalDecoder, DecoderConfig};
-/// use ffmpeg_next::codec::Id;
-///
-/// let mut dec = NalDecoder::new(Id::H264, DecoderConfig::auto()).unwrap();
-///
-/// let nal_data: &[u8] = &[0x00, 0x00, 0x00, 0x01, /* … */];
-/// dec.push_nal(nal_data, Some(0), None).unwrap();
-///
-/// while let Some(frame) = dec.next_frame().unwrap() {
-///     println!("{}x{} pts={:?}", frame.width(), frame.height(), frame.pts());
-/// }
-/// ```
+/// **Annex-B** (start codes `00 00 00 01`): pass bytes directly.  
+/// **AVCC / length-prefixed**: use [`new_with_extradata`](Self::new_with_extradata)
+/// with the `DecoderConfigurationRecord` so FFmpeg can parse length prefixes.
 pub struct NalDecoder {
-    decoder: ffmpeg_next::codec::decoder::Video,
+    decoder: codec::decoder::Video,
     _hw_ctx: Option<HwDeviceContext>,
     pub is_hardware: bool,
     hw_pixel_format: Option<Pixel>,
-    /// Buffered decoded frames waiting to be returned by `next_frame`.
     pending: Vec<SoftwareFrame>,
     flushed: bool,
 }
 
 impl NalDecoder {
-    /// Create a `NalDecoder` for `codec_id` with automatic hardware detection.
-    pub fn new(codec_id: ffmpeg_next::codec::Id, config: DecoderConfig) -> Result<Self> {
+    pub fn new(codec_id: codec::Id, config: DecoderConfig) -> Result<Self> {
         Self::new_with_extradata(codec_id, &[], config)
     }
 
-    /// Create a `NalDecoder` and supply codec `extradata` (e.g. SPS/PPS in
-    /// AVCC/HEVC `DecoderConfigurationRecord` format, or a codec private blob).
-    ///
-    /// Pass an empty slice when using Annex-B streams — FFmpeg will parse
-    /// parameter sets from the stream itself.
     pub fn new_with_extradata(
-        codec_id: ffmpeg_next::codec::Id,
+        codec_id: codec::Id,
         extradata: &[u8],
         config: DecoderConfig,
     ) -> Result<Self> {
         ffmpeg_next::init().map_err(DecoderError::Ffmpeg)?;
 
-        let codec = ffmpeg_next::codec::decoder::find(codec_id)
+        let codec = codec::decoder::find(codec_id)
             .ok_or_else(|| DecoderError::CodecNotFound(format!("{:?}", codec_id)))?;
 
         log::info!("NalDecoder codec: {:?}", codec_id);
 
-        // Build a codec context without container parameters.
-        let mut codec_ctx = ffmpeg_next::codec::context::Context::new_with_codec(codec);
+        let mut codec_ctx = codec::context::Context::new_with_codec(codec);
 
-        // Inject extradata before opening the codec, if provided.
         if !extradata.is_empty() {
             unsafe {
                 let ctx = codec_ctx.as_mut_ptr();
@@ -814,9 +832,7 @@ impl NalDecoder {
                     (extradata.len() + ffi::AV_INPUT_BUFFER_PADDING_SIZE as usize) as _,
                 ) as *mut u8;
                 if buf.is_null() {
-                    return Err(DecoderError::Ffmpeg(ffmpeg_next::Error::from(
-                        -12, /* ENOMEM */
-                    )));
+                    return Err(DecoderError::Ffmpeg(ffmpeg_next::Error::from(-12)));
                 }
                 std::ptr::copy_nonoverlapping(extradata.as_ptr(), buf, extradata.len());
                 (*ctx).extradata = buf;
@@ -826,10 +842,11 @@ impl NalDecoder {
 
         apply_codec_flags(&mut codec_ctx, &config);
 
-        let (hw_ctx, hw_pixel_format) = probe_hw(&codec, codec_id, &mut codec_ctx, &config);
+        let (hw_ctx, hw_pixel_format, already_opened) =
+            probe_hw(&codec, codec_id, &mut codec_ctx, &config);
         let is_hardware = hw_ctx.is_some();
 
-        let decoder = codec_ctx.decoder().video().map_err(DecoderError::Ffmpeg)?;
+        let decoder = finish_open(codec_ctx, already_opened).map_err(DecoderError::Ffmpeg)?;
 
         Ok(Self {
             decoder,
@@ -841,21 +858,16 @@ impl NalDecoder {
         })
     }
 
-    /// Push one access unit of raw NAL data into the decoder.
+    /// Push one access unit of raw NAL data.
     ///
-    /// `pts` and `dts` are in the caller's time base (nanoseconds, stream
-    /// ticks, or `None` to let FFmpeg infer them).
-    ///
-    /// After calling `push_nal`, drain decoded frames by calling
-    /// [`next_frame`](Self::next_frame) in a loop until it returns `Ok(None)`.
+    /// After calling this, drain with [`next_frame`](Self::next_frame) until
+    /// it returns `Ok(None)` before pushing the next unit.
     pub fn push_nal(&mut self, data: &[u8], pts: Option<i64>, dts: Option<i64>) -> Result<()> {
         if self.flushed {
             return Err(DecoderError::Eof);
         }
 
-        // Build an AVPacket that borrows `data` (no copy — FFmpeg ref-counts it).
         let mut packet = Packet::copy(data);
-
         if let Some(pts) = pts {
             packet.set_pts(Some(pts));
         }
@@ -866,16 +878,10 @@ impl NalDecoder {
         self.decoder
             .send_packet(&packet)
             .map_err(DecoderError::Ffmpeg)?;
-
-        // Eagerly drain whatever the codec has ready.
         drain_frames(&mut self.decoder, &mut self.pending)
     }
 
-    /// Flush the decoder after the last NAL has been pushed.
-    ///
-    /// This signals end-of-stream to the codec so buffered frames are
-    /// released.  Call [`next_frame`](Self::next_frame) after flushing to
-    /// collect those final frames.
+    /// Signal end-of-stream and flush buffered frames.
     pub fn flush(&mut self) -> Result<()> {
         if self.flushed {
             return Ok(());
@@ -885,16 +891,11 @@ impl NalDecoder {
         drain_frames(&mut self.decoder, &mut self.pending)
     }
 
-    /// Return the next decoded frame, or `Ok(None)` when none is buffered.
-    ///
-    /// Call this in a loop after each [`push_nal`](Self::push_nal) and after
-    /// [`flush`](Self::flush).
+    /// Return the next buffered decoded frame, or `Ok(None)` if none ready.
     pub fn next_frame(&mut self) -> Result<Option<SoftwareFrame>> {
-        if !self.pending.is_empty() {
-            return Ok(Some(self.pending.remove(0)));
+        if self.pending.is_empty() {
+            drain_frames(&mut self.decoder, &mut self.pending)?;
         }
-        // Try the codec once more in case pending was empty but more is ready.
-        drain_frames(&mut self.decoder, &mut self.pending)?;
         Ok(if self.pending.is_empty() {
             None
         } else {
@@ -917,10 +918,9 @@ impl NalDecoder {
 }
 
 // ============================================================================
-// FrameIter (for Decoder / container mode)
+// FrameIter
 // ============================================================================
 
-/// Iterator returned by [`Decoder::frames`].
 pub struct FrameIter<'a> {
     decoder: &'a mut Decoder,
 }

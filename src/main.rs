@@ -355,7 +355,50 @@ impl H264Decoder {
         match self {
             #[cfg(feature = "ffmpeg")]
             Self::Ffmpeg(v) => {
-                todo!()
+                for nal in openh264::nal_units(data) {
+                    if let Err(e) = v.push_nal(nal, None, None) {
+                        log::error!("Failed to push NAL to ffmpeg decoder: {:?}", e);
+                        continue;
+                    }
+                    loop {
+                        match v.next_frame() {
+                            Err(e) => {
+                                log::error!("Failed to decode android auto video {:?}", e);
+                                break;
+                            }
+                            Ok(None) => break,
+                            Ok(Some(frame)) => {
+                                match frame.to_rgb24() {
+                                    Err(e) => {
+                                        log::error!("Failed to convert frame to RGB: {:?}", e);
+                                    }
+                                    Ok(rgb_frame) => {
+                                        let w = rgb_frame.width() as usize;
+                                        let h = rgb_frame.height() as usize;
+                                        let stride = rgb_frame.stride(0);
+                                        let src = rgb_frame.data(0);
+                                        // Destripe: each row is `stride` bytes wide but only `w*3` are pixels
+                                        let mut rgb_raw = Vec::with_capacity(w * h * 3);
+                                        for row in 0..h {
+                                            let row_start = row * stride;
+                                            rgb_raw.extend_from_slice(
+                                                &src[row_start..row_start + w * 3],
+                                            );
+                                        }
+                                        let pixels: Vec<egui::Color32> = rgb_raw
+                                            .chunks_exact(3)
+                                            .map(|p| egui::Color32::from_rgb(p[0], p[1], p[2]))
+                                            .collect();
+                                        frames.push(egui::ColorImage {
+                                            size: [w, h],
+                                            pixels,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Self::Openh264(v) => {
                 let mut units = openh264::nal_units(data).peekable();
