@@ -13,7 +13,7 @@ mod wireless;
 
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use eframe::egui::{self};
+use eframe::egui::{self, ColorImage};
 #[cfg(feature = "androidauto")]
 use ringbuf::traits::{Consumer, Observer, Producer};
 #[cfg(feature = "androidauto")]
@@ -266,11 +266,96 @@ struct CommonWindowProperties {
     /// The details for the current wifi network, ssid and password
     wifi_details: uobradio_comms::Pollable<(String, Option<String>)>,
     #[cfg(feature = "androidauto")]
-    android_auto_video_decoder: openh264::decoder::Decoder,
+    android_auto_video_decoder: H264Decoder,
     #[cfg(feature = "androidauto")]
     android_auto_texture: Option<egui::TextureHandle>,
     /// the onscreen keyboard
     keyboard: egui_virtual_keyboard::VirtualKeyboard,
+}
+
+enum H264Decoder {
+    Openh264(openh264::decoder::Decoder),
+    #[cfg(feature = "ffmpeg")]
+    Ffmpeg(ffmpeg_next::decoder::Video),
+}
+
+impl H264Decoder {
+    pub fn get_decoder() -> Result<Self, String> {
+        #[cfg(feature = "ffmpeg")]
+        {
+            let hw_decoders = [
+                "h264_nvdec",    // NVIDIA
+                "h264_vaapi",    // Intel/AMD on Linux
+                "h264_qsv",      // Intel Quick Sync
+                "h264_amf",      // AMD
+                "h264_v4l2m2m",  // ARM (i.MX8, RPi, etc.)
+            ];
+
+            for name in &hw_decoders {
+                if let Some(codec) = ffmpeg_next::decoder::find_by_name(name) {
+                    let ctx = ffmpeg_next::codec::context::Context::new_with_codec(codec);
+                    if let Ok(decoder) = ctx.decoder().open() {
+                        if let Ok(video) = decoder.video() {
+                            eprintln!("Using hardware decoder: {}", name);
+                            return Ok(Self::Ffmpeg(video));
+                        }
+                    }
+                }
+            }
+
+            // Fall back to software
+            eprintln!("Falling back to software decoder");
+            let codec = ffmpeg_next::decoder::find_by_name("h264")
+                .ok_or(ffmpeg_next::Error::DecoderNotFound).map_err(|e| e.to_string())?;
+            let ctx = ffmpeg_next::codec::context::Context::new_with_codec(codec);
+            let a = ctx.decoder().open().map_err(|e| e.to_string())?.video().map_err(|e| e.to_string())?;
+            return Ok(Self::Ffmpeg(a));
+        }
+        Ok(Self::Openh264(openh264::decoder::Decoder::new().map_err(|e| e.to_string())?))
+    }
+
+    pub fn decode(&mut self, vdata: &[u8]) -> Vec<ColorImage> {
+        let mut output = Vec::new();
+        match self {
+            H264Decoder::Openh264(decoder) => {
+                let mut units = openh264::nal_units(&vdata).peekable();
+                while let Some(p) = units.next() {
+                    match decoder.decode(p) {
+                        Err(e) => {
+                            log::error!("Failed to decode android auto video {:?}", e);
+                        }
+                        Ok(Some(image)) => {
+                            use openh264::formats::YUVSource;
+                            let rgb_len = image.rgb8_len();
+                            let mut rgb_raw = vec![0; rgb_len];
+                            image.write_rgb8(&mut rgb_raw);
+                            let (w, h) = image.dimensions_uv();
+                            let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
+                            let image = egui::ColorImage {
+                                size: [w * 2usize, h * 2usize],
+                                pixels: ei.get_egui(),
+                            };
+                            output.push(image);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            H264Decoder::Ffmpeg(video) => {
+                let pkt = ffmpeg_next::codec::packet::Packet::borrow(vdata);
+                if let Err(r) = video.send_packet(&pkt) {
+                    log::error!("error sending ffmpeg data: {:?}", r);
+                } else {
+                    let mut frame = ffmpeg_next::frame::Video::empty();
+                    while video.receive_frame(&mut frame).is_ok() {
+                        // frame is NV12 from VPU — process it here
+                        println!("Got frame {}x{}", frame.width(), frame.height());
+                    }
+                }
+            }
+        }
+        output
+    }
 }
 
 impl CommonWindowProperties {
@@ -287,7 +372,7 @@ impl CommonWindowProperties {
             #[cfg(feature = "wifi")]
             wifi_details: Default::default(),
             #[cfg(feature = "androidauto")]
-            android_auto_video_decoder: openh264::decoder::Decoder::new().unwrap(),
+            android_auto_video_decoder: H264Decoder::get_decoder().expect("Failed to get video decoder"),
             #[cfg(feature = "androidauto")]
             android_auto_texture: None,
             keyboard: Default::default(),
@@ -632,34 +717,16 @@ impl eframe::App for MyEguiApp {
         });
         #[cfg(feature = "androidauto")]
         if let Some(vdata) = self.common.radio.get_android_auto_video_buf() {
-            let mut units = openh264::nal_units(&vdata).peekable();
-            while let Some(p) = units.next() {
-                match self.common.android_auto_video_decoder.decode(p) {
-                    Err(e) => {
-                        log::error!("Failed to decode android auto video {:?}", e);
-                    }
-                    Ok(Some(image)) => {
-                        use openh264::formats::YUVSource;
-                        let rgb_len = image.rgb8_len();
-                        let mut rgb_raw = vec![0; rgb_len];
-                        image.write_rgb8(&mut rgb_raw);
-                        let (w, h) = image.dimensions_uv();
-                        let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
-                        let image = egui::ColorImage {
-                            size: [w * 2usize, h * 2usize],
-                            pixels: ei.get_egui(),
-                        };
-                        if self.common.android_auto_texture.is_none() {
-                            self.common.android_auto_texture = Some(ctx.load_texture(
-                                "android_auto",
-                                image,
-                                egui::TextureOptions::LINEAR,
-                            ));
-                        } else if let Some(t) = &mut self.common.android_auto_texture {
-                            t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
-                        }
-                    }
-                    _ => {}
+            let frames = self.common.android_auto_video_decoder.decode(&vdata);
+            if let Some(frame) = frames.last() {
+                if self.common.android_auto_texture.is_none() {
+                    self.common.android_auto_texture = Some(ctx.load_texture(
+                        "android_auto",
+                        frame.clone(),
+                        egui::TextureOptions::LINEAR,
+                    ));
+                } else if let Some(t) = &mut self.common.android_auto_texture {
+                    t.set_partial([0, 0], frame.clone(), egui::TextureOptions::LINEAR);
                 }
             }
         }
