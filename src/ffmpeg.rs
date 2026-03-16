@@ -105,13 +105,13 @@ pub type Result<T> = std::result::Result<T, DecoderError>;
 // Use "h264_v4l2m2m" instead of the generic h264 decoder + hw device context.
 pub fn v4l2m2m_codec_name(codec_id: codec::Id) -> Option<&'static str> {
     match codec_id {
-        codec::Id::H264        => Some("h264_v4l2m2m"),
-        codec::Id::HEVC        => Some("hevc_v4l2m2m"),
-        codec::Id::VP8         => Some("vp8_v4l2m2m"),
-        codec::Id::VP9         => Some("vp9_v4l2m2m"),
-        codec::Id::MPEG4       => Some("mpeg4_v4l2m2m"),
-        codec::Id::MPEG2VIDEO  => Some("mpeg2_v4l2m2m"),
-        _                      => None,
+        codec::Id::H264 => Some("h264_v4l2m2m"),
+        codec::Id::HEVC => Some("hevc_v4l2m2m"),
+        codec::Id::VP8 => Some("vp8_v4l2m2m"),
+        codec::Id::VP9 => Some("vp9_v4l2m2m"),
+        codec::Id::MPEG4 => Some("mpeg4_v4l2m2m"),
+        codec::Id::MPEG2VIDEO => Some("mpeg2_v4l2m2m"),
+        _ => None,
     }
 }
 

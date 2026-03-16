@@ -21,7 +21,9 @@ ffmpeg-next = { version = "8.0.0", optional = true }
 futures-util = "0.3.32"
 image = { version = "0.25.2", features = ["jpeg", "png"] }
 json = "0.12.4"
+libc = { version = "0.2.183", optional = true }
 log = "0.4.27"
+nix = { version = "0.31.2", features = ["mman", "poll", "ioctl"], optional = true }
 openh264 = "0.8.1"
 qrcode = { version = "0.14.1", optional = true}
 reqwest = { version = "0.13.2", features = ["stream"] }
@@ -54,8 +56,9 @@ name = "radio_gui"
 path = "src/main.rs"
 
 [features]
-default = ["usb", "wifi", "bluetooth", "androidauto", "ffmpeg"]
+default = ["usb", "androidauto", "v4l2m2m"]
 ffmpeg = ["dep:ffmpeg-next", "dep:thiserror"]
+v4l2m2m = ["dep:nix", "dep:thiserror", "dep:libc"]
 usb = ["android-auto?/usb"]
 wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi", "android-auto?/wireless"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]

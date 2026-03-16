@@ -14,6 +14,8 @@ mod wireless;
 
 #[cfg(feature = "ffmpeg")]
 mod ffmpeg;
+#[cfg(feature = "v4l2m2m")]
+mod v4l2m2m;
 
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -329,6 +331,9 @@ pub enum H264Decoder {
     /// Probably hardware decoding with ffmpeg
     #[cfg(feature = "ffmpeg")]
     Ffmpeg(ffmpeg::NalDecoder),
+    /// Hardware decoding for v4l2 m2m
+    #[cfg(feature = "v4l2m2m")]
+    V4l2M2m(v4l2m2m::VpuDecoder),
 }
 
 impl H264Decoder {
@@ -344,6 +349,14 @@ impl H264Decoder {
                 .expect("failed to init hw h264 decoder"),
             ));
         }
+        #[cfg(feature = "v4l2m2m")]
+        {
+            if let Ok(dec) = v4l2m2m::VpuDecoder::open("/dev/video0").map_err(|e| e.to_string()) {
+                log::info!("VPU decoder ready: {}x{}", dec.width, dec.height);
+                return Ok(Self::V4l2M2m(dec));
+            }
+        }
+        log::info!("Using openh264");
         Ok(Self::Openh264(
             openh264::decoder::Decoder::new().map_err(|_| "openh264 unknown error".to_string())?,
         ))
@@ -353,6 +366,26 @@ impl H264Decoder {
     pub fn decode(&mut self, data: &[u8]) -> Vec<egui::ColorImage> {
         let mut frames = Vec::new();
         match self {
+            #[cfg(feature = "v4l2m2m")]
+            Self::V4l2M2m(v) => {
+                for nal in openh264::nal_units(data) {
+                    match v.push_nal(nal) {
+                        Err(e) => {
+                            log::error!("VPU push_nal error: {:?}", e);
+                            continue;
+                        }
+                        Ok(nv12_frames) => {
+                            for (nv12, w, h) in nv12_frames {
+                                let pixels = v4l2m2m::nv12_to_egui(&nv12, w, h);
+                                frames.push(egui::ColorImage {
+                                    size: [w as usize, h as usize],
+                                    pixels,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             #[cfg(feature = "ffmpeg")]
             Self::Ffmpeg(v) => {
                 for nal in openh264::nal_units(data) {
