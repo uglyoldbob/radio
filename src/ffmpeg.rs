@@ -101,6 +101,20 @@ pub enum DecoderError {
 
 pub type Result<T> = std::result::Result<T, DecoderError>;
 
+// FFmpeg 4.4.1 on i.MX8MP: VPU is accessed via named codec, not hw device type.
+// Use "h264_v4l2m2m" instead of the generic h264 decoder + hw device context.
+pub fn v4l2m2m_codec_name(codec_id: codec::Id) -> Option<&'static str> {
+    match codec_id {
+        codec::Id::H264        => Some("h264_v4l2m2m"),
+        codec::Id::HEVC        => Some("hevc_v4l2m2m"),
+        codec::Id::VP8         => Some("vp8_v4l2m2m"),
+        codec::Id::VP9         => Some("vp9_v4l2m2m"),
+        codec::Id::MPEG4       => Some("mpeg4_v4l2m2m"),
+        codec::Id::MPEG2VIDEO  => Some("mpeg2_v4l2m2m"),
+        _                      => None,
+    }
+}
+
 // ============================================================================
 // Hardware acceleration – device types
 // ============================================================================
@@ -130,9 +144,7 @@ impl HwDeviceType {
             // AV_HWDEVICE_TYPE_V4L2M2M = 13.  Some bindgen outputs omit it when
             // FFmpeg was built without --enable-v4l2-m2m; transmute is safe
             // because AVHWDeviceType is #[repr(u32)] and the value is stable.
-            HwDeviceType::V4l2M2m => unsafe {
-                std::mem::transmute::<u32, ffi::AVHWDeviceType>(13u32)
-            },
+            HwDeviceType::V4l2M2m => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_NONE,
             HwDeviceType::Vaapi => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI,
             HwDeviceType::Cuda => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA,
             HwDeviceType::Qsv => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_QSV,
@@ -528,6 +540,38 @@ fn probe_hw(
             })
             .collect()
     };
+
+    // Try v4l2m2m named codec (FFmpeg 4.x — no AVHWDeviceType for V4L2M2M)
+    if let Some(codec_name) = v4l2m2m_codec_name(codec_id) {
+        if let Some(v4l2_codec) = codec::decoder::find_by_name(codec_name) {
+            log::info!("probe: trying named codec {}", codec_name);
+
+            // Replace the codec context with one built for the v4l2m2m codec
+            let mut v4l2_ctx = codec::context::Context::new_with_codec(v4l2_codec);
+            apply_codec_flags(&mut v4l2_ctx, config);
+
+            let open_ret = unsafe {
+                let saved = ffi::av_log_get_level();
+                ffi::av_log_set_level(8);
+                let r = ffi::avcodec_open2(
+                    v4l2_ctx.as_mut_ptr(),
+                    v4l2_codec.as_ptr(),
+                    std::ptr::null_mut(),
+                );
+                ffi::av_log_set_level(saved);
+                r
+            };
+
+            if open_ret == 0 {
+                log::info!("probe: {} opened successfully", codec_name);
+                // Swap the caller's codec_ctx for the v4l2m2m one
+                *codec_ctx = v4l2_ctx;
+                return (None, None, true); // no hw_ctx needed, already open
+            } else {
+                log::info!("probe: {} failed ({}), continuing", codec_name, open_ret);
+            }
+        }
+    }
 
     for (dt, node) in candidates {
         let node_str = node.as_deref();
