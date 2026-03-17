@@ -63,7 +63,7 @@ const IMX_VPU_API_COMPRESSION_FORMAT_H264: u32 = 5;
 const IMX_DMA_BUFFER_MAPPING_FLAG_READ: u32 = 1 << 0;
 
 // Reserved block size used in several structs for forward ABI compatibility.
-const IMX_VPU_API_RESERVED_SIZE: usize = 64;
+const IMX_VPU_API_RESERVED_SIZE: usize = 32;
 
 // ============================================================================
 // Opaque C types
@@ -127,6 +127,7 @@ struct ImxVpuApiFramebufferMetrics {
     /// Byte offset of the V plane (planar only; unused for NV12).
     v_offset: usize,
     _reserved: [u8; IMX_VPU_API_RESERVED_SIZE],
+    _reserved2: [u8; IMX_VPU_API_RESERVED_SIZE],
 }
 
 /// HDR mastering display metadata embedded in H.265 streams.
@@ -219,6 +220,7 @@ struct ImxVpuApiDecStreamInfo {
     location_of_chroma_info: ImxVpuApiDecLocationOfChromaInfo,
     flags: u32,
     _reserved: [u8; IMX_VPU_API_RESERVED_SIZE],
+    _reserved2: [u8; IMX_VPU_API_RESERVED_SIZE],
 }
 
 /// Global, static capabilities of the underlying VPU decoder hardware.
@@ -245,6 +247,7 @@ struct ImxVpuApiDecGlobalInfo {
     supported_compression_formats: *const u32,
     num_supported_compression_formats: usize,
     _reserved: [u8; IMX_VPU_API_RESERVED_SIZE],
+    _reserved2: [u8; IMX_VPU_API_RESERVED_SIZE],
 }
 
 /// Parameters passed to [`imx_vpu_api_dec_open`].
@@ -258,7 +261,7 @@ struct ImxVpuApiDecGlobalInfo {
 /// 24  extra_header_data  (ptr)
 /// 32  extra_header_data_size
 /// 40  suggested_color_format  (u32)
-/// 44  reserved[60]   (= IMX_VPU_API_RESERVED_SIZE - sizeof(u32))
+/// 44  reserved[60]   (= 2*IMX_VPU_API_RESERVED_SIZE - sizeof(u32))
 /// total: 104
 /// ```
 #[repr(C)]
@@ -271,6 +274,7 @@ struct ImxVpuApiDecOpenParams {
     extra_header_data_size: usize,
     suggested_color_format: u32,
     _reserved: [u8; IMX_VPU_API_RESERVED_SIZE - std::mem::size_of::<u32>()],
+    _reserved2: [u8; IMX_VPU_API_RESERVED_SIZE],
 }
 
 /// An encoded frame pushed into the decoder.
@@ -312,7 +316,6 @@ struct ImxVpuApiEncodedFrame {
 /// total: 56
 /// ```
 #[repr(C)]
-#[derive(Default)]
 struct ImxVpuApiRawFrame {
     fb_dma_buffer: *mut ImxDmaBuffer,
     fb_context: *mut c_void,
@@ -739,6 +742,7 @@ impl VpuDecoder {
             extra_header_data_size: 0,
             suggested_color_format: 0,
             _reserved: [0u8; IMX_VPU_API_RESERVED_SIZE - std::mem::size_of::<u32>()],
+            _reserved2: [0u8; IMX_VPU_API_RESERVED_SIZE],
         };
 
         // ---- Open the decoder ----------------------------------------------
