@@ -830,7 +830,7 @@ impl VpuDecoder {
             imx_dma_buffer_dma_heap_allocator_new_from_fd(
                 heap_file.as_raw_fd(),
                 0, // heap_flags  – default
-                0, // fd_flags    – default
+                (libc::O_RDWR | libc::O_CLOEXEC) as c_uint, // fd_flags    – default
                 0, // is_cached_memory_heap – CMA is uncached
             )
         };
@@ -951,7 +951,7 @@ impl VpuDecoder {
                 return Err(VpuError::Decode(msg));
             }
 
-            log::trace!(
+            log::error!(
                 "imxvpuapi2: output_code={}",
                 unsafe { output_code_str(output_code) }
             );
@@ -967,7 +967,7 @@ impl VpuDecoder {
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_EOS => {
-                    log::debug!("imxvpuapi2: EOS reported");
+                    log::error!("imxvpuapi2: EOS reported");
                     break;
                 }
 
@@ -996,13 +996,13 @@ impl VpuDecoder {
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_FRAME_SKIPPED => {
-                    log::trace!("imxvpuapi2: frame skipped by decoder");
+                    log::error!("imxvpuapi2: frame skipped by decoder");
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_VIDEO_PARAMETERS_CHANGED => {
                     // Resolution or other stream parameters changed mid-stream.
                     // Flush and let the next push_nal restart the stream.
-                    log::warn!("imxvpuapi2: video parameters changed – flushing decoder");
+                    log::error!("imxvpuapi2: video parameters changed – flushing decoder");
                     unsafe { imx_vpu_api_dec_flush(self.decoder) };
                     self.free_fb_pool();
                     self.stream_metrics = None;
@@ -1010,7 +1010,7 @@ impl VpuDecoder {
                 }
 
                 unknown => {
-                    log::warn!("imxvpuapi2: unknown output code {unknown}");
+                    log::error!("imxvpuapi2: unknown output code {unknown}");
                     break;
                 }
             }
@@ -1077,7 +1077,7 @@ impl VpuDecoder {
 
         // Allocate and register framebuffer pool entries.
         if metrics.min_num_fb > 0 {
-            self.add_framebuffers(metrics.min_num_fb)?;
+            self.add_framebuffers(metrics.min_num_fb + 4)?;
         }
 
         // Allocate the separate output buffer when not using the pool.
