@@ -59,6 +59,7 @@ path = "src/main.rs"
 default = ["usb", "androidauto", "v4l2m2m"]
 ffmpeg = ["dep:ffmpeg-next", "dep:thiserror"]
 v4l2m2m = ["dep:nix", "dep:thiserror", "dep:libc"]
+imxvpuapi2 = ["dep:thiserror", "dep:libc"]
 usb = ["android-auto?/usb"]
 wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi", "android-auto?/wireless"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]

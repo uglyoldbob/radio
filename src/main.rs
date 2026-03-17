@@ -16,6 +16,8 @@ mod wireless;
 mod ffmpeg;
 #[cfg(feature = "v4l2m2m")]
 mod v4l2m2m;
+#[cfg(feature = "imxvpuapi2")]
+mod imxvpuapi2;
 
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -334,6 +336,9 @@ pub enum H264Decoder {
     /// Hardware decoding for v4l2 m2m
     #[cfg(feature = "v4l2m2m")]
     V4l2M2m(v4l2m2m::VpuDecoder),
+    /// Hardware decoding via libimxvpuapi2 (Hantro VPU on i.MX8MP)
+    #[cfg(feature = "imxvpuapi2")]
+    Imxvpuapi2(imxvpuapi2::VpuDecoder),
 }
 
 impl H264Decoder {
@@ -348,6 +353,18 @@ impl H264Decoder {
                 )
                 .expect("failed to init hw h264 decoder"),
             ));
+        }
+        #[cfg(feature = "imxvpuapi2")]
+        {
+            match imxvpuapi2::VpuDecoder::open() {
+                Ok(dec) => {
+                    log::info!("imxvpuapi2: Hantro VPU decoder ready");
+                    return Ok(Self::Imxvpuapi2(dec));
+                }
+                Err(e) => {
+                    log::warn!("imxvpuapi2: decoder unavailable: {e}");
+                }
+            }
         }
         #[cfg(feature = "v4l2m2m")]
         {
@@ -374,6 +391,28 @@ impl H264Decoder {
     pub fn decode(&mut self, data: &[u8]) -> Vec<egui::ColorImage> {
         let mut frames = Vec::new();
         match self {
+            #[cfg(feature = "imxvpuapi2")]
+            Self::Imxvpuapi2(v) => {
+                for nal in openh264::nal_units(data) {
+                    match v.push_nal(nal) {
+                        Err(e) => {
+                            log::error!("imxvpuapi2 push_nal error: {e}");
+                            continue;
+                        }
+                        Ok(decoded_frames) => {
+                            for frame in decoded_frames {
+                                let w = frame.actual_width;
+                                let h = frame.actual_height;
+                                let pixels = imxvpuapi2::nv12_to_egui(&frame);
+                                frames.push(egui::ColorImage {
+                                    size: [w, h],
+                                    pixels,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             #[cfg(feature = "v4l2m2m")]
             Self::V4l2M2m(v) => {
                 for nal in openh264::nal_units(data) {
