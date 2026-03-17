@@ -81,11 +81,11 @@ pub struct Video {}
 
 impl Video {
     /// Create a video source and spawn a thread for reading images from that video source.
-    pub fn video_start(dev: Device) -> VideoSource {
+    pub fn video_start(dev: Device) -> Result<VideoSource, String> {
         let image = Arc::new(Mutex::new(uobradio_comms::video::VideoFrame::new()));
         let (a, b) = std::sync::mpsc::channel();
         let i2 = image.clone();
-        let mut fmt = dev.format().expect("Failed to read format");
+        let mut fmt = dev.format().map_err(|e| e.to_string())?;
         let controls: Vec<ControlElement> = dev
             .query_controls()
             .unwrap()
@@ -103,52 +103,57 @@ impl Video {
             fmt.width = 320;
             fmt.height = 240;
             fmt.fourcc = FourCC::new(b"YUYV");
-            let fmt = dev.set_format(&fmt).expect("Failed to write format");
-
-            if let Ok(mut i) = i2.lock() {
-                i.width = fmt.width as u16;
-                i.height = fmt.height as u16;
-            }
-            println!("Video caps: {:?}", dev.query_caps());
-
-            println!("Video controls: {:?}", dev.query_controls());
-            println!("Video formats: {:?}", dev.enum_formats());
-            println!(
-                "Video framesizes YUYV: {:?}",
-                dev.enum_framesizes(FourCC::new(b"YUYV"))
-            );
-            let mut stream = MmapStream::with_buffers(&dev, Type::VideoCapture, 4)
-                .expect("Failed to create video buffer stream");
-            loop {
-                if grab_images {
-                    let (buf, _) = stream.next().unwrap();
+            match dev.set_format(&fmt) {
+                Ok(fmt) => {
                     if let Ok(mut i) = i2.lock() {
-                        i.pixel_data =
-                            Some(uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb());
-                        i.mirroring();
+                        i.width = fmt.width as u16;
+                        i.height = fmt.height as u16;
                     }
-                } else {
-                    // prevent high cpu usage when inactive
-                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    println!("Video caps: {:?}", dev.query_caps());
+
+                    println!("Video controls: {:?}", dev.query_controls());
+                    println!("Video formats: {:?}", dev.enum_formats());
+                    println!(
+                        "Video framesizes YUYV: {:?}",
+                        dev.enum_framesizes(FourCC::new(b"YUYV"))
+                    );
+                    let mut stream = MmapStream::with_buffers(&dev, Type::VideoCapture, 4)
+                        .expect("Failed to create video buffer stream");
+                    loop {
+                        if grab_images {
+                            let (buf, _) = stream.next().unwrap();
+                            if let Ok(mut i) = i2.lock() {
+                                i.pixel_data =
+                                    Some(uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb());
+                                i.mirroring();
+                            }
+                        } else {
+                            // prevent high cpu usage when inactive
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                        if let Ok(a) = b.try_recv() {
+                            match a {
+                                VideoMessage::CameraUsed(b) => {
+                                    grab_images = b;
+                                }
+                                VideoMessage::Quit => break,
+                                VideoMessage::ControlData { id, value } => {
+                                    let v2 = clone_v4l_value(&value);
+                                    let _ = dev.set_control(v4l::control::Control { id, value: v2 });
+                                }
+                            }
+                        }
+                    }
                 }
-                if let Ok(a) = b.try_recv() {
-                    match a {
-                        VideoMessage::CameraUsed(b) => {
-                            grab_images = b;
-                        }
-                        VideoMessage::Quit => break,
-                        VideoMessage::ControlData { id, value } => {
-                            let v2 = clone_v4l_value(&value);
-                            let _ = dev.set_control(v4l::control::Control { id, value: v2 });
-                        }
-                    }
+                Err(e) => {
+                    service::log::error!("Failed to set format: {e:?}");
                 }
             }
         });
-        VideoSource {
+        Ok(VideoSource {
             image,
             vsend: a,
             controls,
-        }
+        })
     }
 }

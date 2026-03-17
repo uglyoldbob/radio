@@ -301,7 +301,7 @@ pub struct AppUserCommon {
     /// Determines who deals with the bluetooth stuff
     blue_addr: Option<std::net::SocketAddr>,
     /// The video sources in the system
-    video: Vec<VideoSource>,
+    video: Vec<Result<VideoSource, String>>,
     /// The old nonvolatile settings of the radio, used to see if settings should be saved
     old_settings: NonvolatileSettings,
     /// The nonvolatile settings of the radio
@@ -781,7 +781,7 @@ async fn receive_message_from_app(
             uobradio_comms::MessageFromApp::CameraSettingControl(id, control, data) => {
                 let a: uobradio_comms::v4l::control::Value = data.into();
                 let mut common2 = common.lock().await;
-                if let Some(vid) = common2.video.get_mut(id as usize) {
+                if let Some(Ok(vid)) = common2.video.get_mut(id as usize) {
                     let _ = vid.send_update(control as usize, &a);
                     vid.controls[control as usize].value = a;
                 }
@@ -790,8 +790,10 @@ async fn receive_message_from_app(
                 let common2 = common.lock().await;
                 let mut map = BTreeMap::new();
                 for (i, cam) in common2.video.iter().enumerate() {
-                    if let Some(c) = cam.sendable() {
-                        map.insert(i as u8, c);
+                    if let Ok(cam) = cam {
+                        if let Some(c) = cam.sendable() {
+                            map.insert(i as u8, c);
+                        }
                     }
                 }
                 let packet = uobradio_comms::MessageToApp::CamerasBtreeMap(map);
@@ -803,7 +805,7 @@ async fn receive_message_from_app(
             }
             uobradio_comms::MessageFromApp::RequestCamera(index) => {
                 let common2 = common.lock().await;
-                if let Some(v) = common2.video.get(index as usize) {
+                if let Some(Ok(v)) = common2.video.get(index as usize) {
                     let jpeg = {
                         let frame = v.image.lock().unwrap();
                         frame.get_jpeg()
