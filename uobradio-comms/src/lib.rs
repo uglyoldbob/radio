@@ -79,6 +79,11 @@ impl<T: std::fmt::Debug> Pollable<T> {
         }
     }
 
+    /// Returns true when waiting
+    pub fn is_waiting(&self) -> bool {
+        matches!(self, Self::Waiting { last_known: _, waiting_since: _ })
+    }
+
     /// Provides the new value for the object, None means it won't update the last know
     pub fn new_value_optional(&mut self, v: Option<T>) {
         match v {

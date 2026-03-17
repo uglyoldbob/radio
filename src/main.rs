@@ -355,6 +355,14 @@ impl H264Decoder {
                 log::info!("VPU decoder ready: {}x{}", dec.width, dec.height);
                 return Ok(Self::V4l2M2m(dec));
             }
+            if let Ok(dec) = v4l2m2m::VpuDecoder::open("/dev/video1").map_err(|e| e.to_string()) {
+                log::info!("VPU decoder ready: {}x{}", dec.width, dec.height);
+                return Ok(Self::V4l2M2m(dec));
+            }
+            if let Ok(dec) = v4l2m2m::VpuDecoder::open("/dev/video2").map_err(|e| e.to_string()) {
+                log::info!("VPU decoder ready: {}x{}", dec.width, dec.height);
+                return Ok(Self::V4l2M2m(dec));
+            }
         }
         log::info!("Using openh264");
         Ok(Self::Openh264(
