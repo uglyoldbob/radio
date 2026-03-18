@@ -123,8 +123,9 @@ impl Video {
                         if grab_images {
                             let (buf, _) = stream.next().unwrap();
                             if let Ok(mut i) = i2.lock() {
-                                i.pixel_data =
-                                    Some(uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb());
+                                i.pixel_data = Some(
+                                    uobradio_comms::video::PixelData::Yuyv(buf.to_vec()).to_rgb(),
+                                );
                                 i.mirroring();
                             }
                         } else {
@@ -139,7 +140,8 @@ impl Video {
                                 VideoMessage::Quit => break,
                                 VideoMessage::ControlData { id, value } => {
                                     let v2 = clone_v4l_value(&value);
-                                    let _ = dev.set_control(v4l::control::Control { id, value: v2 });
+                                    let _ =
+                                        dev.set_control(v4l::control::Control { id, value: v2 });
                                 }
                             }
                         }

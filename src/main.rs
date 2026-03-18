@@ -12,12 +12,7 @@ mod video;
 #[cfg(any(feature = "wifi", feature = "bluetooth"))]
 mod wireless;
 
-#[cfg(feature = "ffmpeg")]
-mod ffmpeg;
-#[cfg(feature = "v4l2m2m")]
-mod v4l2m2m;
-#[cfg(feature = "imxvpuapi2")]
-mod imxvpuapi2;
+mod h264;
 
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -326,189 +321,6 @@ fn main() {
     .unwrap();
 }
 
-/// An h264 decoder
-pub enum H264Decoder {
-    /// Software decoding
-    Openh264(openh264::decoder::Decoder),
-    /// Probably hardware decoding with ffmpeg
-    #[cfg(feature = "ffmpeg")]
-    Ffmpeg(ffmpeg::NalDecoder),
-    /// Hardware decoding for v4l2 m2m
-    #[cfg(feature = "v4l2m2m")]
-    V4l2M2m(v4l2m2m::VpuDecoder),
-    /// Hardware decoding via libimxvpuapi2 (Hantro VPU on i.MX8MP)
-    #[cfg(feature = "imxvpuapi2")]
-    Imxvpuapi2(imxvpuapi2::VpuDecoder),
-}
-
-impl H264Decoder {
-    /// Construct a new decoder
-    pub fn new() -> Result<Self, String> {
-        #[cfg(feature = "ffmpeg")]
-        {
-            return Ok(H264Decoder::Ffmpeg(
-                ffmpeg::NalDecoder::new(
-                    ffmpeg_next::codec::Id::H264,
-                    ffmpeg::DecoderConfig::auto(),
-                )
-                .expect("failed to init hw h264 decoder"),
-            ));
-        }
-        #[cfg(feature = "imxvpuapi2")]
-        {
-            match imxvpuapi2::VpuDecoder::open() {
-                Ok(dec) => {
-                    log::info!("imxvpuapi2: Hantro VPU decoder ready");
-                    return Ok(Self::Imxvpuapi2(dec));
-                }
-                Err(e) => {
-                    log::warn!("imxvpuapi2: decoder unavailable: {e}");
-                }
-            }
-        }
-        #[cfg(feature = "v4l2m2m")]
-        {
-            if let Ok(dec) = v4l2m2m::VpuDecoder::open("/dev/video0").map_err(|e| e.to_string()) {
-                log::info!("VPU decoder ready: {}x{}", dec.width, dec.height);
-                return Ok(Self::V4l2M2m(dec));
-            }
-            if let Ok(dec) = v4l2m2m::VpuDecoder::open("/dev/video1").map_err(|e| e.to_string()) {
-                log::info!("VPU decoder ready: {}x{}", dec.width, dec.height);
-                return Ok(Self::V4l2M2m(dec));
-            }
-            if let Ok(dec) = v4l2m2m::VpuDecoder::open("/dev/video2").map_err(|e| e.to_string()) {
-                log::info!("VPU decoder ready: {}x{}", dec.width, dec.height);
-                return Ok(Self::V4l2M2m(dec));
-            }
-        }
-        log::info!("Using openh264");
-        Ok(Self::Openh264(
-            openh264::decoder::Decoder::new().map_err(|_| "openh264 unknown error".to_string())?,
-        ))
-    }
-
-    /// Decode nal data to frames
-    pub fn decode(&mut self, data: &[u8]) -> Vec<egui::ColorImage> {
-        let mut frames = Vec::new();
-        match self {
-            #[cfg(feature = "imxvpuapi2")]
-            Self::Imxvpuapi2(v) => {
-                for nal in openh264::nal_units(data) {
-                    match v.push_nal(nal) {
-                        Err(e) => {
-                            log::error!("imxvpuapi2 push_nal error: {e}");
-                            continue;
-                        }
-                        Ok(decoded_frames) => {
-                            for frame in decoded_frames {
-                                let w = frame.actual_width;
-                                let h = frame.actual_height;
-                                let pixels = imxvpuapi2::nv12_to_egui(&frame);
-                                frames.push(egui::ColorImage {
-                                    size: [w, h],
-                                    pixels,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            #[cfg(feature = "v4l2m2m")]
-            Self::V4l2M2m(v) => {
-                for nal in openh264::nal_units(data) {
-                    match v.push_nal(nal) {
-                        Err(e) => {
-                            log::error!("VPU push_nal error: {:?}", e);
-                            continue;
-                        }
-                        Ok(nv12_frames) => {
-                            for (nv12, w, h) in nv12_frames {
-                                let pixels = v4l2m2m::nv12_to_egui(&nv12, w, h);
-                                frames.push(egui::ColorImage {
-                                    size: [w as usize, h as usize],
-                                    pixels,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-            #[cfg(feature = "ffmpeg")]
-            Self::Ffmpeg(v) => {
-                for nal in openh264::nal_units(data) {
-                    if let Err(e) = v.push_nal(nal, None, None) {
-                        log::error!("Failed to push NAL to ffmpeg decoder: {:?}", e);
-                        continue;
-                    }
-                    loop {
-                        match v.next_frame() {
-                            Err(e) => {
-                                log::error!("Failed to decode android auto video {:?}", e);
-                                break;
-                            }
-                            Ok(None) => break,
-                            Ok(Some(frame)) => {
-                                match frame.to_rgb24() {
-                                    Err(e) => {
-                                        log::error!("Failed to convert frame to RGB: {:?}", e);
-                                    }
-                                    Ok(rgb_frame) => {
-                                        let w = rgb_frame.width() as usize;
-                                        let h = rgb_frame.height() as usize;
-                                        let stride = rgb_frame.stride(0);
-                                        let src = rgb_frame.data(0);
-                                        // Destripe: each row is `stride` bytes wide but only `w*3` are pixels
-                                        let mut rgb_raw = Vec::with_capacity(w * h * 3);
-                                        for row in 0..h {
-                                            let row_start = row * stride;
-                                            rgb_raw.extend_from_slice(
-                                                &src[row_start..row_start + w * 3],
-                                            );
-                                        }
-                                        let pixels: Vec<egui::Color32> = rgb_raw
-                                            .chunks_exact(3)
-                                            .map(|p| egui::Color32::from_rgb(p[0], p[1], p[2]))
-                                            .collect();
-                                        frames.push(egui::ColorImage {
-                                            size: [w, h],
-                                            pixels,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Self::Openh264(v) => {
-                let mut units = openh264::nal_units(data).peekable();
-                while let Some(p) = units.next() {
-                    match v.decode(p) {
-                        Err(e) => {
-                            log::error!("Failed to decode android auto video {:?}", e);
-                        }
-                        Ok(Some(image)) => {
-                            use openh264::formats::YUVSource;
-                            let rgb_len = image.rgb8_len();
-                            let mut rgb_raw = vec![0; rgb_len];
-                            image.write_rgb8(&mut rgb_raw);
-                            let (w, h) = image.dimensions_uv();
-                            let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
-                            let image = egui::ColorImage {
-                                size: [w * 2usize, h * 2usize],
-                                pixels: ei.get_egui(),
-                            };
-                            frames.push(image);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-        frames
-    }
-}
-
 /// The properties common to every window in the application
 struct CommonWindowProperties {
     /// The object to communicate with the radio service
@@ -527,7 +339,7 @@ struct CommonWindowProperties {
     /// The details for the current wifi network, ssid and password
     wifi_details: uobradio_comms::Pollable<(String, Option<String>)>,
     #[cfg(feature = "androidauto")]
-    android_auto_video_decoder: H264Decoder,
+    android_auto_video_decoder: h264::H264Decoder,
     #[cfg(feature = "androidauto")]
     android_auto_texture: Option<egui::TextureHandle>,
     /// the onscreen keyboard
@@ -548,7 +360,7 @@ impl CommonWindowProperties {
             #[cfg(feature = "wifi")]
             wifi_details: Default::default(),
             #[cfg(feature = "androidauto")]
-            android_auto_video_decoder: H264Decoder::new().expect("No h264 decoder"),
+            android_auto_video_decoder: h264::H264Decoder::new().expect("No h264 decoder"),
             #[cfg(feature = "androidauto")]
             android_auto_texture: None,
             keyboard: Default::default(),
@@ -887,7 +699,8 @@ impl eframe::App for MyEguiApp {
         });
         #[cfg(feature = "androidauto")]
         if let Some(vdata) = self.common.radio.get_android_auto_video_buf() {
-            let frames = self.common.android_auto_video_decoder.decode(&vdata);
+            self.common.android_auto_video_decoder.push(&vdata);
+            let frames = self.common.android_auto_video_decoder.drain_frames();
             if let Some(image) = frames.last().cloned() {
                 if self.common.android_auto_texture.is_none() {
                     self.common.android_auto_texture =

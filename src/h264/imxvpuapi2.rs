@@ -15,9 +15,9 @@
 //! separate output buffer) to be physically contiguous DMA memory, allocated
 //! through `libimxdmabuffer`.
 //!
-//! The DMA-heap device node (typically `/dev/dma_heap/linux,cma`) must be
-//! accessible by the running user.  If the process gets EACCES, add a udev
-//! rule:
+//! The allocator is created via `imx_dma_buffer_allocator_new`, which opens
+//! the DMA-heap or ION device internally.  If the process gets EACCES, add a
+//! udev rule:
 //! ```text
 //! echo 'SUBSYSTEM=="dma_heap", MODE="0666"' \
 //!     > /etc/udev/rules.d/50-dma-heap.rules && udevadm trigger
@@ -33,7 +33,6 @@
 #![allow(dead_code, non_camel_case_types)]
 
 use std::os::raw::{c_int, c_uint, c_void};
-use std::os::unix::io::AsRawFd;
 
 // ============================================================================
 // Constants
@@ -69,10 +68,11 @@ const IMX_VPU_API_DEC_OPEN_PARAMS_FLAG_USE_SEMI_PLANAR_COLOR_FORMAT: u32 = 1 << 
 const IMX_VPU_API_COMPRESSION_FORMAT_H264: u32 = 5;
 
 // ---- ImxDmaBufferMappingFlags ----------------------------------------------
-// From imxdmabuffer/imxdmabuffer.h:
-//   IMX_DMA_BUFFER_MAPPING_FLAG_WRITE = (1UL << 0)   →  0x1
-//   IMX_DMA_BUFFER_MAPPING_FLAG_READ  = (1UL << 1)   →  0x2
 const IMX_DMA_BUFFER_MAPPING_FLAG_READ: u32 = 1 << 1;
+
+// ---- Simulated context tags (matching the C example) -----------------------
+const FRAME_CONTEXT_START: usize = 0x1000;
+const FRAMEBUFFER_CONTEXT_START: usize = 0x2000;
 
 // ---- Struct reserved-area size (from imxvpuapi2.h) -------------------------
 // #define IMX_VPU_API_RESERVED_SIZE 64
@@ -219,6 +219,7 @@ struct ImxVpuApiDecLocationOfChromaInfo {
 /// total: 392
 /// ```
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct ImxVpuApiDecStreamInfo {
     min_fb_pool_framebuffer_size: usize,
     min_output_framebuffer_size: usize,
@@ -242,6 +243,13 @@ struct ImxVpuApiDecStreamInfo {
     flags: u32,
     _reserved: [u8; 32],
     _reserved2: [u8; 32],
+}
+
+impl Default for ImxVpuApiDecStreamInfo {
+    fn default() -> Self {
+        // SAFETY: all-zero is a valid bit pattern for this POD struct.
+        unsafe { std::mem::zeroed() }
+    }
 }
 
 /// Global, static capabilities of the underlying VPU decoder hardware.
@@ -374,24 +382,8 @@ extern "C" {
 
     /// Create a new DMA-buffer allocator using the default backend compiled
     /// into libimxdmabuffer (DMA-heap or ION).  Opens the device node
-    /// internally with `-1` as the fd argument.
+    /// internally; the caller does not need to manage any device fd.
     fn imx_dma_buffer_allocator_new(error_code: *mut c_int) -> *mut ImxDmaBufferAllocator;
-
-    /// Create a DMA-heap allocator that reuses an already-open device fd.
-    ///
-    /// `dma_heap_fd`        – fd of an open `/dev/dma_heap/…` node (must be ≥ 0).
-    /// `heap_flags`         – pass 0 for the default dma-heap allocation flags.
-    /// `fd_flags`           – pass 0 for the default per-buffer fd flags.
-    /// `is_cached_memory_heap` – pass 0; CMA / reserved heaps are uncached.
-    ///
-    /// The allocator does **not** take ownership of `dma_heap_fd`; the caller
-    /// must keep it open for as long as the allocator is alive.
-    fn imx_dma_buffer_dma_heap_allocator_new_from_fd(
-        dma_heap_fd: c_int,
-        heap_flags: c_uint,
-        fd_flags: c_uint,
-        is_cached_memory_heap: c_int,
-    ) -> *mut ImxDmaBufferAllocator;
 
     /// Destroy a previously created allocator.
     fn imx_dma_buffer_allocator_destroy(allocator: *mut ImxDmaBufferAllocator);
@@ -485,7 +477,8 @@ extern "C" {
     ) -> u32;
 
     /// Return a framebuffer to the decoder's pool so it can be reused.
-    /// Only needed when `DECODED_FRAMES_ARE_FROM_BUFFER_POOL` is set.
+    /// Safe to call unconditionally — it is a no-op when
+    /// `DECODED_FRAMES_ARE_FROM_BUFFER_POOL` is not set.
     fn imx_vpu_api_dec_return_framebuffer_to_decoder(
         decoder: *mut ImxVpuApiDecoder,
         fb_dma_buffer: *mut ImxDmaBuffer,
@@ -498,11 +491,24 @@ extern "C" {
     /// Flush the decoder, discarding all queued input and output.
     fn imx_vpu_api_dec_flush(decoder: *mut ImxVpuApiDecoder);
 
+    /// Retrieve information about a skipped frame after
+    /// `IMX_VPU_API_DEC_OUTPUT_CODE_FRAME_SKIPPED`.
+    fn imx_vpu_api_dec_get_skipped_frame_info(
+        decoder: *mut ImxVpuApiDecoder,
+        reason: *mut u32,
+        context: *mut *mut c_void,
+        pts: *mut u64,
+        dts: *mut u64,
+    );
+
     /// Human-readable description of a decoder return code.
     fn imx_vpu_api_dec_return_code_string(code: u32) -> *const std::os::raw::c_char;
 
     /// Human-readable description of a decoder output code.
     fn imx_vpu_api_dec_output_code_string(code: u32) -> *const std::os::raw::c_char;
+
+    /// Human-readable description of a skipped-frame reason code.
+    fn imx_vpu_api_dec_skipped_frame_reason_string(reason: u32) -> *const std::os::raw::c_char;
 }
 
 // ============================================================================
@@ -532,57 +538,15 @@ unsafe fn output_code_str(code: u32) -> &'static str {
         .unwrap_or("<invalid utf8>")
 }
 
-// ============================================================================
-// DMA heap device probing
-// ============================================================================
-
-/// Device nodes to try in order when opening the DMA-heap allocator.
-/// On i.MX8MP the first path is the standard CMA heap; the others are
-/// fallbacks for variant BSP configurations.
-const DMA_HEAP_CANDIDATES: &[&str] = &[
-    "/dev/dma_heap/linux,cma",
-    "/dev/dma_heap/linux,cma-uncached",
-    "/dev/dma_heap/reserved",
-];
-
-/// Try to open one of the DMA-heap device nodes.
-///
-/// Returns `Ok(file)` for the first path that opens successfully, or
-/// `Err(last_error)` if none could be opened.  On EACCES the function logs
-/// a clear udev hint before returning the error.
-fn open_dma_heap_device() -> Result<std::fs::File, std::io::Error> {
-    let mut last_err = std::io::Error::from_raw_os_error(libc::ENOENT);
-
-    for &path in DMA_HEAP_CANDIDATES {
-        match std::fs::OpenOptions::new().read(true).write(true).open(path) {
-            Ok(f) => {
-                log::debug!("imxvpuapi2: opened DMA heap device {path}");
-                return Ok(f);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // Not present on this BSP variant — try the next candidate.
-                continue;
-            }
-            Err(e) if e.raw_os_error() == Some(libc::EACCES) => {
-                log::error!(
-                    "imxvpuapi2: permission denied opening {path} (errno 13).\n\
-                     Fix with a udev rule:\n  \
-                     echo 'SUBSYSTEM==\"dma_heap\", MODE=\"0666\"' \\\n  \
-                         > /etc/udev/rules.d/50-dma-heap.rules\n  \
-                     udevadm trigger"
-                );
-                last_err = e;
-                // Don't try other paths — they'll have the same permissions.
-                break;
-            }
-            Err(e) => {
-                log::warn!("imxvpuapi2: opening {path} failed: {e}");
-                last_err = e;
-            }
-        }
+/// Convert a skipped-frame reason code to a human-readable string.
+unsafe fn skipped_reason_str(reason: u32) -> &'static str {
+    let ptr = imx_vpu_api_dec_skipped_frame_reason_string(reason);
+    if ptr.is_null() {
+        return "<null>";
     }
-
-    Err(last_err)
+    std::ffi::CStr::from_ptr(ptr)
+        .to_str()
+        .unwrap_or("<invalid utf8>")
 }
 
 // ============================================================================
@@ -594,10 +558,8 @@ fn open_dma_heap_device() -> Result<std::fs::File, std::io::Error> {
 pub enum VpuError {
     /// The VPU hardware does not support decoding.
     NoDecoder,
-    /// Could not open the DMA heap device node.
-    DmaHeapOpen(std::io::Error),
-    /// `imx_dma_buffer_dma_heap_allocator_new_from_fd` returned NULL.
-    AllocatorCreate,
+    /// `imx_dma_buffer_allocator_new` returned NULL.
+    AllocatorCreate(c_int),
     /// A DMA buffer allocation failed.
     DmaAlloc { size: usize, err: c_int },
     /// `imx_vpu_api_dec_open` returned a non-OK code.
@@ -620,9 +582,8 @@ impl std::fmt::Display for VpuError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoDecoder => write!(f, "VPU hardware does not support decoding"),
-            Self::DmaHeapOpen(e) => write!(f, "cannot open DMA heap device: {e}"),
-            Self::AllocatorCreate => {
-                write!(f, "imx_dma_buffer_dma_heap_allocator_new_from_fd returned NULL")
+            Self::AllocatorCreate(e) => {
+                write!(f, "imx_dma_buffer_allocator_new returned NULL (errno {e})")
             }
             Self::DmaAlloc { size, err } => {
                 write!(f, "DMA alloc of {size} bytes failed (errno {err})")
@@ -706,41 +667,17 @@ pub fn nv12_to_egui(frame: &DecodedFrame) -> Vec<egui::Color32> {
 // VpuDecoder state
 // ============================================================================
 
-/// Snapshot of the metrics we care about from `ImxVpuApiDecStreamInfo`.
-/// Copied out of the C struct immediately so we never hold a raw pointer into
-/// decoder-internal storage beyond a single call.
-#[derive(Clone, Copy)]
-struct StreamMetrics {
-    actual_width: usize,
-    actual_height: usize,
-    y_offset: usize,
-    u_offset: usize,
-    y_stride: usize,
-    uv_stride: usize,
-    /// Minimum size (bytes) for each DMA buffer added to the framebuffer pool.
-    min_fb_pool_size: usize,
-    /// Required physical-address alignment for framebuffer-pool DMA buffers.
-    fb_pool_alignment: usize,
-    /// Minimum number of framebuffers the decoder requires in its pool.
-    min_num_fb: usize,
-    /// Minimum size (bytes) for the separate output DMA buffer.
-    /// Only relevant when `frames_from_pool` is `false`.
-    min_output_size: usize,
-    /// Required physical-address alignment for the output DMA buffer.
-    output_alignment: usize,
-}
-
 /// Safe wrapper around an `ImxVpuApiDecoder` and all of its supporting
 /// resources (DMA allocator, stream buffer, framebuffer pool, …).
+///
+/// Mirrors the `Context` struct in the upstream C example.  The stream info
+/// is stored as a full struct copy (not just extracted fields), matching the
+/// C pattern of `ctx->stream_info = *stream_info`.
 ///
 /// # Drop order
 ///
 /// The decoder is closed first (so the VPU stops using DMA memory), then the
-/// DMA buffers are freed, and finally the allocator is destroyed.  The
-/// `heap_file` field is dropped automatically by Rust *after* the `drop()`
-/// body returns, which means the DMA-heap fd remains open for the entire
-/// lifetime of the allocator — as required by
-/// `imx_dma_buffer_dma_heap_allocator_new_from_fd`.
+/// DMA buffers are freed, and finally the allocator is destroyed.
 ///
 /// # Thread safety
 /// `VpuDecoder` is `Send` — the raw pointers are owned exclusively and are
@@ -748,29 +685,23 @@ struct StreamMetrics {
 pub struct VpuDecoder {
     /// The libimxvpuapi2 decoder handle.
     decoder: *mut ImxVpuApiDecoder,
-    /// DMA buffer allocator backed by the DMA-heap device.
+    /// DMA buffer allocator (opened internally by `imx_dma_buffer_allocator_new`).
     allocator: *mut ImxDmaBufferAllocator,
-    /// Open handle for the DMA-heap device node (e.g. `/dev/dma_heap/linux,cma`).
-    /// Kept alive here because `imx_dma_buffer_dma_heap_allocator_new_from_fd`
-    /// does *not* take ownership of the fd — the allocator merely borrows it.
-    heap_file: std::fs::File,
     /// Ring-buffer used internally by the VPU for bitstream data.
-    /// NULL when `min_required_stream_buffer_size == 0`.
     stream_buffer: *mut ImxDmaBuffer,
-    /// When `true`, decoded frames come from the decoder's internal pool and
-    /// must be returned with `imx_vpu_api_dec_return_framebuffer_to_decoder`.
-    frames_from_pool: bool,
-    /// Cached stream metrics; `None` until the first
+    /// Copy of the most recently received stream info (analogous to
+    /// `ctx->stream_info` in the C example).  `None` until the first
     /// `NEW_STREAM_INFO_AVAILABLE` output code is received.
-    stream_metrics: Option<StreamMetrics>,
+    stream_info: Option<ImxVpuApiDecStreamInfo>,
     /// DMA buffers that make up the decoder's framebuffer pool.
     /// Each entry is `(*mut ImxDmaBuffer, allocated_size_in_bytes)`.
-    fb_pool: Vec<(*mut ImxDmaBuffer, usize)>,
-    /// Separate output DMA buffer used when `frames_from_pool == false`.
+    /// Mirrors `ctx->fb_pool_dmabuffers` + `ctx->num_fb_pool_framebuffers`.
+    fb_pool: Vec<*mut ImxDmaBuffer>,
+    /// Separate output DMA buffer used when the decoder does **not** use its
+    /// internal pool for decoded frames.  Mirrors `ctx->output_dmabuffer`.
     output_dmabuf: *mut ImxDmaBuffer,
-    /// Allocated size of `output_dmabuf` in bytes; 0 when the buffer is NULL.
-    output_dmabuf_size: usize,
-    /// Monotonically increasing counter used as a per-frame context tag.
+    /// Monotonically increasing counter used as a per-frame context tag,
+    /// starting at `FRAME_CONTEXT_START` (mirrors `ctx->frame_context_counter`).
     frame_counter: usize,
 }
 
@@ -785,11 +716,8 @@ unsafe impl Send for VpuDecoder {}
 impl VpuDecoder {
     /// Open the i.MX8MP Hantro VPU and prepare it for H.264 decoding.
     ///
-    /// Opens the DMA-heap device node itself (giving a clear filesystem error
-    /// instead of an opaque errno from inside the C library), then creates the
-    /// allocator, allocates the stream ring-buffer, and opens the decoder.
-    /// The framebuffer pool is populated lazily on the first
-    /// `NEW_STREAM_INFO_AVAILABLE` event.
+    /// Uses `imx_dma_buffer_allocator_new` (which opens the DMA-heap or ION
+    /// device internally), matching the C example's `init()` function exactly.
     pub fn open() -> Result<Self, VpuError> {
         // ---- Silence the library's own log output; we use our own logger. --
         // IMX_VPU_API_LOG_LEVEL_WARNING = 1
@@ -807,98 +735,71 @@ impl VpuDecoder {
             return Err(VpuError::NoDecoder);
         }
 
-        let frames_from_pool =
-            (flags & IMX_VPU_API_DEC_GLOBAL_INFO_FLAG_DECODED_FRAMES_ARE_FROM_BUFFER_POOL) != 0;
-
         log::debug!(
-            "imxvpuapi2: frames_from_pool={frames_from_pool} \
-             min_stream_buf={}",
-            unsafe { (*global_info).min_required_stream_buffer_size }
+            "imxvpuapi2: decoded_frames_from_pool={} \
+             min_stream_buf={}  stream_buf_align={}",
+            (flags & IMX_VPU_API_DEC_GLOBAL_INFO_FLAG_DECODED_FRAMES_ARE_FROM_BUFFER_POOL) != 0,
+            unsafe { (*global_info).min_required_stream_buffer_size },
+            unsafe { (*global_info).required_stream_buffer_physaddr_alignment },
         );
 
-        // ---- DMA heap device -----------------------------------------------
-        // Open the device ourselves so that any permission error is reported as
-        // a clear Rust I/O error rather than an opaque errno from inside the C
-        // library.  We then hand the fd to the _from_fd constructor, which
-        // reuses it without taking ownership.
-        let heap_file = open_dma_heap_device().map_err(VpuError::DmaHeapOpen)?;
-
         // ---- DMA allocator -------------------------------------------------
-        // Pass heap_flags=0 and fd_flags=0 (library defaults); CMA is uncached
-        // so is_cached_memory_heap=0.
-        let allocator = unsafe {
-            imx_dma_buffer_dma_heap_allocator_new_from_fd(
-                heap_file.as_raw_fd(),
-                0, // heap_flags  – default
-                (libc::O_RDWR | libc::O_CLOEXEC) as c_uint, // fd_flags    – default
-                0, // is_cached_memory_heap – CMA is uncached
-            )
-        };
+        // Use imx_dma_buffer_allocator_new, which opens the device internally
+        // (matching the C example). No need to manage a device fd ourselves.
+        let mut alloc_err: c_int = 0;
+        let allocator = unsafe { imx_dma_buffer_allocator_new(&mut alloc_err) };
         if allocator.is_null() {
-            return Err(VpuError::AllocatorCreate);
+            return Err(VpuError::AllocatorCreate(alloc_err));
         }
 
-        // ---- Stream ring-buffer (may be zero-sized) ------------------------
-        let stream_buf_size =
-            unsafe { (*global_info).min_required_stream_buffer_size };
-        let stream_buf_align =
-            unsafe { (*global_info).required_stream_buffer_physaddr_alignment };
+        // ---- Stream ring-buffer --------------------------------------------
+        let stream_buf_size = unsafe { (*global_info).min_required_stream_buffer_size };
+        let stream_buf_align = unsafe { (*global_info).required_stream_buffer_physaddr_alignment };
 
-        let stream_buffer = if stream_buf_size > 0 {
-            let mut err: c_int = 0;
-            let buf = unsafe {
-                imx_dma_buffer_allocate(allocator, stream_buf_size, stream_buf_align, &mut err)
-            };
-            if buf.is_null() {
-                unsafe { imx_dma_buffer_allocator_destroy(allocator) };
-                return Err(VpuError::DmaAlloc { size: stream_buf_size, err });
-            }
-            buf
-        } else {
-            std::ptr::null_mut()
+        // Unlike the C example (which asserts the allocation succeeds), we
+        // propagate the error properly.
+        let mut err: c_int = 0;
+        let stream_buffer = unsafe {
+            imx_dma_buffer_allocate(allocator, stream_buf_size, stream_buf_align, &mut err)
         };
+        if stream_buffer.is_null() {
+            unsafe { imx_dma_buffer_allocator_destroy(allocator) };
+            return Err(VpuError::DmaAlloc {
+                size: stream_buf_size,
+                err,
+            });
+        }
 
         // ---- Open params ---------------------------------------------------
-        let mut open_params = ImxVpuApiDecOpenParams {
-            compression_format: IMX_VPU_API_COMPRESSION_FORMAT_H264,
-            flags: IMX_VPU_API_DEC_OPEN_PARAMS_FLAG_ENABLE_FRAME_REORDERING
-                | IMX_VPU_API_DEC_OPEN_PARAMS_FLAG_USE_SEMI_PLANAR_COLOR_FORMAT,
-            frame_width: 0,
-            frame_height: 0,
-            extra_header_data: std::ptr::null(),
-            extra_header_data_size: 0,
-            suggested_color_format: 0,
-            _reserved: [0u8; 28],
-            _reserved2: [0u8; 32],
-        };
+        // Zeroed first (matching the C example's memset), then fields set.
+        let mut open_params: ImxVpuApiDecOpenParams = unsafe { std::mem::zeroed() };
+        open_params.compression_format = IMX_VPU_API_COMPRESSION_FORMAT_H264;
+        open_params.flags = IMX_VPU_API_DEC_OPEN_PARAMS_FLAG_ENABLE_FRAME_REORDERING
+            | IMX_VPU_API_DEC_OPEN_PARAMS_FLAG_USE_SEMI_PLANAR_COLOR_FORMAT;
+        // frame_width / frame_height left at 0: H.264 SPS NALUs carry these.
+        // extra_header_data left NULL: not needed for H.264 byte-stream.
 
         // ---- Open the decoder ----------------------------------------------
         let mut decoder: *mut ImxVpuApiDecoder = std::ptr::null_mut();
-        let ret =
-            unsafe { imx_vpu_api_dec_open(&mut decoder, &mut open_params, stream_buffer) };
+        let ret = unsafe { imx_vpu_api_dec_open(&mut decoder, &mut open_params, stream_buffer) };
 
         if ret != IMX_VPU_API_DEC_RETURN_CODE_OK {
             let msg = unsafe { ret_code_str(ret) }.to_owned();
-            if !stream_buffer.is_null() {
-                unsafe { imx_dma_buffer_deallocate(stream_buffer) };
-            }
+            unsafe { imx_dma_buffer_deallocate(stream_buffer) };
             unsafe { imx_dma_buffer_allocator_destroy(allocator) };
             return Err(VpuError::Open(msg));
         }
 
-        log::info!("imxvpuapi2: decoder opened (frames_from_pool={frames_from_pool})");
+        log::info!("imxvpuapi2: decoder opened successfully");
 
         Ok(Self {
             decoder,
             allocator,
-            heap_file,
             stream_buffer,
-            frames_from_pool,
-            stream_metrics: None,
+            stream_info: None,
             fb_pool: Vec::new(),
             output_dmabuf: std::ptr::null_mut(),
-            output_dmabuf_size: 0,
-            frame_counter: 0,
+            frame_counter: FRAME_CONTEXT_START,
         })
     }
 }
@@ -913,74 +814,100 @@ impl VpuDecoder {
     ///
     /// Returns zero or more fully decoded frames.  Each frame must be converted
     /// to an `egui::ColorImage` by calling [`nv12_to_egui`].
+    ///
+    /// Mirrors the `push_encoded_input_frame` + `decode_encoded_frames` pair
+    /// from the C example, combined into a single Rust method.
     pub fn push_nal(&mut self, nal: &[u8]) -> Result<Vec<DecodedFrame>, VpuError> {
         let mut frames = Vec::new();
 
-        // ---- Push encoded data ---------------------------------------------
+        // ---- Push encoded data (mirrors push_encoded_input_frame) ----------
         let mut encoded = ImxVpuApiEncodedFrame {
             data: nal.as_ptr() as *mut u8,
             data_size: nal.len(),
+            // has_header and frame_type left at 0, as in the C example.
             has_header: 0,
             frame_type: 0,
             context: self.frame_counter as *mut c_void,
             pts: 0,
             dts: 0,
         };
+
+        log::debug!(
+            "imxvpuapi2: pushing encoded frame ctx={:#x} size={}",
+            self.frame_counter,
+            nal.len()
+        );
         self.frame_counter = self.frame_counter.wrapping_add(1);
 
-        let ret =
-            unsafe { imx_vpu_api_dec_push_encoded_frame(self.decoder, &mut encoded) };
+        let ret = unsafe { imx_vpu_api_dec_push_encoded_frame(self.decoder, &mut encoded) };
         if ret != IMX_VPU_API_DEC_RETURN_CODE_OK {
             let msg = unsafe { ret_code_str(ret) }.to_owned();
             return Err(VpuError::Push(msg));
         }
 
-        // If we already have stream info and are NOT using the pool, arm the
-        // output buffer before the first decode call.
-        if !self.frames_from_pool {
-            self.maybe_set_output_buffer();
+        // ---- Decode loop (mirrors decode_encoded_frames) -------------------
+        // Set the output buffer before the first decode call, if one has been
+        // allocated.  This matches the C example's check at the top of
+        // decode_encoded_frames(): `if (ctx->output_dmabuffer != NULL) …`
+        if !self.output_dmabuf.is_null() {
+            unsafe {
+                imx_vpu_api_dec_set_output_frame_dma_buffer(
+                    self.decoder,
+                    self.output_dmabuf,
+                    FRAMEBUFFER_CONTEXT_START as *mut c_void,
+                );
+            }
         }
 
-        // ---- Decode loop ---------------------------------------------------
         loop {
             let mut output_code: u32 = 0;
             let ret = unsafe { imx_vpu_api_dec_decode(self.decoder, &mut output_code) };
-
             if ret != IMX_VPU_API_DEC_RETURN_CODE_OK {
                 let msg = unsafe { ret_code_str(ret) }.to_owned();
                 return Err(VpuError::Decode(msg));
             }
 
-            log::error!(
-                "imxvpuapi2: output_code={}",
-                unsafe { output_code_str(output_code) }
-            );
+            log::debug!("imxvpuapi2: output_code={}", unsafe {
+                output_code_str(output_code)
+            });
 
             match output_code {
                 IMX_VPU_API_DEC_OUTPUT_CODE_NO_OUTPUT_YET_AVAILABLE => {
-                    // Keep spinning — the decoder needs another internal step.
+                    // Decoder did not produce anything yet; keep spinning.
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_MORE_INPUT_DATA_NEEDED => {
-                    // The decoder has consumed what we pushed; provide the next NAL.
+                    // Decoder consumed our input; exit so the caller can push
+                    // the next NAL unit.
                     break;
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_EOS => {
-                    log::error!("imxvpuapi2: EOS reported");
+                    log::info!("imxvpuapi2: VPU reports EOS; no more decoded frames available");
                     break;
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_NEW_STREAM_INFO_AVAILABLE => {
+                    // New stream info: (re-)allocate the framebuffer pool and,
+                    // if needed, the separate output buffer.
+                    // Mirrors the NEW_STREAM_INFO_AVAILABLE branch in the C example.
                     self.handle_new_stream_info()?;
-                    // After allocating pool buffers, arm the output buffer if
-                    // we are not using the pool.
-                    if !self.frames_from_pool {
-                        self.maybe_set_output_buffer();
+
+                    // Set the output buffer right away if we just allocated one,
+                    // so the decoder has somewhere to put the next frame.
+                    if !self.output_dmabuf.is_null() {
+                        unsafe {
+                            imx_vpu_api_dec_set_output_frame_dma_buffer(
+                                self.decoder,
+                                self.output_dmabuf,
+                                FRAMEBUFFER_CONTEXT_START as *mut c_void,
+                            );
+                        }
                     }
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_NEED_ADDITIONAL_FRAMEBUFFER => {
+                    // Decoder needs one more framebuffer in its pool.
                     self.add_framebuffers(1)?;
                 }
 
@@ -989,28 +916,60 @@ impl VpuDecoder {
                         Ok(frame) => frames.push(frame),
                         Err(e) => log::error!("imxvpuapi2: retrieve_decoded_frame: {e}"),
                     }
-                    // Re-arm the output buffer for the next frame.
-                    if !self.frames_from_pool {
-                        self.maybe_set_output_buffer();
+                    // Re-arm the output buffer for the next frame if needed.
+                    if !self.output_dmabuf.is_null() {
+                        unsafe {
+                            imx_vpu_api_dec_set_output_frame_dma_buffer(
+                                self.decoder,
+                                self.output_dmabuf,
+                                FRAMEBUFFER_CONTEXT_START as *mut c_void,
+                            );
+                        }
                     }
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_FRAME_SKIPPED => {
-                    log::error!("imxvpuapi2: frame skipped by decoder");
+                    // Retrieve and log skipped-frame metadata, as the C example does.
+                    let mut reason: u32 = 0;
+                    let mut ctx_ptr: *mut c_void = std::ptr::null_mut();
+                    let mut pts: u64 = 0;
+                    let mut dts: u64 = 0;
+                    unsafe {
+                        imx_vpu_api_dec_get_skipped_frame_info(
+                            self.decoder,
+                            &mut reason,
+                            &mut ctx_ptr,
+                            &mut pts,
+                            &mut dts,
+                        );
+                        log::warn!(
+                            "imxvpuapi2: frame skipped – reason={} ctx={:p} pts={} dts={}",
+                            skipped_reason_str(reason),
+                            ctx_ptr,
+                            pts,
+                            dts,
+                        );
+                    }
                 }
 
                 IMX_VPU_API_DEC_OUTPUT_CODE_VIDEO_PARAMETERS_CHANGED => {
                     // Resolution or other stream parameters changed mid-stream.
                     // Flush and let the next push_nal restart the stream.
-                    log::error!("imxvpuapi2: video parameters changed – flushing decoder");
+                    log::warn!(
+                        "imxvpuapi2: video parameters changed mid-stream – flushing decoder"
+                    );
                     unsafe { imx_vpu_api_dec_flush(self.decoder) };
                     self.free_fb_pool();
-                    self.stream_metrics = None;
+                    self.stream_info = None;
                     break;
                 }
 
                 unknown => {
-                    log::error!("imxvpuapi2: unknown output code {unknown}");
+                    log::error!(
+                        "imxvpuapi2: UNKNOWN output code {} ({})",
+                        unsafe { output_code_str(unknown) },
+                        unknown
+                    );
                     break;
                 }
             }
@@ -1027,61 +986,56 @@ impl VpuDecoder {
 impl VpuDecoder {
     /// Called when the decoder signals `NEW_STREAM_INFO_AVAILABLE`.
     ///
-    /// 1. Reads and copies stream info from the decoder.
-    /// 2. Frees any stale pool buffers (e.g. from a resolution change).
-    /// 3. Allocates the required number of pool framebuffers and registers them.
-    /// 4. If `frames_from_pool` is `false`, allocates the separate output buffer.
+    /// 1. Reads and **copies** the full `ImxVpuApiDecStreamInfo` struct out of
+    ///    the decoder (matching `ctx->stream_info = *stream_info` in C).
+    /// 2. Frees any stale pool buffers (the decoder tears the old pool down
+    ///    before emitting this output code).
+    /// 3. Allocates exactly `min_num_required_framebuffers` pool framebuffers
+    ///    (no extra padding — matching the C example).
+    /// 4. If the decoder does not use the pool for decoded frames, allocates
+    ///    the separate output buffer.
     fn handle_new_stream_info(&mut self) -> Result<(), VpuError> {
         let raw = unsafe { imx_vpu_api_dec_get_stream_info(self.decoder) };
         if raw.is_null() {
             return Err(VpuError::NullStreamInfo);
         }
 
-        // SAFETY: the pointer is valid until the next decode call that produces
-        // NEW_STREAM_INFO_AVAILABLE; copy everything we need immediately.
-        let info = unsafe { &*raw };
+        // Copy the entire struct immediately (matches `ctx->stream_info = *stream_info`).
+        // SAFETY: pointer is valid until the next decode call that produces
+        // NEW_STREAM_INFO_AVAILABLE.
+        let info: ImxVpuApiDecStreamInfo = unsafe { *raw };
         let m = &info.decoded_frame_framebuffer_metrics;
-
-        let metrics = StreamMetrics {
-            actual_width: m.actual_frame_width,
-            actual_height: m.actual_frame_height,
-            y_offset: m.y_offset,
-            u_offset: m.u_offset,
-            y_stride: m.y_stride,
-            uv_stride: m.uv_stride,
-            min_fb_pool_size: info.min_fb_pool_framebuffer_size,
-            fb_pool_alignment: info.fb_pool_framebuffer_alignment,
-            min_num_fb: info.min_num_required_framebuffers,
-            min_output_size: info.min_output_framebuffer_size,
-            output_alignment: info.output_framebuffer_alignment,
-        };
 
         log::info!(
             "imxvpuapi2: new stream info – {}×{}  \
              y_stride={}  uv_stride={}  y_off={}  u_off={}  \
              pool_fb_size={}  min_fb={}",
-            metrics.actual_width,
-            metrics.actual_height,
-            metrics.y_stride,
-            metrics.uv_stride,
-            metrics.y_offset,
-            metrics.u_offset,
-            metrics.min_fb_pool_size,
-            metrics.min_num_fb,
+            m.actual_frame_width,
+            m.actual_frame_height,
+            m.y_stride,
+            m.uv_stride,
+            m.y_offset,
+            m.u_offset,
+            info.min_fb_pool_framebuffer_size,
+            info.min_num_required_framebuffers,
         );
 
-        // Free any stale pool from a previous stream (safe: decoder signalled
-        // that the old pool is torn down before emitting this output code).
+        // Free any stale pool from a previous stream.
         self.free_fb_pool();
-        self.stream_metrics = Some(metrics);
+        self.stream_info = Some(info);
 
-        // Allocate and register framebuffer pool entries.
-        if metrics.min_num_fb > 0 {
-            self.add_framebuffers(metrics.min_num_fb + 4)?;
+        // Allocate exactly min_num_required_framebuffers (no + 4 padding).
+        let min_fb = info.min_num_required_framebuffers;
+        if min_fb > 0 {
+            self.add_framebuffers(min_fb)?;
         }
 
-        // Allocate the separate output buffer when not using the pool.
-        if !self.frames_from_pool {
+        // Allocate the separate output buffer when the decoder does NOT use
+        // its internal pool for decoded frames.
+        // The check mirrors: `if (!(flags & DECODED_FRAMES_ARE_FROM_BUFFER_POOL))`
+        let global_flags = unsafe { (*imx_vpu_api_dec_get_global_info()).flags };
+        if global_flags & IMX_VPU_API_DEC_GLOBAL_INFO_FLAG_DECODED_FRAMES_ARE_FROM_BUFFER_POOL == 0
+        {
             self.allocate_output_buffer()?;
         }
 
@@ -1089,23 +1043,27 @@ impl VpuDecoder {
     }
 
     /// Allocate `count` new DMA buffers and add them to the decoder's pool.
+    ///
+    /// Also builds the `fb_contexts` array with simulated context values
+    /// (matching `FRAMEBUFFER_CONTEXT_START + i` from the C example).
     fn add_framebuffers(&mut self, count: usize) -> Result<(), VpuError> {
-        let metrics = match self.stream_metrics {
-            Some(m) => m,
+        let info = match self.stream_info {
+            Some(ref i) => *i,
             None => {
-                log::error!("imxvpuapi2: add_framebuffers called before stream info");
+                log::error!("imxvpuapi2: add_framebuffers called before stream info is available");
                 return Ok(());
             }
         };
 
-        let size = metrics.min_fb_pool_size;
-        let align = metrics.fb_pool_alignment;
+        let size = info.min_fb_pool_framebuffer_size;
+        let align = info.fb_pool_framebuffer_alignment;
+        let old_len = self.fb_pool.len();
 
+        // Allocate new DMA buffers.
         let mut new_bufs: Vec<*mut ImxDmaBuffer> = Vec::with_capacity(count);
         for _ in 0..count {
             let mut err: c_int = 0;
-            let buf =
-                unsafe { imx_dma_buffer_allocate(self.allocator, size, align, &mut err) };
+            let buf = unsafe { imx_dma_buffer_allocate(self.allocator, size, align, &mut err) };
             if buf.is_null() {
                 for b in &new_bufs {
                     unsafe { imx_dma_buffer_deallocate(*b) };
@@ -1115,12 +1073,18 @@ impl VpuDecoder {
             new_bufs.push(buf);
         }
 
-        // Register with the decoder (no fb_contexts needed here).
+        // Build the fb_contexts array (simulated context values, freed after
+        // the call — matching the C example's local `fb_contexts` array).
+        let mut fb_contexts: Vec<*mut c_void> = (old_len..old_len + count)
+            .map(|i| (FRAMEBUFFER_CONTEXT_START + i) as *mut c_void)
+            .collect();
+
+        // Register the new buffers with the decoder.
         let ret = unsafe {
             imx_vpu_api_dec_add_framebuffers_to_pool(
                 self.decoder,
                 new_bufs.as_mut_ptr(),
-                std::ptr::null_mut(),
+                fb_contexts.as_mut_ptr(),
                 count,
             )
         };
@@ -1132,9 +1096,10 @@ impl VpuDecoder {
             return Err(VpuError::AddFramebuffers(msg));
         }
 
-        for b in new_bufs {
-            self.fb_pool.push((b, size));
-        }
+        // fb_contexts is dropped here (its lifetime ends with this function,
+        // exactly as in the C example where it is freed in `finish:`).
+
+        self.fb_pool.extend_from_slice(&new_bufs);
 
         log::debug!(
             "imxvpuapi2: fb pool now has {} buffer(s) (added {count})",
@@ -1143,117 +1108,109 @@ impl VpuDecoder {
         Ok(())
     }
 
-    /// Allocate (or reallocate) the single output DMA buffer used when
-    /// `frames_from_pool` is `false`.
+    /// Allocate (or reallocate) the single output DMA buffer.
+    ///
+    /// Uses `min_output_framebuffer_size` / `output_framebuffer_alignment`
+    /// from the stream info, matching `allocate_output_framebuffer()` in the
+    /// C example.
     fn allocate_output_buffer(&mut self) -> Result<(), VpuError> {
-        let metrics = match self.stream_metrics {
-            Some(m) => m,
+        let info = match self.stream_info {
+            Some(ref i) => *i,
             None => return Ok(()),
         };
 
+        // Discard any existing buffer first (matches the C example).
         if !self.output_dmabuf.is_null() {
             unsafe { imx_dma_buffer_deallocate(self.output_dmabuf) };
             self.output_dmabuf = std::ptr::null_mut();
-            self.output_dmabuf_size = 0;
         }
 
-        let size = metrics.min_output_size;
-        let align = metrics.output_alignment;
+        let size = info.min_output_framebuffer_size;
+        let align = info.output_framebuffer_alignment;
         let mut err: c_int = 0;
-        let buf =
-            unsafe { imx_dma_buffer_allocate(self.allocator, size, align, &mut err) };
+        let buf = unsafe { imx_dma_buffer_allocate(self.allocator, size, align, &mut err) };
         if buf.is_null() {
             return Err(VpuError::DmaAlloc { size, err });
         }
 
         self.output_dmabuf = buf;
-        self.output_dmabuf_size = size;
         Ok(())
     }
 
-    /// Call `imx_vpu_api_dec_set_output_frame_dma_buffer` with the current
-    /// output buffer.  No-op if the buffer has not been allocated yet.
-    fn maybe_set_output_buffer(&self) {
-        if !self.output_dmabuf.is_null() {
-            unsafe {
-                imx_vpu_api_dec_set_output_frame_dma_buffer(
-                    self.decoder,
-                    self.output_dmabuf,
-                    std::ptr::null_mut(),
-                );
-            }
-        }
-    }
-
     /// Retrieve one decoded frame, copy its pixel data out of the DMA buffer,
-    /// and (when using the pool) immediately return the buffer to the decoder.
+    /// and unconditionally return the buffer to the decoder.
+    ///
+    /// Mirrors the `DECODED_FRAME_AVAILABLE` branch in the C example.
+    /// Notably, `imx_vpu_api_dec_return_framebuffer_to_decoder` is always
+    /// called — it is a no-op when the pool flag is not set, so the flag
+    /// check is unnecessary (as the C example's comment explains).
     fn retrieve_decoded_frame(&mut self) -> Result<DecodedFrame, VpuError> {
         let mut raw_frame = ImxVpuApiRawFrame::default();
-        let ret =
-            unsafe { imx_vpu_api_dec_get_decoded_frame(self.decoder, &mut raw_frame) };
+        let ret = unsafe { imx_vpu_api_dec_get_decoded_frame(self.decoder, &mut raw_frame) };
         if ret != IMX_VPU_API_DEC_RETURN_CODE_OK {
             let msg = unsafe { ret_code_str(ret) }.to_owned();
             return Err(VpuError::GetFrame(msg));
         }
 
-        let metrics = self.stream_metrics.expect(
-            "stream_metrics must be set before DECODED_FRAME_AVAILABLE is emitted",
-        );
+        let info = self
+            .stream_info
+            .expect("stream_info must be set before DECODED_FRAME_AVAILABLE is emitted");
+        let m = &info.decoded_frame_framebuffer_metrics;
 
-        // Map the DMA buffer for CPU read access (READ = 0x2, not WRITE = 0x1).
+        log::debug!("imxvpuapi2: got decoded frame");
+
+        // Map the DMA buffer for CPU read access.
         let dmabuf = raw_frame.fb_dma_buffer;
         let mut map_err: c_int = 0;
-        let vaddr = unsafe {
-            imx_dma_buffer_map(dmabuf, IMX_DMA_BUFFER_MAPPING_FLAG_READ, &mut map_err)
-        };
+        let vaddr =
+            unsafe { imx_dma_buffer_map(dmabuf, IMX_DMA_BUFFER_MAPPING_FLAG_READ, &mut map_err) };
         if vaddr.is_null() {
-            if self.frames_from_pool {
-                unsafe {
-                    imx_vpu_api_dec_return_framebuffer_to_decoder(self.decoder, dmabuf)
-                };
-            }
+            // Return the buffer even on map failure so the pool is not
+            // permanently depleted.
+            unsafe { imx_vpu_api_dec_return_framebuffer_to_decoder(self.decoder, dmabuf) };
             return Err(VpuError::MapFailed(map_err));
         }
 
-        // Copy the entire framebuffer.  Using the pool size as an upper bound
-        // ensures we never read past the end of the mapped region.
-        let copy_size = if self.frames_from_pool {
-            metrics.min_fb_pool_size
-        } else {
-            metrics.min_output_size
-        };
+        // Compute the copy size from the actual frame dimensions and strides,
+        // matching the y/u/v offset usage in the C example's y4m_write_frame.
+        let copy_size = m.u_offset + m.uv_stride * (m.actual_frame_height / 2);
 
         // SAFETY: `vaddr` points to a valid `copy_size`-byte DMA mapping that
         // remains alive until `imx_dma_buffer_unmap`.
         let data = unsafe { std::slice::from_raw_parts(vaddr, copy_size) }.to_vec();
 
+        let p = std::path::Path::new("/tmp/frame.yuv");
+        if !p.exists() {
+            std::fs::write(p, &data).ok();
+        }
+
         unsafe { imx_dma_buffer_unmap(dmabuf) };
 
-        // Return the buffer to the pool so the VPU can decode into it again.
-        if self.frames_from_pool {
-            unsafe {
-                imx_vpu_api_dec_return_framebuffer_to_decoder(self.decoder, dmabuf)
-            };
-        }
+        // Always return the buffer to the decoder — safe even when the pool
+        // flag is not set (the function is a no-op in that case).
+        unsafe { imx_vpu_api_dec_return_framebuffer_to_decoder(self.decoder, dmabuf) };
 
         Ok(DecodedFrame {
             data,
-            actual_width: metrics.actual_width,
-            actual_height: metrics.actual_height,
-            y_offset: metrics.y_offset,
-            u_offset: metrics.u_offset,
-            y_stride: metrics.y_stride,
-            uv_stride: metrics.uv_stride,
+            actual_width: m.actual_frame_width,
+            actual_height: m.actual_frame_height,
+            y_offset: m.y_offset,
+            u_offset: m.u_offset,
+            y_stride: m.y_stride,
+            uv_stride: m.uv_stride,
         })
     }
 
     /// Deallocate all framebuffers in the pool.
     ///
-    /// The decoder **must** have been closed or flushed before calling this,
-    /// otherwise the VPU may still be writing into those buffers.
+    /// The decoder **must** have been closed or have signalled a new stream
+    /// info before calling this, otherwise the VPU may still write into the
+    /// buffers.  Mirrors `deallocate_framebuffers()` in the C example.
     fn free_fb_pool(&mut self) {
-        for (buf, _size) in self.fb_pool.drain(..) {
-            unsafe { imx_dma_buffer_deallocate(buf) };
+        for buf in self.fb_pool.drain(..) {
+            if !buf.is_null() {
+                unsafe { imx_dma_buffer_deallocate(buf) };
+            }
         }
     }
 }
@@ -1263,6 +1220,7 @@ impl VpuDecoder {
 // ============================================================================
 
 impl Drop for VpuDecoder {
+    /// Mirrors `shutdown()` in the C example.
     fn drop(&mut self) {
         // 1. Close the decoder first so the VPU stops using all DMA buffers.
         if !self.decoder.is_null() {
@@ -1286,14 +1244,9 @@ impl Drop for VpuDecoder {
         }
 
         // 5. Destroy the allocator.
-        //    `heap_file` is still open here — Rust drops struct fields *after*
-        //    this body returns, so the fd remains valid for the destroy call.
         if !self.allocator.is_null() {
             unsafe { imx_dma_buffer_allocator_destroy(self.allocator) };
             self.allocator = std::ptr::null_mut();
         }
-
-        // 6. `heap_file` is dropped automatically after this body, closing the
-        //    DMA-heap fd.
     }
 }

@@ -39,21 +39,21 @@ use nix::errno::Errno;
 // ============================================================================
 
 // ioctl numbers — architecture-specific but stable on ARM/x86
-const VIDIOC_QUERYCAP:   u64 = 0x8068_5600;
-const VIDIOC_S_FMT:      u64 = 0xC0D0_5605;
-const VIDIOC_G_FMT:      u64 = 0xC0D0_5604;
-const VIDIOC_REQBUFS:    u64 = 0xC014_5608;
-const VIDIOC_QUERYBUF:   u64 = 0xC058_5609;
-const VIDIOC_QBUF:       u64 = 0xC058_560F;
-const VIDIOC_DQBUF:      u64 = 0xC058_5611;
-const VIDIOC_STREAMON:   u64 = 0x4004_5612;
-const VIDIOC_STREAMOFF:  u64 = 0x4004_5613;
+const VIDIOC_QUERYCAP: u64 = 0x8068_5600;
+const VIDIOC_S_FMT: u64 = 0xC0D0_5605;
+const VIDIOC_G_FMT: u64 = 0xC0D0_5604;
+const VIDIOC_REQBUFS: u64 = 0xC014_5608;
+const VIDIOC_QUERYBUF: u64 = 0xC058_5609;
+const VIDIOC_QBUF: u64 = 0xC058_560F;
+const VIDIOC_DQBUF: u64 = 0xC058_5611;
+const VIDIOC_STREAMON: u64 = 0x4004_5612;
+const VIDIOC_STREAMOFF: u64 = 0x4004_5613;
 const VIDIOC_SUBSCRIBE_EVENT: u64 = 0x4020_5690;
-const VIDIOC_DQEVENT:    u64 = 0x8070_5659;
+const VIDIOC_DQEVENT: u64 = 0x8070_5659;
 const VIDIOC_DECODER_CMD: u64 = 0xC028_56A8;
 
 // Buffer types
-const V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE:  u32 = 10;
+const V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE: u32 = 10;
 const V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE: u32 = 9;
 
 // Memory type
@@ -65,18 +65,18 @@ const V4L2_PIX_FMT_NV12: u32 = fourcc(b'N', b'V', b'1', b'2');
 
 // Capabilities
 const V4L2_CAP_VIDEO_M2M_MPLANE: u32 = 0x0000_4000;
-const V4L2_CAP_STREAMING:        u32 = 0x0400_0000;
+const V4L2_CAP_STREAMING: u32 = 0x0400_0000;
 
 // Buffer flags
-const V4L2_BUF_FLAG_LAST:      u32 = 0x0010_0000;
-const V4L2_BUF_FLAG_KEYFRAME:  u32 = 0x0000_0008;
+const V4L2_BUF_FLAG_LAST: u32 = 0x0010_0000;
+const V4L2_BUF_FLAG_KEYFRAME: u32 = 0x0000_0008;
 
 // Events
 const V4L2_EVENT_SOURCE_CHANGE: u32 = 5;
-const V4L2_EVENT_EOS:           u32 = 2;
+const V4L2_EVENT_EOS: u32 = 2;
 
 // Decoder commands
-const V4L2_DEC_CMD_STOP:  u32 = 1;
+const V4L2_DEC_CMD_STOP: u32 = 1;
 const V4L2_DEC_CMD_START: u32 = 0;
 
 const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
@@ -85,7 +85,7 @@ const fn fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
 
 // Number of buffers to allocate on each side.
 // More output buffers = more pipelining but more memory.
-const NUM_INPUT_BUFS:  usize = 4;
+const NUM_INPUT_BUFS: usize = 4;
 const NUM_OUTPUT_BUFS: usize = 8;
 
 // ============================================================================
@@ -95,57 +95,57 @@ const NUM_OUTPUT_BUFS: usize = 8;
 #[repr(C)]
 #[derive(Default)]
 struct V4l2Capability {
-    driver:       [u8; 16],
-    card:         [u8; 32],
-    bus_info:     [u8; 32],
-    version:      u32,
+    driver: [u8; 16],
+    card: [u8; 32],
+    bus_info: [u8; 32],
+    version: u32,
     capabilities: u32,
-    device_caps:  u32,
-    reserved:     [u32; 3],
+    device_caps: u32,
+    reserved: [u32; 3],
 }
 
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
 struct V4l2PlanePixFormat {
-    sizeimage:    u32,
+    sizeimage: u32,
     bytesperline: u32,
-    reserved:     [u16; 6],
+    reserved: [u16; 6],
 }
 
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
 struct V4l2PixFormatMplane {
-    width:        u32,
-    height:       u32,
-    pixelformat:  u32,
-    field:        u32,
-    colorspace:   u32,
-    plane_fmt:    [V4l2PlanePixFormat; 8],
-    num_planes:   u8,
-    flags:        u8,
+    width: u32,
+    height: u32,
+    pixelformat: u32,
+    field: u32,
+    colorspace: u32,
+    plane_fmt: [V4l2PlanePixFormat; 8],
+    num_planes: u8,
+    flags: u8,
     // ycbcr_enc / quantization / xfer_func packed in a union; just pad it
-    _enc_quant:   u16,
-    reserved:     [u8; 7],
+    _enc_quant: u16,
+    reserved: [u8; 7],
 }
 
 #[repr(C)]
 union V4l2FmtUnion {
     pix_mp: V4l2PixFormatMplane,
-    raw:    [u8; 200],
+    raw: [u8; 200],
 }
 
 #[repr(C)]
 struct V4l2Format {
     buf_type: u32,
-    fmt:      V4l2FmtUnion,
+    fmt: V4l2FmtUnion,
 }
 
 #[repr(C)]
 #[derive(Default)]
 struct V4l2RequestBuffers {
-    count:    u32,
+    count: u32,
     buf_type: u32,
-    memory:   u32,
+    memory: u32,
     capabilities: u32,
     reserved: [u32; 1],
 }
@@ -153,44 +153,44 @@ struct V4l2RequestBuffers {
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
 struct V4l2Plane {
-    bytesused:   u32,
-    length:      u32,
+    bytesused: u32,
+    length: u32,
     // union: mem_offset / userptr / fd
     m_mem_offset: u32,
-    _m_pad:      [u32; 2],
+    _m_pad: [u32; 2],
     data_offset: u32,
-    reserved:    [u32; 11],
+    reserved: [u32; 11],
 }
 
 #[repr(C)]
 #[derive(Default)]
 struct V4l2Buffer {
-    index:     u32,
-    buf_type:  u32,
+    index: u32,
+    buf_type: u32,
     bytesused: u32,
-    flags:     u32,
-    field:     u32,
+    flags: u32,
+    field: u32,
     // struct timeval (2 × i64 on 64-bit)
     timestamp: [i64; 2],
     // struct v4l2_timecode
-    timecode:  [u32; 5],
-    sequence:  u32,
-    memory:    u32,
+    timecode: [u32; 5],
+    sequence: u32,
+    memory: u32,
     // union m: for mplane, points to planes array via userspace ptr
     m_planes_ptr: u64,
-    length:    u32,
+    length: u32,
     reserved2: u32,
     // union: request_fd / reserved
-    reserved:  u32,
+    reserved: u32,
 }
 
 #[repr(C)]
 #[derive(Default)]
 struct V4l2EventSubscription {
     event_type: u32,
-    id:         u32,
-    flags:      u32,
-    reserved:   [u32; 5],
+    id: u32,
+    flags: u32,
+    reserved: [u32; 5],
 }
 
 #[repr(C)]
@@ -208,20 +208,20 @@ struct V4l2EventSrcChange {
 #[repr(C)]
 struct V4l2Event {
     event_type: u32,
-    u:          V4l2EventUnion,
-    pending:    u32,
-    sequence:   u32,
-    timestamp:  [i64; 2],
-    id:         u32,
-    reserved:   [u32; 8],
+    u: V4l2EventUnion,
+    pending: u32,
+    sequence: u32,
+    timestamp: [i64; 2],
+    id: u32,
+    reserved: [u32; 8],
 }
 
 #[repr(C)]
 #[derive(Default)]
 struct V4l2DecoderCmd {
-    cmd:   u32,
+    cmd: u32,
     flags: u32,
-    data:  [u64; 4],
+    data: [u64; 4],
 }
 
 // ============================================================================
@@ -232,7 +232,7 @@ struct MmapBuffer {
     /// Userspace address from mmap
     addr: *mut u8,
     /// Length passed to mmap / used for munmap
-    len:  usize,
+    len: usize,
 }
 
 impl MmapBuffer {
@@ -247,7 +247,9 @@ impl MmapBuffer {
 impl Drop for MmapBuffer {
     fn drop(&mut self) {
         if !self.addr.is_null() {
-            unsafe { libc::munmap(self.addr as *mut libc::c_void, self.len); }
+            unsafe {
+                libc::munmap(self.addr as *mut libc::c_void, self.len);
+            }
         }
     }
 }
@@ -281,7 +283,7 @@ macro_rules! ioctl {
         if ret < 0 {
             return Err(VpuError::Ioctl {
                 name: $name,
-                err:  Errno::last(),
+                err: Errno::last(),
             });
         }
         ret
@@ -310,26 +312,26 @@ enum CaptureState {
 }
 
 pub struct VpuDecoder {
-    fd:           std::os::unix::io::RawFd,
-    _file:        File,   // keeps fd alive
+    fd: std::os::unix::io::RawFd,
+    _file: File, // keeps fd alive
 
     // Mmap'd input (compressed) buffers — allocated in open()
-    input_bufs:   Vec<MmapBuffer>,
-    input_sizes:  Vec<usize>,
+    input_bufs: Vec<MmapBuffer>,
+    input_sizes: Vec<usize>,
 
     // Mmap'd output (raw NV12) buffers — allocated after SOURCE_CHANGE
-    output_bufs:  Vec<Vec<MmapBuffer>>, // [buf_index][plane_index]
+    output_bufs: Vec<Vec<MmapBuffer>>, // [buf_index][plane_index]
     output_sizes: Vec<Vec<usize>>,
 
     // Dimensions — valid after SOURCE_CHANGE
-    pub width:    u32,
-    pub height:   u32,
+    pub width: u32,
+    pub height: u32,
 
     // Tracks which input buffers are currently free
-    free_input:   Vec<usize>,
+    free_input: Vec<usize>,
 
     capture_state: CaptureState,
-    flushing:      bool,
+    flushing: bool,
 }
 
 impl VpuDecoder {
@@ -360,16 +362,16 @@ impl VpuDecoder {
 
         let mut dec = Self {
             fd,
-            _file:         file,
-            input_bufs:    Vec::new(),
-            input_sizes:   Vec::new(),
-            output_bufs:   Vec::new(),
-            output_sizes:  Vec::new(),
-            width:          0,
-            height:         0,
-            free_input:    Vec::new(),
+            _file: file,
+            input_bufs: Vec::new(),
+            input_sizes: Vec::new(),
+            output_bufs: Vec::new(),
+            output_sizes: Vec::new(),
+            width: 0,
+            height: 0,
+            free_input: Vec::new(),
             capture_state: CaptureState::Uninitialized,
-            flushing:      false,
+            flushing: false,
         };
 
         // Step 1: set H.264 input format
@@ -400,11 +402,11 @@ impl VpuDecoder {
             fmt: V4l2FmtUnion { raw: [0u8; 200] },
         };
         unsafe {
-            fmt.fmt.pix_mp.pixelformat                = V4L2_PIX_FMT_H264;
-            fmt.fmt.pix_mp.width                      = 0; // VPU reads from SPS
-            fmt.fmt.pix_mp.height                     = 0;
-            fmt.fmt.pix_mp.num_planes                 = 1;
-            fmt.fmt.pix_mp.plane_fmt[0].sizeimage     = 1 << 20; // 1 MiB per input buf
+            fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_H264;
+            fmt.fmt.pix_mp.width = 0; // VPU reads from SPS
+            fmt.fmt.pix_mp.height = 0;
+            fmt.fmt.pix_mp.num_planes = 1;
+            fmt.fmt.pix_mp.plane_fmt[0].sizeimage = 1 << 20; // 1 MiB per input buf
         }
         ioctl!(self.fd, VIDIOC_S_FMT, "S_FMT(INPUT)", &mut fmt);
         Ok(())
@@ -412,16 +414,16 @@ impl VpuDecoder {
 
     fn alloc_input_buffers(&mut self) -> Result<(), VpuError> {
         let mut req = V4l2RequestBuffers {
-            count:    NUM_INPUT_BUFS as u32,
+            count: NUM_INPUT_BUFS as u32,
             buf_type: V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE,
-            memory:   V4L2_MEMORY_MMAP,
+            memory: V4L2_MEMORY_MMAP,
             ..Default::default()
         };
         ioctl!(self.fd, VIDIOC_REQBUFS, "REQBUFS(INPUT)", &mut req);
 
         for i in 0..req.count as usize {
             let plane = self.querybuf_plane(V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, i, 0)?;
-            let buf   = self.mmap_plane(plane.length as usize, plane.m_mem_offset)?;
+            let buf = self.mmap_plane(plane.length as usize, plane.m_mem_offset)?;
             self.input_sizes.push(plane.length as usize);
             self.input_bufs.push(buf);
             self.free_input.push(i);
@@ -439,14 +441,18 @@ impl VpuDecoder {
         // If we had capture buffers from a previous resolution, free them
         if self.capture_state == CaptureState::Ready {
             let mut t: u32 = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-            unsafe { libc::ioctl(self.fd, VIDIOC_STREAMOFF as libc::c_ulong, &mut t); }
+            unsafe {
+                libc::ioctl(self.fd, VIDIOC_STREAMOFF as libc::c_ulong, &mut t);
+            }
             let mut req = V4l2RequestBuffers {
-                count:    0, // free all
+                count: 0, // free all
                 buf_type: V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
-                memory:   V4L2_MEMORY_MMAP,
+                memory: V4L2_MEMORY_MMAP,
                 ..Default::default()
             };
-            unsafe { libc::ioctl(self.fd, VIDIOC_REQBUFS as libc::c_ulong, &mut req); }
+            unsafe {
+                libc::ioctl(self.fd, VIDIOC_REQBUFS as libc::c_ulong, &mut req);
+            }
             self.output_bufs.clear();
             self.output_sizes.clear();
         }
@@ -458,33 +464,33 @@ impl VpuDecoder {
         };
         ioctl!(self.fd, VIDIOC_G_FMT, "G_FMT(CAPTURE)", &mut fmt);
         unsafe {
-            self.width  = fmt.fmt.pix_mp.width;
+            self.width = fmt.fmt.pix_mp.width;
             self.height = fmt.fmt.pix_mp.height;
             // Ensure NV12
             fmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
-            fmt.fmt.pix_mp.num_planes  = 1;
+            fmt.fmt.pix_mp.num_planes = 1;
         }
         ioctl!(self.fd, VIDIOC_S_FMT, "S_FMT(CAPTURE)", &mut fmt);
         // Re-read after S_FMT in case the driver adjusted the size
         ioctl!(self.fd, VIDIOC_G_FMT, "G_FMT(CAPTURE)", &mut fmt);
         unsafe {
-            self.width  = fmt.fmt.pix_mp.width;
+            self.width = fmt.fmt.pix_mp.width;
             self.height = fmt.fmt.pix_mp.height;
         }
         log::info!("VpuDecoder: stream is {}x{}", self.width, self.height);
 
         // Allocate capture buffers now that we know the frame size
         let mut req = V4l2RequestBuffers {
-            count:    NUM_OUTPUT_BUFS as u32,
+            count: NUM_OUTPUT_BUFS as u32,
             buf_type: V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
-            memory:   V4L2_MEMORY_MMAP,
+            memory: V4L2_MEMORY_MMAP,
             ..Default::default()
         };
         ioctl!(self.fd, VIDIOC_REQBUFS, "REQBUFS(CAPTURE)", &mut req);
 
         for i in 0..req.count as usize {
             let plane = self.querybuf_plane(V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, i, 0)?;
-            let buf   = self.mmap_plane(plane.length as usize, plane.m_mem_offset)?;
+            let buf = self.mmap_plane(plane.length as usize, plane.m_mem_offset)?;
             self.output_sizes.push(vec![plane.length as usize]);
             self.output_bufs.push(vec![buf]);
         }
@@ -537,12 +543,12 @@ impl VpuDecoder {
     fn drain_events(&mut self) -> Result<(), VpuError> {
         loop {
             let mut event: V4l2Event = unsafe { std::mem::zeroed() };
-            let ret = unsafe {
-                libc::ioctl(self.fd, VIDIOC_DQEVENT as libc::c_ulong, &mut event)
-            };
+            let ret = unsafe { libc::ioctl(self.fd, VIDIOC_DQEVENT as libc::c_ulong, &mut event) };
             if ret < 0 {
                 // ENOENT means no more events — normal exit
-                if Errno::last() == Errno::ENOENT { break; }
+                if Errno::last() == Errno::ENOENT {
+                    break;
+                }
                 // Any other error is unexpected but non-fatal; stop draining
                 break;
             }
@@ -565,7 +571,7 @@ impl VpuDecoder {
         if !self.flushing {
             self.flushing = true;
             let mut cmd = V4l2DecoderCmd {
-                cmd:   V4L2_DEC_CMD_STOP,
+                cmd: V4L2_DEC_CMD_STOP,
                 ..Default::default()
             };
             ioctl!(self.fd, VIDIOC_DECODER_CMD, "DECODER_CMD(STOP)", &mut cmd);
@@ -583,7 +589,9 @@ impl VpuDecoder {
             self.reclaim_input()?;
         }
 
-        let idx = self.free_input.pop()
+        let idx = self
+            .free_input
+            .pop()
             .expect("no free input buffers after reclaim");
 
         let buf = &mut self.input_bufs[idx];
@@ -598,9 +606,9 @@ impl VpuDecoder {
         let mut plane = V4l2Plane::default();
         let mut buf = V4l2Buffer {
             buf_type: V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE,
-            memory:   V4L2_MEMORY_MMAP,
+            memory: V4L2_MEMORY_MMAP,
             m_planes_ptr: &mut plane as *mut V4l2Plane as u64,
-            length:   1,
+            length: 1,
             ..Default::default()
         };
         ioctl!(self.fd, VIDIOC_DQBUF, "DQBUF(INPUT)", &mut buf);
@@ -620,24 +628,27 @@ impl VpuDecoder {
             let mut plane = V4l2Plane::default();
             let mut buf = V4l2Buffer {
                 buf_type: V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
-                memory:   V4L2_MEMORY_MMAP,
+                memory: V4L2_MEMORY_MMAP,
                 m_planes_ptr: &mut plane as *mut V4l2Plane as u64,
-                length:   1,
+                length: 1,
                 ..Default::default()
             };
 
-            let ret = unsafe {
-                libc::ioctl(self.fd, VIDIOC_DQBUF as libc::c_ulong, &mut buf)
-            };
+            let ret = unsafe { libc::ioctl(self.fd, VIDIOC_DQBUF as libc::c_ulong, &mut buf) };
             if ret < 0 {
                 let e = Errno::last();
-                if e == Errno::EAGAIN { break; }
-                return Err(VpuError::Ioctl { name: "DQBUF(CAPTURE)", err: e });
+                if e == Errno::EAGAIN {
+                    break;
+                }
+                return Err(VpuError::Ioctl {
+                    name: "DQBUF(CAPTURE)",
+                    err: e,
+                });
             }
 
-            let idx       = buf.index as usize;
+            let idx = buf.index as usize;
             let bytesused = plane.bytesused as usize;
-            let is_last   = buf.flags & V4L2_BUF_FLAG_LAST != 0;
+            let is_last = buf.flags & V4L2_BUF_FLAG_LAST != 0;
 
             // Copy NV12 data out before re-queuing the buffer
             let frame_data = self.output_bufs[idx][0].as_slice()[..bytesused].to_vec();
@@ -646,7 +657,9 @@ impl VpuDecoder {
             // Re-enqueue the output buffer for the VPU to fill again
             self.qbuf_capture(idx, 0)?;
 
-            if is_last { break; }
+            if is_last {
+                break;
+            }
         }
 
         Ok(out)
@@ -655,15 +668,15 @@ impl VpuDecoder {
     fn qbuf_output(&self, index: usize, bytesused: usize) -> Result<(), VpuError> {
         let mut plane = V4l2Plane {
             bytesused: bytesused as u32,
-            length:    self.input_sizes[index] as u32,
+            length: self.input_sizes[index] as u32,
             ..Default::default()
         };
         let mut buf = V4l2Buffer {
-            index:    index as u32,
+            index: index as u32,
             buf_type: V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE,
-            memory:   V4L2_MEMORY_MMAP,
+            memory: V4L2_MEMORY_MMAP,
             m_planes_ptr: &mut plane as *mut V4l2Plane as u64,
-            length:   1,
+            length: 1,
             ..Default::default()
         };
         ioctl!(self.fd, VIDIOC_QBUF, "QBUF(OUTPUT)", &mut buf);
@@ -676,11 +689,11 @@ impl VpuDecoder {
             ..Default::default()
         };
         let mut buf = V4l2Buffer {
-            index:    index as u32,
+            index: index as u32,
             buf_type: V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE,
-            memory:   V4L2_MEMORY_MMAP,
+            memory: V4L2_MEMORY_MMAP,
             m_planes_ptr: &mut plane as *mut V4l2Plane as u64,
-            length:   1,
+            length: 1,
             ..Default::default()
         };
         ioctl!(self.fd, VIDIOC_QBUF, "QBUF(CAPTURE)", &mut buf);
@@ -690,16 +703,16 @@ impl VpuDecoder {
     fn querybuf_plane(
         &self,
         buf_type: u32,
-        index:    usize,
-        plane:    usize,
+        index: usize,
+        plane: usize,
     ) -> Result<V4l2Plane, VpuError> {
         let mut pl = V4l2Plane::default();
         let mut buf = V4l2Buffer {
-            index:    index as u32,
+            index: index as u32,
             buf_type,
-            memory:   V4L2_MEMORY_MMAP,
+            memory: V4L2_MEMORY_MMAP,
             m_planes_ptr: &mut pl as *mut V4l2Plane as u64,
-            length:   (plane + 1) as u32,
+            length: (plane + 1) as u32,
             ..Default::default()
         };
         ioctl!(self.fd, VIDIOC_QUERYBUF, "QUERYBUF", &mut buf);
@@ -722,14 +735,14 @@ impl VpuDecoder {
         }
         Ok(MmapBuffer {
             addr: ptr as *mut u8,
-            len:  length,
+            len: length,
         })
     }
 
     fn poll_capture(&self, timeout_ms: i32) -> Result<bool, VpuError> {
         let mut pfd = libc::pollfd {
-            fd:      self.fd,
-            events:  libc::POLLIN,
+            fd: self.fd,
+            events: libc::POLLIN,
             revents: 0,
         };
         let ret = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
@@ -763,29 +776,29 @@ impl Drop for VpuDecoder {
 ///   [ UV plane: width × height/2 bytes       ]  (interleaved U,V)
 /// ```
 pub fn nv12_to_rgb(data: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let w = width  as usize;
+    let w = width as usize;
     let h = height as usize;
-    let y_size  = w * h;
+    let y_size = w * h;
     let uv_base = y_size;
 
     let mut rgb = vec![0u8; w * h * 3];
 
     for row in 0..h {
         for col in 0..w {
-            let y  = data[row * w + col] as i32;
+            let y = data[row * w + col] as i32;
             // UV is subsampled 2×2: both pixels in same pair share one UV
-            let uv_row  = row / 2;
-            let uv_col  = (col / 2) * 2;
-            let u = data[uv_base + uv_row * w + uv_col]     as i32 - 128;
+            let uv_row = row / 2;
+            let uv_col = (col / 2) * 2;
+            let u = data[uv_base + uv_row * w + uv_col] as i32 - 128;
             let v = data[uv_base + uv_row * w + uv_col + 1] as i32 - 128;
 
             // BT.601 limited range
             let r = (y + 1403 * v / 1000).clamp(0, 255) as u8;
-            let g = (y - 344  * u / 1000 - 714 * v / 1000).clamp(0, 255) as u8;
+            let g = (y - 344 * u / 1000 - 714 * v / 1000).clamp(0, 255) as u8;
             let b = (y + 1770 * u / 1000).clamp(0, 255) as u8;
 
             let off = (row * w + col) * 3;
-            rgb[off]     = r;
+            rgb[off] = r;
             rgb[off + 1] = g;
             rgb[off + 2] = b;
         }
@@ -796,22 +809,22 @@ pub fn nv12_to_rgb(data: &[u8], width: u32, height: u32) -> Vec<u8> {
 
 /// Convert NV12 directly to a vec of `egui::Color32`.
 pub fn nv12_to_egui(data: &[u8], width: u32, height: u32) -> Vec<egui::Color32> {
-    let w = width  as usize;
+    let w = width as usize;
     let h = height as usize;
-    let y_size  = w * h;
+    let y_size = w * h;
     let uv_base = y_size;
     let mut pixels = Vec::with_capacity(w * h);
 
     for row in 0..h {
         for col in 0..w {
-            let y  = data[row * w + col] as i32;
+            let y = data[row * w + col] as i32;
             let uv_row = row / 2;
             let uv_col = (col / 2) * 2;
-            let u = data[uv_base + uv_row * w + uv_col]     as i32 - 128;
+            let u = data[uv_base + uv_row * w + uv_col] as i32 - 128;
             let v = data[uv_base + uv_row * w + uv_col + 1] as i32 - 128;
 
             let r = (y + 1403 * v / 1000).clamp(0, 255) as u8;
-            let g = (y - 344  * u / 1000 - 714 * v / 1000).clamp(0, 255) as u8;
+            let g = (y - 344 * u / 1000 - 714 * v / 1000).clamp(0, 255) as u8;
             let b = (y + 1770 * u / 1000).clamp(0, 255) as u8;
 
             pixels.push(egui::Color32::from_rgb(r, g, b));
