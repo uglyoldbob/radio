@@ -263,11 +263,4 @@ impl H264Decoder {
     pub fn drain_frames(&self) -> Vec<egui::ColorImage> {
         self.thread.drain_frames()
     }
-
-    /// Legacy synchronous interface — kept for callsites not yet migrated.
-    /// Prefer push() + drain_frames() for new code.
-    pub fn decode(&self, data: &[u8]) -> Vec<egui::ColorImage> {
-        self.push(data);
-        Vec::new() // frames will appear on next drain_frames() call
-    }
 }
