@@ -221,13 +221,12 @@ impl H264Decoder {
     fn make_inner() -> Result<InnerDecoder, String> {
         #[cfg(feature = "ffmpeg")]
         {
-            return Ok(InnerDecoder::Ffmpeg(
-                ffmpeg::NalDecoder::new(
-                    ffmpeg_next::codec::Id::H264,
-                    ffmpeg::DecoderConfig::auto(),
-                )
-                .expect("failed to init hw h264 decoder"),
-            ));
+            if let Ok(ffmpeg) =
+                ffmpeg::NalDecoder::new(ffmpeg_next::codec::Id::H264, ffmpeg::DecoderConfig::auto())
+            {
+                log::info!("Got ffmpeg decoder");
+                return Ok(InnerDecoder::Ffmpeg(ffmpeg));
+            }
         }
         #[cfg(feature = "imxvpuapi2")]
         {
