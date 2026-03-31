@@ -284,45 +284,29 @@ impl SubwindowTrait for Config {
                         });
                         ui.label("Wifi mode");
                         {
-                            if ui
-                                .add(egui::SelectableLabel::new(
-                                    common.settings.wifi_config.config
-                                        == uobradio_comms::wireless::WifiConfig::Disabled,
-                                    "Disabled",
-                                ))
-                                .clicked()
-                            {
-                                save = true;
-                                reconnect = true;
-                                common.settings.wifi_config.config =
-                                    uobradio_comms::wireless::WifiConfig::Disabled;
-                            }
-                            if ui
-                                .add(egui::SelectableLabel::new(
-                                    common.settings.wifi_config.config
-                                        == uobradio_comms::wireless::WifiConfig::Hotspot,
-                                    "Hotspot",
-                                ))
-                                .clicked()
-                            {
-                                save = true;
-                                reconnect = true;
-                                common.settings.wifi_config.config =
-                                    uobradio_comms::wireless::WifiConfig::Hotspot;
-                            }
-                            if ui
-                                .add(egui::SelectableLabel::new(
-                                    common.settings.wifi_config.config
-                                        == uobradio_comms::wireless::WifiConfig::Ready,
-                                    "Regular network",
-                                ))
-                                .clicked()
-                            {
-                                save = true;
-                                reconnect = true;
-                                common.settings.wifi_config.config =
-                                    uobradio_comms::wireless::WifiConfig::Ready;
-                            }
+                            ui.horizontal(|ui| {
+                                if ui.big_selectable_value(&theme, &mut common.settings.wifi_config.config, uobradio_comms::wireless::WifiConfig::Disabled, "Disabled").clicked()
+                                {
+                                    save = true;
+                                    reconnect = true;
+                                    common.settings.wifi_config.config =
+                                        uobradio_comms::wireless::WifiConfig::Disabled;
+                                }
+                                if ui.big_selectable_value(&theme, &mut common.settings.wifi_config.config, uobradio_comms::wireless::WifiConfig::Hotspot, "Hotspot").clicked()
+                                {
+                                    save = true;
+                                    reconnect = true;
+                                    common.settings.wifi_config.config =
+                                        uobradio_comms::wireless::WifiConfig::Hotspot;
+                                }
+                                if ui.big_selectable_value(&theme, &mut common.settings.wifi_config.config, uobradio_comms::wireless::WifiConfig::Ready, "Regular network").clicked()
+                                {
+                                    save = true;
+                                    reconnect = true;
+                                    common.settings.wifi_config.config =
+                                        uobradio_comms::wireless::WifiConfig::Ready;
+                                }
+                            });
                             if let Some((wn, _wp)) = &common.wifi_details.value() {
                                 ui.label(format!("Connected to wifi network {}", wn));
                             }
