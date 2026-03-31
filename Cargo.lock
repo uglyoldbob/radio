@@ -212,9 +212,9 @@ dependencies = [
 
 [[package]]
 name = "android-auto"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c9449a483f1abbfc58433ba99db16f631c4abeac731809f4daa116e8184bd6f"
+checksum = "9e4463dff9cf0b27a9d94421272452c6d4d328129b2559492e4d30906dbd8e11"
 dependencies = [
  "async-trait",
  "aws-lc-rs",

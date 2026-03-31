@@ -584,7 +584,6 @@ async fn receive_message_from_app(
                             let ssid = network.ssid.clone();
                             if let Some(p) = password {
                                 log::info!("Start connect to wifi {}", ssid);
-                                let ssid2 = ssid.clone();
                                 let p2 = p.clone();
                                 let a = wifi
                                     .connect(&ssid, nmrs::WifiSecurity::WpaPsk { psk: p2.clone() })

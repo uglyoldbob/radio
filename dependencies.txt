@@ -1,0 +1,2 @@
+libavfilter-dev
+libavdevice-dev
