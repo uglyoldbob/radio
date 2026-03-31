@@ -56,14 +56,14 @@ name = "radio_gui"
 path = "src/main.rs"
 
 [features]
-default = ["usb", "androidauto", "v4l2m2m"]
+default = ["usb", "androidauto", "ffmpeg"]
 ffmpeg = ["dep:ffmpeg-next", "dep:thiserror"]
 v4l2m2m = ["dep:nix", "dep:thiserror", "dep:libc"]
 imxvpuapi2 = ["dep:thiserror", "dep:libc"]
 usb = ["android-auto?/usb"]
 wifi = ["dep:qrcode", "dep:nmrs", "uobradio-comms/wifi", "android-auto?/wireless"]
 bluetooth = ["dep:bluetooth-rust", "uobradio-comms/bluetooth"]
-androidauto = ["dep:android-auto", "uobradio-comms/androidauto"]
+androidauto = ["dep:android-auto"]
 swupdate = ["dep:swupdate-ipc"]
 test = ["uobradio-comms/test"]
 

@@ -174,83 +174,6 @@ impl SubwindowTrait for MainPage {
     ) -> Option<Subwindow> {
         let r = None;
         egui::CentralPanel::default().show(ctx, |ui| {
-            #[cfg(feature = "androidauto")]
-            {
-                if common.radio.android_auto_frontend() {
-                    let size = ui.available_size();
-                    if let Some(t) = &common.android_auto_texture {
-                        let isize = t.size();
-                        let zoom = isize[1] as f32 / size.y;
-                        let zoom2 = isize[0] as f32 / size.x;
-                        let zoom = zoom.max(zoom2);
-                        let dsize = t.size_vec2() / zoom;
-                        let p = ui.cursor();
-                        let r = ui.add(
-                            egui::Image::from_texture(egui::load::SizedTexture {
-                                id: t.id(),
-                                size: dsize,
-                            })
-                            .sense(egui::Sense::drag()),
-                        );
-                        let o = if let Some(mut o) = r.interact_pointer_pos() {
-                            o.x -= p.left();
-                            o.y -= p.top();
-                            o.x *= zoom;
-                            o.y *= zoom;
-                            Some(o)
-                        } else if let Some(mut o) = r.hover_pos() {
-                            o.x -= p.left();
-                            o.y -= p.top();
-                            o.x *= zoom;
-                            o.y *= zoom;
-                            Some(o)
-                        } else {
-                            None
-                        };
-                        if let Some(o) = o {
-                            let mut i_event = android_auto::Wifi::InputEventIndication::new();
-                            let timestamp: u64 = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_micros()
-                                as u64;
-                            i_event.set_timestamp(timestamp);
-                            let mut te = android_auto::Wifi::TouchEvent::new();
-                            let mut tl = android_auto::Wifi::TouchLocation::new();
-                            tl.set_x(o.x as u32);
-                            tl.set_y(o.y as u32);
-                            tl.set_pointer_id(0);
-                            te.touch_location = vec![tl];
-                            let mut do_touch = true;
-                            if r.drag_started() {
-                                te.set_touch_action(android_auto::Wifi::touch_action::Enum::PRESS);
-                            } else if r.drag_stopped() {
-                                te.set_touch_action(
-                                    android_auto::Wifi::touch_action::Enum::RELEASE,
-                                );
-                            } else if r.dragged() {
-                                te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
-                            } else if r.hovered() {
-                                te.set_touch_action(android_auto::Wifi::touch_action::Enum::DRAG);
-                            } else {
-                                do_touch = false;
-                            }
-                            if do_touch {
-                                i_event.touch_event =
-                                    android_auto::protobuf::MessageField::some(te);
-                                let e = android_auto::AndroidAutoMessage::Input(i_event);
-                                let m2 = uobradio_comms::aauto::AndroidAutoMessageToPhone::Message(
-                                    e.sendable(),
-                                );
-                                let _ = common.radio.send_packet(
-                                    uobradio_comms::MessageFromApp::AndroidAutoMessage(m2),
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
             if ui.big_button(&theme, "Quit").clicked() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             }
@@ -626,90 +549,6 @@ impl eframe::App for MyEguiApp {
         self.common.radio.get_cameras();
         #[cfg(feature = "bluetooth")]
         self.common.radio.try_get_bluetooth();
-        #[cfg(feature = "androidauto")]
-        self.common.radio.try_get_android_auto();
-        #[cfg(feature = "androidauto")]
-        if let Some(ai) = &mut self.input_stream {
-            if !ai.0.is_empty() {
-                let len = ai.0.occupied_len();
-                let mut v = vec![0; len];
-                let olen = ai.0.pop_slice(&mut v);
-                self.common.radio.transmit_audio(v[0..olen].to_vec());
-            }
-        }
-        #[cfg(feature = "androidauto")]
-        self.common.radio.process_pending_audio_commands(|c, cmd| {
-            match c {
-                android_auto::AudioChannelType::Media => {
-                    if let Some((p, s)) = &mut self.media_stream {
-                        match cmd {
-                            PendingAudioCommand::Start => {
-                                s.play();
-                            }
-                            PendingAudioCommand::Stop => {
-                                s.pause();
-                            }
-                        }
-                    }
-                }
-                android_auto::AudioChannelType::System => {
-                    if let Some((p, s)) = &mut self.sys_stream {
-                        match cmd {
-                            PendingAudioCommand::Start => {
-                                s.play();
-                            }
-                            PendingAudioCommand::Stop => {
-                                s.pause();
-                            }
-                        }
-                    }
-                }
-                android_auto::AudioChannelType::Speech => {
-                    if let Some((p, s)) = &mut self.speech_stream {
-                        match cmd {
-                            PendingAudioCommand::Start => {
-                                s.play();
-                            }
-                            PendingAudioCommand::Stop => {
-                                s.pause();
-                            }
-                        }
-                    }
-                }
-            }
-            log::error!("DONE Processing command {:?} for {:?}", cmd, c);
-        });
-        #[cfg(feature = "androidauto")]
-        self.common.radio.process_received_audio(|c, data| match c {
-            android_auto::AudioChannelType::Media => {
-                if let Some((p, _s)) = &mut self.media_stream {
-                    p.push_slice(data);
-                }
-            }
-            android_auto::AudioChannelType::System => {
-                if let Some((p, _s)) = &mut self.sys_stream {
-                    p.push_slice(data);
-                }
-            }
-            android_auto::AudioChannelType::Speech => {
-                if let Some((p, _s)) = &mut self.speech_stream {
-                    p.push_slice(data);
-                }
-            }
-        });
-        #[cfg(feature = "androidauto")]
-        if let Some(vdata) = self.common.radio.get_android_auto_video_buf() {
-            self.common.android_auto_video_decoder.push(&vdata);
-            let frames = self.common.android_auto_video_decoder.drain_frames();
-            if let Some(image) = frames.last().cloned() {
-                if self.common.android_auto_texture.is_none() {
-                    self.common.android_auto_texture =
-                        Some(ctx.load_texture("android_auto", image, egui::TextureOptions::LINEAR));
-                } else if let Some(t) = &mut self.common.android_auto_texture {
-                    t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
-                }
-            }
-        }
         let mut settings_changed = false;
         if let Err(e) = self.common.radio.process_received(|packet| {
             let mut newsettings = self.common.settings.clone();
@@ -788,10 +627,6 @@ impl eframe::App for MyEguiApp {
                         .wifi_details
                         .new_value_optional(Some((ssid.clone(), password.clone())));
                 }
-                #[cfg(feature = "androidauto")]
-                uobradio_comms::MessageToApp::AndroidAutoMessage(_) => {}
-                #[cfg(feature = "androidauto")]
-                uobradio_comms::MessageToApp::AndroidAutoHandlerResult(_) => {}
                 #[cfg(feature = "bluetooth")]
                 uobradio_comms::MessageToApp::BluetoothMessage(_) => {}
                 #[cfg(feature = "bluetooth")]
