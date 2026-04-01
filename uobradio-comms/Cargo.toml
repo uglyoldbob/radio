@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-android-auto = { version = "0.3.5", optional = true }
+android-auto = { version = "0.3.6", optional = true }
 bincode = {version = "2.0.1", features = ["serde"]}
 bluetooth-rust = { version = "0.2.4", optional = true}
 egui = { version = "0.31.1" }
