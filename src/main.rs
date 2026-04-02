@@ -629,6 +629,7 @@ impl eframe::App for MyEguiApp {
         #[cfg(feature = "androidauto")]
         self.common.radio.try_get_android_auto();
         self.common.radio.poll_hvac();
+        self.common.radio.poll_sensors();
         #[cfg(feature = "androidauto")]
         if let Some(ai) = &mut self.input_stream {
             if !ai.0.is_empty() {
@@ -721,6 +722,7 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::SensorData(_) => {}
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::KnownWifiNetworks(list) => {
                     self.common

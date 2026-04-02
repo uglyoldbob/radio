@@ -1,24 +1,16 @@
 //! Sensor code for the radio
 
+use uobradio_comms::Sensors;
+
 /// The trait for gps sensors
 #[enum_dispatch::enum_dispatch]
 pub trait GpsSensorTrait {}
-
-/// The 3d orientation for an inclinometer
-pub struct InclinometerOrientation {
-    /// x axis - left right for the vehicle
-    x: f32,
-    /// y axis - forwards backwards for the vehicle
-    y: f32,
-    /// z axis - vertical for the vehicle
-    z: f32,
-}
 
 /// The trait for inclinometer sensors
 #[enum_dispatch::enum_dispatch]
 pub trait InclinometerSensorTrait {
     /// Poll the sensor for the current orientation
-    fn poll(&mut self) -> InclinometerOrientation;
+    fn poll(&mut self) -> uobradio_comms::InclinometerOrientation;
 }
 
 /// A temperature reading
@@ -82,23 +74,19 @@ impl Default for TemperatureSensor {
 pub struct InclinometerSimulator {
     x: f32,
     y: f32,
-    z: f32,
 }
 
 impl InclinometerSensorTrait for InclinometerSimulator {
-    fn poll(&mut self) -> InclinometerOrientation {
+    fn poll(&mut self) -> uobradio_comms::InclinometerOrientation {
         use rand::RngExt;
         let mut rng = rand::rng();
         self.x += 2.0 * rng.random::<f32>() - 1.0;
         self.y += 2.0 * rng.random::<f32>() - 1.0;
-        self.z += 2.0 * rng.random::<f32>() - 1.0;
         self.x = self.x.clamp(-45.0, 45.0);
         self.y = self.y.clamp(-45.0, 45.0);
-        self.z = self.z.clamp(-45.0, 45.0);
-        InclinometerOrientation {
+        uobradio_comms::InclinometerOrientation {
             x: self.x,
             y: self.y,
-            z: self.z,
         }
     }
 }
@@ -120,5 +108,132 @@ impl TemperatureSensorTrait for TemperatureSimulator {
         let mut rng = rand::rng();
         self.temp = (self.temp + 2.0 * rng.random::<f32>() - 1.0).clamp(-5.0, 110.0);
         Temperature::Fahrenheit(self.temp)
+    }
+}
+
+#[enum_dispatch::enum_dispatch]
+pub trait PressureSensorTrait {
+    /// Poll and return the pressure in psi
+    fn poll(&mut self) -> f32;
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[enum_dispatch::enum_dispatch(PressureSensorTrait)]
+pub enum PressureSensor {
+    Simulator(PressureSensorSimulator),
+}
+
+impl Default for PressureSensor {
+    fn default() -> Self {
+        Self::Simulator(PressureSensorSimulator::default())
+    }
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct PressureSensorSimulator {
+    pressure: f32,
+}
+
+impl PressureSensorTrait for PressureSensorSimulator {
+    fn poll(&mut self) -> f32 {
+        use rand::RngExt;
+        let mut rng = rand::rng();
+        self.pressure = (self.pressure + 2.0 * rng.random::<f32>() - 1.0).clamp(0.0, 100.0);
+        self.pressure
+    }
+}
+
+#[enum_dispatch::enum_dispatch]
+pub trait BoolSensorTrait {
+    /// Poll and return the bool value of the gpio
+    fn poll(&mut self) -> bool;
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[enum_dispatch::enum_dispatch(BoolSensorTrait)]
+pub enum BoolSensor {
+    Simulator(BoolSensorSimulator),
+}
+
+impl Default for BoolSensor {
+    fn default() -> Self {
+        Self::Simulator(BoolSensorSimulator::default())
+    }
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct BoolSensorSimulator {
+}
+
+impl BoolSensorTrait for BoolSensorSimulator {
+    fn poll(&mut self) -> bool {
+        use rand::RngExt;
+        let mut rng = rand::rng();
+        rng.random()
+    }
+}
+
+#[enum_dispatch::enum_dispatch]
+pub trait VoltageSensorTrait {
+    /// Poll and return the voltage in volts
+    fn poll(&mut self) -> f32;
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[enum_dispatch::enum_dispatch(VoltageSensorTrait)]
+pub enum VoltageSensor {
+    Simulator(VoltageSensorSimulator),
+}
+
+impl Default for VoltageSensor {
+    fn default() -> Self {
+        Self::Simulator(VoltageSensorSimulator::default())
+    }
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct VoltageSensorSimulator {
+    volts: f32,
+}
+
+impl VoltageSensorTrait for VoltageSensorSimulator {
+    fn poll(&mut self) -> f32 {
+        use rand::RngExt;
+        let mut rng = rand::rng();
+        self.volts = (self.volts + 2.0 * rng.random::<f32>() - 1.0).clamp(10.0, 15.0);
+        self.volts
+    }
+}
+
+
+#[enum_dispatch::enum_dispatch]
+pub trait RpmSensorTrait {
+    /// Poll and return the rpm
+    fn poll(&mut self) -> u16;
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[enum_dispatch::enum_dispatch(RpmSensorTrait)]
+pub enum RpmSensor {
+    Simulator(RpmSensorSimulator),
+}
+
+impl Default for RpmSensor {
+    fn default() -> Self {
+        Self::Simulator(RpmSensorSimulator::default())
+    }
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct RpmSensorSimulator {
+    rpm: f32,
+}
+
+impl RpmSensorTrait for RpmSensorSimulator {
+    fn poll(&mut self) -> u16 {
+        use rand::RngExt;
+        let mut rng = rand::rng();
+        self.rpm = (self.rpm + 2.0 * rng.random::<f32>() - 1.0).clamp(600.0, 3600.0);
+        self.rpm as u16
     }
 }

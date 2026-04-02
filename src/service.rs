@@ -31,6 +31,8 @@ use uobradio_comms::wireless::WifiConfig;
 use uobradio_comms::{HvacController, NonvolatileSettings};
 use video_service::VideoSource;
 
+use crate::sensors::{BoolSensor, InclinometerSensor, PressureSensor, RpmSensor, TemperatureSensor, VoltageSensor};
+
 mod sensors;
 mod video_service;
 
@@ -51,18 +53,38 @@ struct Arguments {
 /// System specific settings (not set by the user)
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 struct SystemSettings {
-    /// The gpio setup for all the lights in the system
-    lights: Vec<(String, u32)>,
-    /// The gpio setup for auxilliary outputs
-    aux_outs: Vec<(String, u32)>,
-    /// The gpio setup for auxilliary inputs
-    aux_ins: Vec<(String, u32)>,
     /// Inclinometer sensor
-    inclinometer: sensors::InclinometerSensor,
+    inclinometer: InclinometerSensor,
     /// Main cabin temperature sensor
-    main_cabin_temperature_sensor: sensors::TemperatureSensor,
+    main_cabin_temperature_sensor: TemperatureSensor,
     /// hvac vent temperature sensor
-    hvac_vent_temperature_sensor: sensors::TemperatureSensor,
+    hvac_vent_temperature_sensor: TemperatureSensor,
+    /// Orientation of the system, left-right, forwards-backwards, both in degrees
+    orientation: InclinometerSensor,
+    /// The engine coolant temperature
+    engine_coolant_temp: TemperatureSensor,
+    /// The engine oil temperature
+    engine_oil_temp: TemperatureSensor,
+    /// The engine exhaust temperature
+    engine_exhaust_temp: TemperatureSensor,
+    /// Front differential temperature
+    front_diff_temp: TemperatureSensor,
+    /// Rear differential temperature
+    rear_diff_temp: TemperatureSensor,
+    /// The engine oil pressure (psi)
+    engine_oil_pressure: PressureSensor,
+    /// The coolant pressure (psi)
+    coolant_pressure: PressureSensor,
+    /// Transmission temperature
+    trans_temp: TemperatureSensor,
+    /// Transfer case temperature
+    transfer_temp: TemperatureSensor,
+    /// Door open sensor
+    door_open: BoolSensor,
+    /// Engine rpm sensor
+    engine_rpm: RpmSensor,
+    /// Main system voltage
+    main_voltage: VoltageSensor,
 }
 
 impl SystemSettings {
@@ -101,6 +123,31 @@ impl SystemSettings {
         let s = toml::to_string_pretty(self).unwrap();
         if let Ok(mut f) = std::fs::File::create_new(path) {
             f.write_all(s.as_bytes());
+        }
+    }
+
+    /// Get sensor data
+    pub fn get_sensor_data(&mut self) -> uobradio_comms::Sensors {
+        use sensors::BoolSensorTrait;
+        use sensors::InclinometerSensorTrait;
+        use sensors::TemperatureSensorTrait;
+        use sensors::PressureSensorTrait;
+        use sensors::RpmSensorTrait;
+        use sensors::VoltageSensorTrait;
+        uobradio_comms::Sensors {
+            orientation: Some(self.orientation.poll()),
+            engine_coolant_temp: Some(self.engine_coolant_temp.poll().fahrenheit()),
+            engine_oil_temp: Some(self.engine_oil_temp.poll().fahrenheit()),
+            engine_exhaust_temp: Some(self.engine_exhaust_temp.poll().fahrenheit()),
+            front_diff_temp: Some(self.front_diff_temp.poll().fahrenheit()),
+            rear_diff_temp: Some(self.rear_diff_temp.poll().fahrenheit()),
+            engine_oil_pressure: Some(self.engine_oil_pressure.poll()),
+            coolant_pressure: Some(self.coolant_pressure.poll()),
+            trans_temp: Some(self.trans_temp.poll().fahrenheit()),
+            transfer_temp: Some(self.transfer_temp.poll().fahrenheit()),
+            door_open: Some(self.door_open.poll()),
+            engine_rpm: Some(self.engine_rpm.poll()),
+            main_voltage: Some(self.main_voltage.poll()),
         }
     }
 }
@@ -319,8 +366,6 @@ pub struct AppUserCommon {
     settings: NonvolatileSettings,
     /// The hvac controls
     hvac: HvacController,
-    /// The system sensors
-    sensors: uobradio_comms::Sensors,
     #[cfg(feature = "swupdate")]
     /// The communication for the swupdate websocket
     swupdate_channel: SwupdateChannelRecv,
@@ -385,6 +430,11 @@ async fn receive_message_from_app(
             }
         }
         match packet {
+            uobradio_comms::MessageFromApp::GetSensorData => {
+                let mut c = common.lock().await;
+                let packet = MessageToApp::SensorData(c.system.get_sensor_data());
+                packet.send_to_stream(&streamw).await?;
+            }
             uobradio_comms::MessageFromApp::Exit => {
                 let common2 = common.lock().await;
                 return common2
@@ -1499,7 +1549,6 @@ async fn smain() {
         old_settings: s.clone(),
         settings: s.clone(),
         hvac: HvacController::new(),
-        sensors: uobradio_comms::Sensors::default(),
         #[cfg(feature = "swupdate")]
         swupdate_channel: SwupdateChannelRecv {
             send: swc2.0,

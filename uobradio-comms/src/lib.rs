@@ -219,15 +219,20 @@ impl Drop for AndroidAutoServerFrontend {
     fn drop(&mut self) {}
 }
 
+/// The orientation for an inclinometer
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct InclinometerOrientation {
+    /// x axis - left right for the vehicle
+    pub x: f32,
+    /// y axis - forwards backwards for the vehicle
+    pub y: f32,
+}
+
 /// Represents all possible sensors on the radio
-#[derive(Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Sensors {
     /// Orientation of the system, left-right, forwards-backwards, both in degrees
-    pub orientation: Option<(f32, f32)>,
-    /// The cabin air temperature
-    pub cabin_temp: Option<f32>,
-    /// The cabin humidity
-    pub cabin_humidity: Option<f32>,
+    pub orientation: Option<InclinometerOrientation>,
     /// The engine coolant temperature
     pub engine_coolant_temp: Option<f32>,
     /// The engine oil temperature
@@ -240,6 +245,8 @@ pub struct Sensors {
     pub rear_diff_temp: Option<f32>,
     /// The engine oil pressure (psi)
     pub engine_oil_pressure: Option<f32>,
+    /// The coolant pressure (psi)
+    pub coolant_pressure: Option<f32>,
     /// Transmission temperature
     pub trans_temp: Option<f32>,
     /// Transfer case temperature
@@ -284,7 +291,7 @@ pub struct UobRadio {
     #[cfg(feature = "androidauto")]
     aauto: Option<AndroidAutoServerFrontend>,
     /// The sensors on the system
-    pub sensors: Sensors,
+    pub sensors: Pollable<Sensors>,
     /// The hvac data
     pub hvac: Pollable<hvac::PublicData>,
 }
@@ -309,7 +316,7 @@ impl UobRadio {
             display_passkey: None,
             #[cfg(feature = "bluetooth")]
             confirm_passkey: None,
-            sensors: Sensors::default(),
+            sensors: Default::default(),
             hvac: Default::default(),
         }
     }
@@ -319,6 +326,16 @@ impl UobRadio {
         self.hvac.poll_action(|| {
             if let Some(comm) = &mut self.comms {
                 let cmd = MessageFromApp::Hvac(HvacControl::GetPublicData);
+                cmd.send_to_stream(comm);
+            }
+        });
+    }
+
+    /// Poll all sensors data
+    pub fn poll_sensors(&mut self) {
+        self.sensors.poll_action(|| {
+            if let Some(comm) = &mut self.comms {
+                let cmd = MessageFromApp::GetSensorData;
                 cmd.send_to_stream(comm);
             }
         });
@@ -472,6 +489,8 @@ pub enum MessageFromApp {
     StartUpdate,
     /// Query update progress
     GetUpdateProgress,
+    /// Query all sensor data
+    GetSensorData,
 }
 
 #[cfg(feature = "bluetooth")]
@@ -583,6 +602,8 @@ pub enum MessageToApp {
     UpdateProgress(u8, u8),
     /// No update in progress
     NoUpdateInProgress,
+    /// All the sensor data
+    SensorData(Sensors),
 }
 
 impl MessageFromApp {
@@ -688,6 +709,9 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::SensorData(s) => {
+                                            self.sensors.new_value_optional(Some(s.clone()));
+                                        }
                                         #[cfg(feature = "wifi")]
                                         MessageToApp::NoCurrentWifiNetwork => {}
                                         #[cfg(feature = "wifi")]
