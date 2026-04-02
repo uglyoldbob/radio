@@ -19,14 +19,11 @@ pub struct Settings {
 /// The volatile settings for the hvac
 #[derive(Clone, Debug)]
 pub struct VolatileSettings {
-    /// The current temperature in fahrenheit
-    pub current_temperature: Option<f32>,
 }
 
 impl Default for VolatileSettings {
     fn default() -> Self {
         Self {
-            current_temperature: Some(71.8),
         }
     }
 }
@@ -56,6 +53,19 @@ pub enum HvacMode {
     AutoAuto,
 }
 
+/// The user facing data for the hvac controller
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct PublicData {
+    /// The actual humidity
+    pub humidity: Option<f32>,
+    /// The temperature of the cabin sensor
+    pub cabin_temperature: Option<f32>,
+    /// Ac enabled output
+    pub ac_enabled_out: bool,
+    /// The hvac air output temperature
+    pub hvac_vent_temperature: f32,
+}
+
 /// The structure used for controlling the hvac controls of the vehicle
 pub struct HvacController {
     /// The hvac mode
@@ -72,9 +82,9 @@ pub struct HvacController {
     humidity: Option<f32>,
     /// The temperature of the cabin sensor
     cabin_temperature: Option<f32>,
-    // The desired fan speed
+    /// The desired fan speed
     fan_speed_out: u8,
-    // Ac enabled output
+    /// Ac enabled output
     ac_enabled_out: bool,
     /// The hvac air output temperature
     hvac_vent_temperature: f32,
@@ -110,6 +120,11 @@ impl HvacController {
             fan_speed_pid: Pid::new(PidMode::Increasing, 0.333, 0.2, 5.0),
             min_fan_speed: 0.25,
         }
+    }
+
+    /// Get the public data
+    pub fn get_public_data(&self) -> PublicData {
+        PublicData { humidity: self.humidity, cabin_temperature: self.cabin_temperature, ac_enabled_out: self.ac_enabled_out, hvac_vent_temperature: self.hvac_vent_temperature }
     }
 
     /// Set the mode of the controller
@@ -263,10 +278,8 @@ impl HvacController {
 /// An ac control message
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum HvacControl {
-    /// Get the temperature (fahrenheit) of the hvac vent
-    GetCurrentVentTemperature,
-    /// Get the temperature (fahrenheit) of the cabin
-    GetCurrentCabinTemperature,
+    /// Get all the public data
+    GetPublicData,
     /// Set the target temperature (fahrenheit) for temperature control of the ac
     SetAcTargetTemperature(f32),
     /// Set the target temperature (fahrenheit) for temperature control of the heat
@@ -282,10 +295,8 @@ pub enum HvacControl {
 /// An ac control message
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum AcResponse {
-    /// The current hvac vent temperature if it is known (fahrenheit)
-    CurrentHvacTemperature(Option<f32>),
-    /// The current cabin temperature if it is known (fahrenheit)
-    CurrentCabinTemperature(Option<f32>),
+    /// The public data for the hvac system
+    PublicData(PublicData),
     /// Acknowledgement of set target temperature, indicates success or failure of setting hvac temperature setpoint
     TemperatureSetStatus(bool),
     /// Acknowledge set fan speed

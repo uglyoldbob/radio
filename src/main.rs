@@ -628,6 +628,7 @@ impl eframe::App for MyEguiApp {
         self.common.radio.try_get_bluetooth();
         #[cfg(feature = "androidauto")]
         self.common.radio.try_get_android_auto();
+        self.common.radio.poll_hvac();
         #[cfg(feature = "androidauto")]
         if let Some(ai) = &mut self.input_stream {
             if !ai.0.is_empty() {
@@ -752,12 +753,7 @@ impl eframe::App for MyEguiApp {
                 }
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::FailedToScanForWifiNetworks { reason: _ } => {}
-                uobradio_comms::MessageToApp::Ac(c) => match c {
-                    uobradio_comms::AcResponse::CurrentHvacTemperature(_) => todo!(),
-                    uobradio_comms::AcResponse::TemperatureSetStatus(_) => todo!(),
-                    uobradio_comms::AcResponse::FanSpeedAcknowledge => todo!(),
-                    uobradio_comms::AcResponse::CurrentCabinTemperature(_) => todo!(),
-                },
+                uobradio_comms::MessageToApp::Ac(_c) => {}
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::FailedToConnectToWifiNetwork { ssid } => {
                     service::log::info!("Failed to connect to {ssid}");
@@ -887,13 +883,20 @@ impl eframe::App for MyEguiApp {
                         );
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            // Temperature
-                            if let Some(t) = &self.common.vsettings.hvac.current_temperature {
+                            if let Some(hvac) = self.common.radio.hvac.value() {
+                                // Temperature
                                 ui.label(
-                                    egui::RichText::new(format!("{:.1}°F", t))
-                                        .size(16.0)
-                                        .color(self.theme.text_secondary),
-                                );
+                                        egui::RichText::new(format!(" {:.1}°F", hvac.hvac_vent_temperature))
+                                            .size(16.0)
+                                            .color(self.theme.text_secondary),
+                                    );
+                                if let Some(t) = hvac.cabin_temperature {
+                                    ui.label(
+                                        egui::RichText::new(format!(" {:.1}°F", t))
+                                            .size(16.0)
+                                            .color(self.theme.text_secondary),
+                                    );
+                                }
                             }
                         });
                     });

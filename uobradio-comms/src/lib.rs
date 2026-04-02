@@ -79,6 +79,20 @@ impl<T: std::fmt::Debug> Pollable<T> {
         }
     }
 
+    /// Try to get the contained value, mutably
+    pub fn value_mut(&mut self) -> Option<&mut T> {
+        match self {
+            Pollable::Idle { last_known } => last_known.as_mut(),
+            Pollable::Waiting { last_known, waiting_since: _ } => last_known.as_mut(),
+            Pollable::Value { v } => Some(v),
+        }
+    }
+
+    /// Create a new object with a known value
+    pub fn new_with_known(k: T) -> Self {
+        Self::Idle { last_known: Some(k) }
+    }
+
     /// Returns true when waiting
     pub fn is_waiting(&self) -> bool {
         matches!(self, Self::Waiting { last_known: _, waiting_since: _ })
@@ -271,6 +285,8 @@ pub struct UobRadio {
     aauto: Option<AndroidAutoServerFrontend>,
     /// The sensors on the system
     pub sensors: Sensors,
+    /// The hvac data
+    pub hvac: Pollable<hvac::PublicData>,
 }
 
 impl UobRadio {
@@ -294,7 +310,18 @@ impl UobRadio {
             #[cfg(feature = "bluetooth")]
             confirm_passkey: None,
             sensors: Sensors::default(),
+            hvac: Default::default(),
         }
+    }
+
+    /// Poll data needed for hvac display
+    pub fn poll_hvac(&mut self) {
+        self.hvac.poll_action(|| {
+            if let Some(comm) = &mut self.comms {
+                let cmd = MessageFromApp::Hvac(HvacControl::GetPublicData);
+                cmd.send_to_stream(comm);
+            }
+        });
     }
 
     fn update_ping_time(&mut self) {
@@ -670,7 +697,13 @@ impl UobRadio {
                                         MessageToApp::ServerFileDownloadProgress(_) => {}
                                         MessageToApp::ServerFileDownloadComplete(_) => {}
                                         MessageToApp::ListOfServerUpdateFiles { files: _ } => {}
-                                        MessageToApp::Ac(_c) => { }
+                                        MessageToApp::Ac(c) => match c {
+                                            AcResponse::PublicData(c) => {
+                                                self.hvac.new_value_optional(Some(c.clone()));
+                                            }
+                                            AcResponse::TemperatureSetStatus(_) => {}
+                                            AcResponse::FanSpeedAcknowledge => {}
+                                        },
                                         #[cfg(feature = "wifi")]
                                         MessageToApp::FailedToConnectToWifiNetwork { ssid: _ } => {}
                                         #[cfg(feature = "wifi")]

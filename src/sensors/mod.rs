@@ -95,9 +95,9 @@ impl InclinometerSensorTrait for InclinometerSimulator {
     fn poll(&mut self) -> InclinometerOrientation {
         use rand::RngExt;
         let mut rng = rand::rng();
-        self.x += rng.random::<f32>();
-        self.y += rng.random::<f32>();
-        self.z += rng.random::<f32>();
+        self.x += 2.0 * rng.random::<f32>() - 1.0;
+        self.y += 2.0 * rng.random::<f32>() - 1.0;
+        self.z += 2.0 * rng.random::<f32>() - 1.0;
         self.x = self.x.clamp(-45.0, 45.0);
         self.y = self.y.clamp(-45.0, 45.0);
         self.z = self.z.clamp(-45.0, 45.0);
@@ -122,7 +122,7 @@ impl TemperatureSensorTrait for TemperatureSimulator {
     fn poll(&mut self) -> Temperature {
         use rand::RngExt;
         let mut rng = rand::rng();
-        self.temp = (self.temp + rng.random::<f32>()).clamp(-5.0, 110.0);
+        self.temp = (self.temp + 2.0 * rng.random::<f32>() - 1.0).clamp(-5.0, 110.0);
         Temperature::Fahrenheit(self.temp)
     }
 }

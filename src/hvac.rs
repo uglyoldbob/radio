@@ -86,9 +86,11 @@ impl SubwindowTrait for Window {
                             ));
                     }
                 });
-                if let Some(t) = common.vsettings.hvac.current_temperature {
-                    ui.label(egui::RichText::new("Current temperature").size(32.0));
-                    ui.label(egui::RichText::new(format!("{:01}", t)).size(32.0));
+                if let Some(hvac) = common.radio.hvac.value() {
+                    if let Some(t) = hvac.cabin_temperature {
+                        ui.label(egui::RichText::new("Current temperature").size(32.0));
+                        ui.label(egui::RichText::new(format!("{:.1}", t)).size(32.0));
+                    }
                 }
                 match common.settings.hvac.current_mode {
                     uobradio_comms::HvacMode::Off => {}

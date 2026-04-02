@@ -127,7 +127,7 @@ impl Drop for AndroidAutoService {
 impl AndroidAutoService {
     /// Construct and start an android auto service
     pub async fn new(com: &AppUserCommon, addr: std::net::SocketAddr) -> Result<Self, String> {
-        let mut tasks = tokio::task::JoinSet::new();
+        let tasks = tokio::task::JoinSet::new();
 
         let aautochan = tokio::sync::mpsc::channel(150);
 
@@ -513,17 +513,11 @@ async fn receive_message_from_app(
                 let mut common2 = common.lock().await;
                 match c {
                     uobradio_comms::HvacControl::SetMode(m) => common2.hvac.set_mode(m),
-                    uobradio_comms::HvacControl::GetCurrentVentTemperature => {
-                        let t = common2.hvac.get_hvac_temperature();
+                    uobradio_comms::HvacControl::GetPublicData => {
+                        let t = common2.hvac.get_public_data();
                         let packet = MessageToApp::Ac(
-                            uobradio_comms::AcResponse::CurrentHvacTemperature(Some(t)),
+                            uobradio_comms::AcResponse::PublicData(t),
                         );
-                        packet.send_to_stream(&streamw).await?;
-                    }
-                    uobradio_comms::HvacControl::GetCurrentCabinTemperature => {
-                        let t = common2.hvac.get_cabin_temperature();
-                        let packet =
-                            MessageToApp::Ac(uobradio_comms::AcResponse::CurrentHvacTemperature(t));
                         packet.send_to_stream(&streamw).await?;
                     }
                     uobradio_comms::HvacControl::SetAcTargetTemperature(t) => {
@@ -1550,7 +1544,7 @@ async fn smain() {
         }
         _ = tokio::signal::ctrl_c() => {
             let c = common.lock().await;
-            c.shutdown_send.send(());
+            let _ = c.shutdown_send.send(());
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         }
         _ = shutdown_recv.recv() => {}
