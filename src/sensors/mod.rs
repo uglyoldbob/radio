@@ -1,7 +1,5 @@
 //! Sensor code for the radio
 
-use uobradio_comms::Sensors;
-
 /// The trait for gps sensors
 #[enum_dispatch::enum_dispatch]
 pub trait GpsSensorTrait {}

@@ -250,10 +250,54 @@ impl SubwindowTrait for MainPage {
                     }
                 }
             }
-
-            if ui.big_button(&theme, "Quit").clicked() {
-                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-            }
+            egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
+                if let Some(sensors) = common.radio.sensors.value() {
+                    ui.horizontal(|ui| {
+                        if let Some(t) = &sensors.engine_coolant_temp {
+                            ui.label(egui::RichText::new(format!("Engine: {:.0}", t)).size(32.0));
+                        }
+                        if let Some(t) = &sensors.engine_exhaust_temp {
+                            ui.label(egui::RichText::new(format!("EGT: {:.0}", t)).size(32.0));
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if let Some(t) = &sensors.trans_temp {
+                            ui.label(egui::RichText::new(format!("TRANS: {:.0}", t)).size(32.0));
+                        }
+                        if let Some(t) = &sensors.transfer_temp {
+                            ui.label(egui::RichText::new(format!("XFER CASE: {:.0}", t)).size(32.0));
+                        }
+                    });
+                    if let Some(t) = &sensors.engine_oil_temp {
+                        ui.label(egui::RichText::new(format!("Engine Oil: {:.0}", t)).size(32.0));
+                    }
+                    ui.horizontal(|ui| {
+                        if let Some(t) = &sensors.front_diff_temp {
+                            ui.label(egui::RichText::new(format!("Front diff: {:.0}", t)).size(32.0));
+                        }
+                        if let Some(t) = &sensors.rear_diff_temp {
+                            ui.label(egui::RichText::new(format!("Rear diff: {:.0}", t)).size(32.0));
+                        }
+                    });
+                    if let Some(t) = &sensors.engine_rpm {
+                        ui.label(egui::RichText::new(format!("Engine RPM: {}", t)).size(32.0));
+                    }
+                    ui.horizontal(|ui| {
+                        if let Some(t) = &sensors.coolant_pressure {
+                            ui.label(egui::RichText::new(format!("Coolant: {:.2} psi", t)).size(32.0));
+                        }
+                        if let Some(t) = &sensors.engine_oil_pressure {
+                            ui.label(egui::RichText::new(format!("Oil: {:.1} psi", t)).size(32.0));
+                        }
+                    });
+                    if let Some(t) = &sensors.main_voltage {
+                        ui.label(egui::RichText::new(format!("Voltage: {:.2}", t)).size(32.0));
+                    }
+                }
+                if ui.big_button(&theme, "Quit").clicked() {
+                    ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
         });
         r
     }
