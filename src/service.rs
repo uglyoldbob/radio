@@ -31,6 +31,7 @@ use uobradio_comms::wireless::WifiConfig;
 use uobradio_comms::{HvacController, NonvolatileSettings};
 use video_service::VideoSource;
 
+mod sensors;
 mod video_service;
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
@@ -42,7 +43,7 @@ struct MainConfiguration {
 /// The optional command line arguments for the service
 #[derive(clap::Parser, Debug)]
 struct Arguments {
-    /// Specify the actual location for the non-volatile configuratio file
+    /// Specify the actual location for the non-volatile configuration file
     #[arg(long)]
     nvconfig: Option<PathBuf>,
 }
@@ -56,39 +57,47 @@ struct SystemSettings {
     aux_outs: Vec<(String, u32)>,
     /// The gpio setup for auxilliary inputs
     aux_ins: Vec<(String, u32)>,
+    /// Inclinometer sensor
+    inclinometer: sensors::InclinometerSensor,
+    /// Main cabin temperature sensor
+    main_cabin_temperature_sensor: sensors::TemperatureSensor,
 }
 
 impl SystemSettings {
     /// Load the system settings from the current directory
     pub fn load() -> Self {
-        let p = std::path::Path::new("./settings.toml");
-        let f = std::fs::File::open(p);
-        if let Ok(mut f) = f {
-            let mut a = String::new();
-            if f.read_to_string(&mut a).is_ok() {
-                match toml::from_str(&a) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        log::error!("Config file {:?} is invalid: {:?}", p.display(), e);
-                        Default::default()
+        let mut paths = Vec::new();
+        paths.push(std::path::Path::new("./settings.toml"));
+        #[cfg(target_os = "linux")]
+        {
+            paths.push(std::path::Path::new("/etc/radio/settings.toml"));
+        }
+        
+        for p in paths {
+            let f = std::fs::File::open(p);
+            if let Ok(mut f) = f {
+                let mut a = String::new();
+                if f.read_to_string(&mut a).is_ok() {
+                    if let Ok(t) = toml::from_str(&a) {
+                        return t;
                     }
                 }
-            } else {
-                Self::default()
             }
-        } else {
-            log::error!("Config file {:?} not found", p.display());
-            let s = Self::default();
-            s.save();
-            s
         }
+        #[cfg(target_os = "linux")]
+        {
+            let p = std::path::Path::new("/tmp/radio-settings.toml");
+            log::info!("Creating example settings at {}", p.display());
+            let config = Self::default();
+            config.save(p.into());
+        }
+        Self::default()
     }
 
     /// Save the system settings to the current directory
-    pub fn save(&self) {
+    pub fn save(&self, path: std::path::PathBuf) {
         let s = toml::to_string_pretty(self).unwrap();
-        let p = std::path::Path::new("./settings.toml");
-        if let Ok(mut f) = std::fs::File::create_new(p) {
+        if let Ok(mut f) = std::fs::File::create_new(path) {
             f.write_all(s.as_bytes());
         }
     }
@@ -314,7 +323,7 @@ pub struct AppUserCommon {
     /// The communication for the swupdate websocket
     swupdate_channel: SwupdateChannelRecv,
     /// the shutdown sender
-    shutdown_send: tokio::sync::mpsc::UnboundedSender<()>,
+    shutdown_send: tokio::sync::broadcast::Sender<()>,
     #[cfg(feature = "androidauto")]
     token: android_auto::AndroidAutoSetup,
 }
@@ -374,10 +383,9 @@ async fn receive_message_from_app(
             }
         }
         match packet {
-            #[cfg(feature = "test")]
             uobradio_comms::MessageFromApp::Exit => {
                 let common2 = common.lock().await;
-                return common2.shutdown_send.send(()).map_err(|e| e.to_string());
+                return common2.shutdown_send.send(()).map(|_|()).map_err(|_| "Failed to send shutdown".to_string());
             }
             #[cfg(feature = "wifi")]
             uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(ssid) => {
@@ -949,12 +957,27 @@ async fn hvac_control(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
 }
 
 /// Polls the sensors in the system
-async fn sensor_polling(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
+async fn sensor_polling(common: Arc<tokio::sync::Mutex<AppUserCommon>>, mut kill: tokio::sync::broadcast::Receiver<()>) -> Result<(), String> {
+    let mut interval_1s = tokio::time::interval(std::time::Duration::from_millis(1000));
+    let mut interval_1500ms = tokio::time::interval(std::time::Duration::from_millis(1500));
+
     loop {
-        /*{
-            let mut common2 = common.lock().await;
-        }*/
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::select! {
+            _ = interval_1s.tick() => {
+                use crate::sensors::TemperatureSensorTrait;
+                let mut c = common.lock().await;
+                let cabin_temp = c.system.main_cabin_temperature_sensor.poll();
+                c.hvac.set_cabin_temperature(cabin_temp.fahrenheit());
+                log::info!("Cabin temperature is {:.02}", cabin_temp.fahrenheit());
+            }
+            _ = interval_1500ms.tick() => {
+                log::info!("1.5 second interval check");
+            }
+            _ = kill.recv() => {
+                log::info!("Stopping sensor polling");
+                break Ok(());
+            }
+        }
     }
 }
 
@@ -1394,7 +1417,7 @@ async fn smain() {
         MainConfiguration::default()
     };
 
-    let (shutdown_send, mut shutdown_recv) = tokio::sync::mpsc::unbounded_channel::<()>();
+    let (shutdown_send, mut shutdown_recv) = tokio::sync::broadcast::channel::<()>(1);
 
     let mut vs = Vec::new();
     if let Ok(d) = uobradio_comms::v4l::Device::new(0) {
@@ -1451,7 +1474,7 @@ async fn smain() {
         };
         swupdate.run().await;
     });
-
+    let shutdown_recv2 = shutdown_send.subscribe();
     let auc = AppUserCommon {
         args,
         #[cfg(feature = "wifi")]
@@ -1515,7 +1538,7 @@ async fn smain() {
     });
     let common2 = common.clone();
     tasks.spawn(async move {
-        sensor_polling(common2)
+        sensor_polling(common2, shutdown_recv2)
             .await
             .inspect_err(|a| log::error!("Sensor polling ended: {:?}", a))
     });
@@ -1525,7 +1548,11 @@ async fn smain() {
             service::log::error!("A task exited {:?}, closing server in 5 seconds", r);
             tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
         }
-        _ = tokio::signal::ctrl_c() => {}
+        _ = tokio::signal::ctrl_c() => {
+            let c = common.lock().await;
+            c.shutdown_send.send(());
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        }
         _ = shutdown_recv.recv() => {}
     }
     service::log::error!("Closing server now");
