@@ -886,10 +886,13 @@ impl eframe::App for MyEguiApp {
                             if let Some(hvac) = self.common.radio.hvac.value() {
                                 // Temperature
                                 ui.label(
-                                        egui::RichText::new(format!(" {:.1}°F", hvac.hvac_vent_temperature))
-                                            .size(16.0)
-                                            .color(self.theme.text_secondary),
-                                    );
+                                    egui::RichText::new(format!(
+                                        " {:.1}°F",
+                                        hvac.hvac_vent_temperature
+                                    ))
+                                    .size(16.0)
+                                    .color(self.theme.text_secondary),
+                                );
                                 if let Some(t) = hvac.cabin_temperature {
                                     ui.label(
                                         egui::RichText::new(format!(" {:.1}°F", t))

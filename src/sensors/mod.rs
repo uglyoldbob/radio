@@ -2,9 +2,7 @@
 
 /// The trait for gps sensors
 #[enum_dispatch::enum_dispatch]
-pub trait GpsSensorTrait {
-
-}
+pub trait GpsSensorTrait {}
 
 /// The 3d orientation for an inclinometer
 pub struct InclinometerOrientation {
@@ -36,18 +34,14 @@ impl Temperature {
     pub fn fahrenheit(&self) -> f32 {
         match self {
             Self::Fahrenheit(f) => *f,
-            Self::Celsius(c) => {
-                c * 9.0/5.0 + 32.0
-            }
+            Self::Celsius(c) => c * 9.0 / 5.0 + 32.0,
         }
     }
 
     /// Get the temperature in fahrenheit
     pub fn celsius(&self) -> f32 {
         match self {
-            Self::Fahrenheit(f) => {
-                (f - 32.0) * 5.0/9.0
-            }
+            Self::Fahrenheit(f) => (f - 32.0) * 5.0 / 9.0,
             Self::Celsius(c) => *c,
         }
     }
@@ -101,7 +95,11 @@ impl InclinometerSensorTrait for InclinometerSimulator {
         self.x = self.x.clamp(-45.0, 45.0);
         self.y = self.y.clamp(-45.0, 45.0);
         self.z = self.z.clamp(-45.0, 45.0);
-        InclinometerOrientation { x: self.x, y: self.y, z: self.z }
+        InclinometerOrientation {
+            x: self.x,
+            y: self.y,
+            z: self.z,
+        }
     }
 }
 
@@ -112,9 +110,7 @@ pub struct TemperatureSimulator {
 
 impl Default for TemperatureSimulator {
     fn default() -> Self {
-        Self {
-            temp: 72.3,
-        }
+        Self { temp: 72.3 }
     }
 }
 

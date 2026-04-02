@@ -64,6 +64,8 @@ pub struct PublicData {
     pub ac_enabled_out: bool,
     /// The hvac air output temperature
     pub hvac_vent_temperature: f32,
+    /// The current fan speed
+    pub fan_speed: u8,
 }
 
 /// The structure used for controlling the hvac controls of the vehicle
@@ -124,7 +126,13 @@ impl HvacController {
 
     /// Get the public data
     pub fn get_public_data(&self) -> PublicData {
-        PublicData { humidity: self.humidity, cabin_temperature: self.cabin_temperature, ac_enabled_out: self.ac_enabled_out, hvac_vent_temperature: self.hvac_vent_temperature }
+        PublicData {
+            humidity: self.humidity, 
+            cabin_temperature: self.cabin_temperature, 
+            ac_enabled_out: self.ac_enabled_out, 
+            hvac_vent_temperature: self.hvac_vent_temperature,
+            fan_speed: self.fan_speed_out,
+        }
     }
 
     /// Set the mode of the controller

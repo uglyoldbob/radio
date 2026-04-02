@@ -61,6 +61,8 @@ struct SystemSettings {
     inclinometer: sensors::InclinometerSensor,
     /// Main cabin temperature sensor
     main_cabin_temperature_sensor: sensors::TemperatureSensor,
+    /// hvac vent temperature sensor
+    hvac_vent_temperature_sensor: sensors::TemperatureSensor,
 }
 
 impl SystemSettings {
@@ -72,7 +74,7 @@ impl SystemSettings {
         {
             paths.push(std::path::Path::new("/etc/radio/settings.toml"));
         }
-        
+
         for p in paths {
             let f = std::fs::File::open(p);
             if let Ok(mut f) = f {
@@ -385,7 +387,11 @@ async fn receive_message_from_app(
         match packet {
             uobradio_comms::MessageFromApp::Exit => {
                 let common2 = common.lock().await;
-                return common2.shutdown_send.send(()).map(|_|()).map_err(|_| "Failed to send shutdown".to_string());
+                return common2
+                    .shutdown_send
+                    .send(())
+                    .map(|_| ())
+                    .map_err(|_| "Failed to send shutdown".to_string());
             }
             #[cfg(feature = "wifi")]
             uobradio_comms::MessageFromApp::ConnectToSavedWifiNetwork(ssid) => {
@@ -515,9 +521,7 @@ async fn receive_message_from_app(
                     uobradio_comms::HvacControl::SetMode(m) => common2.hvac.set_mode(m),
                     uobradio_comms::HvacControl::GetPublicData => {
                         let t = common2.hvac.get_public_data();
-                        let packet = MessageToApp::Ac(
-                            uobradio_comms::AcResponse::PublicData(t),
-                        );
+                        let packet = MessageToApp::Ac(uobradio_comms::AcResponse::PublicData(t));
                         packet.send_to_stream(&streamw).await?;
                     }
                     uobradio_comms::HvacControl::SetAcTargetTemperature(t) => {
@@ -937,7 +941,6 @@ async fn hvac_control(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     loop {
         {
             let mut common2 = common.lock().await;
-            common2.hvac.set_hvac_vent_temperature(65.0);
             common2.hvac.run_controls();
             let fan_duty = common2.hvac.get_fan_speed();
             //log::info!("Fan speed: {}", fan_duty);
@@ -951,7 +954,10 @@ async fn hvac_control(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
 }
 
 /// Polls the sensors in the system
-async fn sensor_polling(common: Arc<tokio::sync::Mutex<AppUserCommon>>, mut kill: tokio::sync::broadcast::Receiver<()>) -> Result<(), String> {
+async fn sensor_polling(
+    common: Arc<tokio::sync::Mutex<AppUserCommon>>,
+    mut kill: tokio::sync::broadcast::Receiver<()>,
+) -> Result<(), String> {
     let mut interval_1s = tokio::time::interval(std::time::Duration::from_millis(1000));
     let mut interval_1500ms = tokio::time::interval(std::time::Duration::from_millis(1500));
 
@@ -962,7 +968,8 @@ async fn sensor_polling(common: Arc<tokio::sync::Mutex<AppUserCommon>>, mut kill
                 let mut c = common.lock().await;
                 let cabin_temp = c.system.main_cabin_temperature_sensor.poll();
                 c.hvac.set_cabin_temperature(cabin_temp.fahrenheit());
-                log::info!("Cabin temperature is {:.02}", cabin_temp.fahrenheit());
+                let vent_temp = c.system.hvac_vent_temperature_sensor.poll();
+                c.hvac.set_hvac_vent_temperature(vent_temp.fahrenheit());
             }
             _ = interval_1500ms.tick() => {
                 log::info!("1.5 second interval check");

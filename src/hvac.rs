@@ -88,9 +88,16 @@ impl SubwindowTrait for Window {
                 });
                 if let Some(hvac) = common.radio.hvac.value() {
                     if let Some(t) = hvac.cabin_temperature {
-                        ui.label(egui::RichText::new("Current temperature").size(32.0));
-                        ui.label(egui::RichText::new(format!("{:.1}", t)).size(32.0));
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Current temperature").size(32.0));
+                            ui.label(egui::RichText::new(format!("{:.1}", t)).size(32.0));
+                        });
                     }
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Vent temperature").size(32.0));
+                        ui.label(egui::RichText::new(format!("{:.1}", hvac.hvac_vent_temperature)).size(32.0));
+                    });
+                    ui.label(egui::RichText::new(format!("Fan at {:.0}%", hvac.fan_speed as f32 / 2.55)).size(32.0));
                 }
                 match common.settings.hvac.current_mode {
                     uobradio_comms::HvacMode::Off => {}
