@@ -120,7 +120,7 @@ impl AndroidAutoService {
     pub async fn new(com: &AppUserCommon, addr: std::net::SocketAddr) -> Result<Self, String> {
         let mut tasks = tokio::task::JoinSet::new();
 
-        let aautochan = tokio::sync::mpsc::channel(5);
+        let aautochan = tokio::sync::mpsc::channel(150);
 
         #[cfg(feature = "bluetooth")]
         let blue_addresses: Vec<[u8; 6]> = com.bluetooth.addresses().await;
@@ -150,7 +150,7 @@ impl AndroidAutoService {
             custom_certificate: None,
         };
 
-        let aa_chan = tokio::sync::mpsc::channel(10);
+        let aa_chan = tokio::sync::mpsc::channel(100);
         let main = AndroidAutoStuff::new(
             aautochan.0,
             aa_chan.1,

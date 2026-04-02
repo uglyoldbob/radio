@@ -92,24 +92,12 @@ impl InnerDecoder {
         match self {
             #[cfg(feature = "imxvpuapi2")]
             Self::Imxvpuapi2(v) => {
-                log::error!("Decoding {} bytes", data.len());
                 for nal in openh264::nal_units(data) {
                     let t = nal_type(&nal);
-                    log::error!("  NAL type={t} len={}", nal.len());
                     match v.push_nal(nal) {
                         Err(e) => log::error!("imxvpuapi2 push_nal error: {e}"),
                         Ok(decoded_frames) => {
-                            for frame in decoded_frames {
-                                log::error!(
-                                    "frame: {}x{} y_off={} u_off={} y_stride={} uv_stride={} data_len={}",
-                                    frame.actual_width,
-                                    frame.actual_height,
-                                    frame.y_offset,
-                                    frame.u_offset,
-                                    frame.y_stride,
-                                    frame.uv_stride,
-                                    frame.data.len()
-                                );
+                            if let Some(frame) = decoded_frames.last() {
                                 let w = frame.actual_width;
                                 let h = frame.actual_height;
                                 let pixels = imxvpuapi2::nv12_to_egui(&frame);
