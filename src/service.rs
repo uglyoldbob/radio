@@ -1135,6 +1135,7 @@ async fn sensor_polling(
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
     mut kill: tokio::sync::broadcast::Receiver<()>,
 ) -> Result<(), String> {
+    let mut interval_fast = tokio::time::interval(std::time::Duration::from_millis(100));
     let mut interval_1s = tokio::time::interval(std::time::Duration::from_millis(1000));
     let mut interval_1500ms = tokio::time::interval(std::time::Duration::from_millis(1500));
 
@@ -1147,6 +1148,10 @@ async fn sensor_polling(
     }
     loop {
         tokio::select! {
+            _ = interval_fast.tick() => {
+                let mut c = common.lock().await;
+                c.sensors = c.system.get_sensor_data();
+            }
             _ = interval_1s.tick() => {
                 use crate::sensors::TemperatureSensorTrait;
                 let mut c = common.lock().await;
@@ -1156,7 +1161,6 @@ async fn sensor_polling(
                 c.hvac.set_hvac_vent_temperature(vent_temp.fahrenheit());
 
                 c.hvac_public = c.hvac.get_public_data();
-                c.sensors = c.system.get_sensor_data();
                 if let Some(log) = &mut logger {
                     log.log_entry(c.hvac_public.clone(), c.sensors.clone()).await;
                 }
