@@ -28,7 +28,7 @@ impl Temperature {
         }
     }
 
-    /// Get the temperature in fahrenheit
+    /// Get the temperature in celsius
     pub fn celsius(&self) -> f32 {
         match self {
             Self::Fahrenheit(f) => (f - 32.0) * 5.0 / 9.0,

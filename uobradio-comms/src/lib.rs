@@ -1196,6 +1196,11 @@ impl NonvolatileSettings {
         }
     }
 
+    /// Read an hvac setting with a closure
+    pub fn read_hvac<U, T: FnOnce(&hvac::Settings)-> U>(&self, t: T) -> U {
+        t(&self.hvac)
+    }
+
     /// Load the nonvolatile settings from the current directory
     pub fn load(path_override: &Option<std::path::PathBuf>) -> Self {
         let f = if let Some(p) = path_override {

@@ -815,6 +815,7 @@ async fn receive_message_from_app(
             }
             uobradio_comms::MessageFromApp::RequestSettings => {
                 let common2 = common.lock().await;
+                log::info!("Sending settings to user: {:?}", common2.settings);
                 let packet = uobradio_comms::MessageToApp::NewSettings(common2.settings.clone());
                 packet.send_to_stream(&streamw).await?;
             }
@@ -825,6 +826,7 @@ async fn receive_message_from_app(
             } => {
                 let mut common2 = common.lock().await;
                 common2.settings = settings;
+                log::info!("Saving nonvolatile config to {:?}", common2.args.nvconfig);
                 common2.settings.save(&common2.args.nvconfig);
                 #[cfg(feature = "wifi")]
                 {
@@ -1160,7 +1162,6 @@ async fn sensor_polling(
                 }
             }
             _ = interval_1500ms.tick() => {
-                log::info!("1.5 second interval check");
             }
             _ = kill.recv() => {
                 log::info!("Stopping sensor polling");
@@ -1664,6 +1665,13 @@ async fn smain() {
         swupdate.run().await;
     });
     let shutdown_recv2 = shutdown_send.subscribe();
+
+    let mut hvac = HvacController::new();
+    hvac.set_ac_setpoint(s.hvac.ac_target);
+    hvac.set_auto_setpoint(s.hvac.auto_target);
+    hvac.set_heat_setpoint(s.hvac.heat_target);
+    hvac.set_mode(s.hvac.current_mode);
+
     let auc = AppUserCommon {
         args,
         #[cfg(feature = "wifi")]
@@ -1686,7 +1694,7 @@ async fn smain() {
         video: vs,
         old_settings: s.clone(),
         settings: s.clone(),
-        hvac: HvacController::new(),
+        hvac,
         #[cfg(feature = "swupdate")]
         swupdate_channel: SwupdateChannelRecv {
             send: swc2.0,

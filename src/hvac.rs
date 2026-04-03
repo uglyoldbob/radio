@@ -77,6 +77,14 @@ impl SubwindowTrait for Window {
                             )
                             .changed()
                     {
+                        let _ =
+                            common
+                                .radio
+                                .send_packet(uobradio_comms::MessageFromApp::NewSettings {
+                                    settings: common.settings.clone(),
+                                    #[cfg(feature = "wifi")]
+                                    wifi_reconnect: false,
+                                });
                         let _ = common
                             .radio
                             .send_packet(uobradio_comms::MessageFromApp::Hvac(
@@ -117,6 +125,13 @@ impl SubwindowTrait for Window {
                                 .fixed_decimals(1),
                         );
                         if response.dragged() {
+                            let _ = common.radio.send_packet(
+                                uobradio_comms::MessageFromApp::NewSettings {
+                                    settings: common.settings.clone(),
+                                    #[cfg(feature = "wifi")]
+                                    wifi_reconnect: false,
+                                },
+                            );
                             let _ = common
                                 .radio
                                 .send_packet(uobradio_comms::MessageFromApp::Hvac(
@@ -136,6 +151,13 @@ impl SubwindowTrait for Window {
                                 .fixed_decimals(1),
                         );
                         if response.dragged() {
+                            let _ = common.radio.send_packet(
+                                uobradio_comms::MessageFromApp::NewSettings {
+                                    settings: common.settings.clone(),
+                                    #[cfg(feature = "wifi")]
+                                    wifi_reconnect: false,
+                                },
+                            );
                             let _ = common
                                 .radio
                                 .send_packet(uobradio_comms::MessageFromApp::Hvac(
@@ -155,6 +177,13 @@ impl SubwindowTrait for Window {
                                 .fixed_decimals(1),
                         );
                         if response.dragged() {
+                            let _ = common.radio.send_packet(
+                                uobradio_comms::MessageFromApp::NewSettings {
+                                    settings: common.settings.clone(),
+                                    #[cfg(feature = "wifi")]
+                                    wifi_reconnect: false,
+                                },
+                            );
                             let _ = common
                                 .radio
                                 .send_packet(uobradio_comms::MessageFromApp::Hvac(

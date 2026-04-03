@@ -390,6 +390,8 @@ struct CommonWindowProperties {
     radio: uobradio_comms::UobRadio,
     /// The non-volatile settings for the program
     pub settings: uobradio_comms::NonvolatileSettings,
+    /// Are the settings loaded?
+    pub settings_loaded: uobradio_comms::Pollable<bool>,
     /// The volatile settings for the program
     pub vsettings: uobradio_comms::VolatileSettings,
     #[cfg(feature = "wifi")]
@@ -416,6 +418,7 @@ impl CommonWindowProperties {
             vsettings: uobradio_comms::VolatileSettings::default(),
             radio: uobradio_comms::UobRadio::localhost(),
             settings: uobradio_comms::NonvolatileSettings::default(),
+            settings_loaded: Default::default(),
             #[cfg(feature = "wifi")]
             available_networks: Default::default(),
             #[cfg(feature = "wifi")]
@@ -686,6 +689,17 @@ impl eframe::App for MyEguiApp {
         if self.common.radio.ping().is_err() {
             self.common.radio.disconnect();
         }
+        match self.common.settings_loaded.value() {
+            None | Some(false) => {
+                self.common.settings_loaded.poll_action(|| {
+                    let _ = self
+                        .common
+                        .radio
+                        .send_packet(uobradio_comms::MessageFromApp::RequestSettings);
+                });
+            }
+            Some(true) => {}
+        }
         self.common.radio.get_cameras();
         #[cfg(feature = "bluetooth")]
         self.common.radio.try_get_bluetooth();
@@ -861,6 +875,7 @@ impl eframe::App for MyEguiApp {
                 uobradio_comms::MessageToApp::PingReply(_) => {}
                 uobradio_comms::MessageToApp::CameraDataJpeg(_index, _jpeg) => {}
                 uobradio_comms::MessageToApp::NewSettings(s) => {
+                    self.common.settings_loaded.new_value_optional(Some(true));
                     self.common.settings = s.clone();
                 }
             }
