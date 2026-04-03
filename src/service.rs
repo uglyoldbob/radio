@@ -29,10 +29,14 @@ use tokio::io::AsyncReadExt;
 use uobradio_comms::aauto::AndroidAutoMessageFromPhone;
 #[cfg(feature = "wifi")]
 use uobradio_comms::wireless::WifiConfig;
-use uobradio_comms::{HvacController, NonvolatileSettings, PublicData, Sensors};
+use uobradio_comms::{
+    HvacController, InclinometerOrientation, NonvolatileSettings, PublicData, Sensors,
+};
 use video_service::VideoSource;
 
-use crate::sensors::{BoolSensor, InclinometerSensor, PressureSensor, RpmSensor, TemperatureSensor, VoltageSensor};
+use crate::sensors::{
+    BoolSensor, InclinometerSensor, PressureSensor, RpmSensor, TemperatureSensor, VoltageSensor,
+};
 
 mod sensors;
 mod video_service;
@@ -133,9 +137,9 @@ impl SystemSettings {
     pub fn get_sensor_data(&mut self) -> uobradio_comms::Sensors {
         use sensors::BoolSensorTrait;
         use sensors::InclinometerSensorTrait;
-        use sensors::TemperatureSensorTrait;
         use sensors::PressureSensorTrait;
         use sensors::RpmSensorTrait;
+        use sensors::TemperatureSensorTrait;
         use sensors::VoltageSensorTrait;
         uobradio_comms::Sensors {
             orientation: Some(self.orientation.poll()),
@@ -577,7 +581,9 @@ async fn receive_message_from_app(
                 match c {
                     uobradio_comms::HvacControl::SetMode(m) => common2.hvac.set_mode(m),
                     uobradio_comms::HvacControl::GetPublicData => {
-                        let packet = MessageToApp::Ac(uobradio_comms::AcResponse::PublicData(common2.hvac_public.clone()));
+                        let packet = MessageToApp::Ac(uobradio_comms::AcResponse::PublicData(
+                            common2.hvac_public.clone(),
+                        ));
                         packet.send_to_stream(&streamw).await?;
                     }
                     uobradio_comms::HvacControl::SetAcTargetTemperature(t) => {
@@ -1016,14 +1022,20 @@ struct SensorLogConfig {
 
 impl Default for SensorLogConfig {
     fn default() -> Self {
-        SensorLogConfig { base_path: "/tmp".into() }
+        SensorLogConfig {
+            base_path: "/tmp".into(),
+        }
     }
 }
 
 impl SensorLogConfig {
     /// Start the sensor log
     pub async fn start_log(&mut self) -> Result<SensorLog, String> {
-        let c = self.base_path.read_dir().map_err(|e|e.to_string())?.count();
+        let c = self
+            .base_path
+            .read_dir()
+            .map_err(|e| e.to_string())?
+            .count();
         let mut p2 = self.base_path.clone();
         p2.push(format!("{}.csv", c));
         SensorLog::new(p2)
@@ -1038,41 +1050,46 @@ struct SensorLog {
 struct SensorLogRecord {
     #[serde(with = "chrono::serde::ts_seconds")]
     time: DateTime<chrono::Utc>,
-    humidity: Option<f32>,
-    cabin_temp: Option<f32>,
+    humidity: f32,
+    cabin_temp: f32,
     vent_temp: f32,
-    /// Orientation of the system, left-right, forwards-backwards, both in degrees
-    pub orientation: Option<uobradio_comms::InclinometerOrientation>,
+    /// Orientation of the system, left-right, in degrees
+    pub orientx: f32,
+    /// Orientation of the system, forwards-backwards, in degrees
+    pub orienty: f32,
     /// The engine coolant temperature
-    pub engine_coolant_temp: Option<f32>,
+    pub engine_coolant_temp: f32,
     /// The engine oil temperature
-    pub engine_oil_temp: Option<f32>,
+    pub engine_oil_temp: f32,
     /// The engine exhaust temperature
-    pub engine_exhaust_temp: Option<f32>,
+    pub engine_exhaust_temp: f32,
     /// Front differential temperature
-    pub front_diff_temp: Option<f32>,
+    pub front_diff_temp: f32,
     /// Rear differential temperature
-    pub rear_diff_temp: Option<f32>,
+    pub rear_diff_temp: f32,
     /// The engine oil pressure (psi)
-    pub engine_oil_pressure: Option<f32>,
+    pub engine_oil_pressure: f32,
     /// The coolant pressure (psi)
-    pub coolant_pressure: Option<f32>,
+    pub coolant_pressure: f32,
     /// Transmission temperature
-    pub trans_temp: Option<f32>,
+    pub trans_temp: f32,
     /// Transfer case temperature
-    pub transfer_temp: Option<f32>,
+    pub transfer_temp: f32,
     /// Door open sensor
-    pub door_open: Option<bool>,
+    pub door_open: bool,
     /// Engine rpm sensor
-    pub engine_rpm: Option<u16>,
+    pub engine_rpm: u16,
     /// Main system voltage
-    pub main_voltage: Option<f32>,
+    pub main_voltage: f32,
 }
 
 impl SensorLog {
     pub fn new(f: PathBuf) -> Result<Self, String> {
         Ok(Self {
-            w: csv::Writer::from_path(f).map_err(|e|e.to_string())?
+            w: csv::WriterBuilder::new()
+                .terminator(csv::Terminator::CRLF)
+                .from_path(f)
+                .map_err(|e| e.to_string())?,
         })
     }
 
@@ -1080,24 +1097,34 @@ impl SensorLog {
     pub async fn log_entry(&mut self, hvac: uobradio_comms::PublicData, sensors: Sensors) {
         let record = SensorLogRecord {
             time: chrono::Utc::now(),
-            humidity: hvac.humidity,
-            cabin_temp: hvac.cabin_temperature,
+            humidity: hvac.humidity.unwrap_or_default(),
+            cabin_temp: hvac.cabin_temperature.unwrap_or_default(),
             vent_temp: hvac.hvac_vent_temperature,
-            orientation: sensors.orientation,
-            engine_coolant_temp: sensors.engine_coolant_temp,
-            engine_oil_temp: sensors.engine_oil_temp,
-            engine_exhaust_temp: sensors.engine_exhaust_temp,
-            front_diff_temp: sensors.front_diff_temp,
-            rear_diff_temp: sensors.rear_diff_temp,
-            engine_oil_pressure: sensors.engine_oil_pressure,
-            coolant_pressure: sensors.coolant_pressure,
-            trans_temp: sensors.trans_temp,
-            transfer_temp: sensors.transfer_temp,
-            door_open: sensors.door_open,
-            engine_rpm: sensors.engine_rpm,
-            main_voltage: sensors.main_voltage,
+            orientx: sensors
+                .orientation
+                .clone()
+                .unwrap_or(InclinometerOrientation { x: 0.0, y: 0.0 })
+                .x,
+            orienty: sensors
+                .orientation
+                .clone()
+                .unwrap_or(InclinometerOrientation { x: 0.0, y: 0.0 })
+                .y,
+            engine_coolant_temp: sensors.engine_coolant_temp.unwrap_or_default(),
+            engine_oil_temp: sensors.engine_oil_temp.unwrap_or_default(),
+            engine_exhaust_temp: sensors.engine_exhaust_temp.unwrap_or_default(),
+            front_diff_temp: sensors.front_diff_temp.unwrap_or_default(),
+            rear_diff_temp: sensors.rear_diff_temp.unwrap_or_default(),
+            engine_oil_pressure: sensors.engine_oil_pressure.unwrap_or_default(),
+            coolant_pressure: sensors.coolant_pressure.unwrap_or_default(),
+            trans_temp: sensors.trans_temp.unwrap_or_default(),
+            transfer_temp: sensors.transfer_temp.unwrap_or_default(),
+            door_open: sensors.door_open.unwrap_or_default(),
+            engine_rpm: sensors.engine_rpm.unwrap_or_default(),
+            main_voltage: sensors.main_voltage.unwrap_or_default(),
         };
         self.w.serialize(record);
+        self.w.flush();
     }
 }
 

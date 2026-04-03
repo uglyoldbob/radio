@@ -42,7 +42,13 @@ impl SubwindowTrait for Window {
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(sensors) = common.radio.sensors.value() {
                 if let Some(oriented) = &sensors.orientation {
-                    ui.label(egui::RichText::new(format!("LR: {:.1} degrees, FB: {:.1} degrees", oriented.x, oriented.y)).size(32.0));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "LR: {:.1} degrees, FB: {:.1} degrees",
+                            oriented.x, oriented.y
+                        ))
+                        .size(32.0),
+                    );
                 }
             }
         });

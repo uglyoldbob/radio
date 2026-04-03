@@ -160,8 +160,7 @@ impl Default for BoolSensor {
 }
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct BoolSensorSimulator {
-}
+pub struct BoolSensorSimulator {}
 
 impl BoolSensorTrait for BoolSensorSimulator {
     fn poll(&mut self) -> bool {
@@ -202,7 +201,6 @@ impl VoltageSensorTrait for VoltageSensorSimulator {
         self.volts
     }
 }
-
 
 #[enum_dispatch::enum_dispatch]
 pub trait RpmSensorTrait {
