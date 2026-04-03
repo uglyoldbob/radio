@@ -23,12 +23,13 @@ use android_auto::{
 };
 #[cfg(feature = "bluetooth")]
 use bluetooth_rust::{BluetoothAdapterTrait, ResponseToPasskey};
+use chrono::DateTime;
 use tokio::io::AsyncReadExt;
 #[cfg(feature = "androidauto")]
 use uobradio_comms::aauto::AndroidAutoMessageFromPhone;
 #[cfg(feature = "wifi")]
 use uobradio_comms::wireless::WifiConfig;
-use uobradio_comms::{HvacController, NonvolatileSettings};
+use uobradio_comms::{HvacController, NonvolatileSettings, PublicData, Sensors};
 use video_service::VideoSource;
 
 use crate::sensors::{BoolSensor, InclinometerSensor, PressureSensor, RpmSensor, TemperatureSensor, VoltageSensor};
@@ -85,6 +86,8 @@ struct SystemSettings {
     engine_rpm: RpmSensor,
     /// Main system voltage
     main_voltage: VoltageSensor,
+    /// Logging settings
+    log: SensorLogConfig,
 }
 
 impl SystemSettings {
@@ -366,6 +369,10 @@ pub struct AppUserCommon {
     settings: NonvolatileSettings,
     /// The hvac controls
     hvac: HvacController,
+    /// The last sensor data
+    sensors: Sensors,
+    /// Public hvac data
+    hvac_public: uobradio_comms::PublicData,
     #[cfg(feature = "swupdate")]
     /// The communication for the swupdate websocket
     swupdate_channel: SwupdateChannelRecv,
@@ -432,7 +439,7 @@ async fn receive_message_from_app(
         match packet {
             uobradio_comms::MessageFromApp::GetSensorData => {
                 let mut c = common.lock().await;
-                let packet = MessageToApp::SensorData(c.system.get_sensor_data());
+                let packet = MessageToApp::SensorData(c.sensors.clone());
                 packet.send_to_stream(&streamw).await?;
             }
             uobradio_comms::MessageFromApp::Exit => {
@@ -570,8 +577,7 @@ async fn receive_message_from_app(
                 match c {
                     uobradio_comms::HvacControl::SetMode(m) => common2.hvac.set_mode(m),
                     uobradio_comms::HvacControl::GetPublicData => {
-                        let t = common2.hvac.get_public_data();
-                        let packet = MessageToApp::Ac(uobradio_comms::AcResponse::PublicData(t));
+                        let packet = MessageToApp::Ac(uobradio_comms::AcResponse::PublicData(common2.hvac_public.clone()));
                         packet.send_to_stream(&streamw).await?;
                     }
                     uobradio_comms::HvacControl::SetAcTargetTemperature(t) => {
@@ -1003,6 +1009,98 @@ async fn hvac_control(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
     }
 }
 
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+struct SensorLogConfig {
+    base_path: PathBuf,
+}
+
+impl Default for SensorLogConfig {
+    fn default() -> Self {
+        SensorLogConfig { base_path: "/tmp".into() }
+    }
+}
+
+impl SensorLogConfig {
+    /// Start the sensor log
+    pub async fn start_log(&mut self) -> Result<SensorLog, String> {
+        let c = self.base_path.read_dir().map_err(|e|e.to_string())?.count();
+        let mut p2 = self.base_path.clone();
+        p2.push(format!("{}.csv", c));
+        SensorLog::new(p2)
+    }
+}
+
+struct SensorLog {
+    w: csv::Writer<std::fs::File>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct SensorLogRecord {
+    #[serde(with = "chrono::serde::ts_seconds")]
+    time: DateTime<chrono::Utc>,
+    humidity: Option<f32>,
+    cabin_temp: Option<f32>,
+    vent_temp: f32,
+    /// Orientation of the system, left-right, forwards-backwards, both in degrees
+    pub orientation: Option<uobradio_comms::InclinometerOrientation>,
+    /// The engine coolant temperature
+    pub engine_coolant_temp: Option<f32>,
+    /// The engine oil temperature
+    pub engine_oil_temp: Option<f32>,
+    /// The engine exhaust temperature
+    pub engine_exhaust_temp: Option<f32>,
+    /// Front differential temperature
+    pub front_diff_temp: Option<f32>,
+    /// Rear differential temperature
+    pub rear_diff_temp: Option<f32>,
+    /// The engine oil pressure (psi)
+    pub engine_oil_pressure: Option<f32>,
+    /// The coolant pressure (psi)
+    pub coolant_pressure: Option<f32>,
+    /// Transmission temperature
+    pub trans_temp: Option<f32>,
+    /// Transfer case temperature
+    pub transfer_temp: Option<f32>,
+    /// Door open sensor
+    pub door_open: Option<bool>,
+    /// Engine rpm sensor
+    pub engine_rpm: Option<u16>,
+    /// Main system voltage
+    pub main_voltage: Option<f32>,
+}
+
+impl SensorLog {
+    pub fn new(f: PathBuf) -> Result<Self, String> {
+        Ok(Self {
+            w: csv::Writer::from_path(f).map_err(|e|e.to_string())?
+        })
+    }
+
+    /// Add a row of log data
+    pub async fn log_entry(&mut self, hvac: uobradio_comms::PublicData, sensors: Sensors) {
+        let record = SensorLogRecord {
+            time: chrono::Utc::now(),
+            humidity: hvac.humidity,
+            cabin_temp: hvac.cabin_temperature,
+            vent_temp: hvac.hvac_vent_temperature,
+            orientation: sensors.orientation,
+            engine_coolant_temp: sensors.engine_coolant_temp,
+            engine_oil_temp: sensors.engine_oil_temp,
+            engine_exhaust_temp: sensors.engine_exhaust_temp,
+            front_diff_temp: sensors.front_diff_temp,
+            rear_diff_temp: sensors.rear_diff_temp,
+            engine_oil_pressure: sensors.engine_oil_pressure,
+            coolant_pressure: sensors.coolant_pressure,
+            trans_temp: sensors.trans_temp,
+            transfer_temp: sensors.transfer_temp,
+            door_open: sensors.door_open,
+            engine_rpm: sensors.engine_rpm,
+            main_voltage: sensors.main_voltage,
+        };
+        self.w.serialize(record);
+    }
+}
+
 /// Polls the sensors in the system
 async fn sensor_polling(
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
@@ -1011,6 +1109,13 @@ async fn sensor_polling(
     let mut interval_1s = tokio::time::interval(std::time::Duration::from_millis(1000));
     let mut interval_1500ms = tokio::time::interval(std::time::Duration::from_millis(1500));
 
+    let mut logger = None;
+    {
+        let mut c = common.lock().await;
+        if let Ok(log) = c.system.log.start_log().await {
+            logger = Some(log);
+        }
+    }
     loop {
         tokio::select! {
             _ = interval_1s.tick() => {
@@ -1020,6 +1125,12 @@ async fn sensor_polling(
                 c.hvac.set_cabin_temperature(cabin_temp.fahrenheit());
                 let vent_temp = c.system.hvac_vent_temperature_sensor.poll();
                 c.hvac.set_hvac_vent_temperature(vent_temp.fahrenheit());
+
+                c.hvac_public = c.hvac.get_public_data();
+                c.sensors = c.system.get_sensor_data();
+                if let Some(log) = &mut logger {
+                    log.log_entry(c.hvac_public.clone(), c.sensors.clone()).await;
+                }
             }
             _ = interval_1500ms.tick() => {
                 log::info!("1.5 second interval check");
@@ -1557,6 +1668,8 @@ async fn smain() {
         shutdown_send,
         #[cfg(feature = "androidauto")]
         token,
+        hvac_public: PublicData::default(),
+        sensors: Sensors::default(),
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(auc));
