@@ -271,7 +271,7 @@ impl SubwindowTrait for MainPage {
                                 gauge::Gauge {
                                     label: "TACHOMETER",
                                     unit: "x100 RPM",
-                                    min: 0.0,
+                                    min: 6.0,
                                     max: 36.0,
                                     start_deg: 220.0,
                                     end_deg: -40.0,
@@ -289,8 +289,8 @@ impl SubwindowTrait for MainPage {
 
                             if let Some(temp) = sensors.engine_coolant_temp {
                                 gauge::Gauge {
-                                    label: "TEMP",
-                                    unit: "",
+                                    label: "ENGINE",
+                                    unit: "F",
                                     min: 70.0,
                                     max: 260.0,
                                     start_deg: 215.0,
@@ -310,6 +310,22 @@ impl SubwindowTrait for MainPage {
                                 });
                             }
 
+                            if let Some(temp) = sensors.engine_exhaust_temp {
+                                gauge::Gauge {
+                                    label: "EGR",
+                                    unit: "F",
+                                    min: 100.0,
+                                    max: 1300.0,
+                                    start_deg: 215.0,
+                                    end_deg: -35.0,
+                                    red_start: Some(1100.0),
+                                    major_interval: 150.0,
+                                    minor_per_major: 4,
+                                }
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
+                            }
+                        });
+                        ui.horizontal(|ui| {
                             if let Some(level) = Some(0.42) {
                                 gauge::Gauge {
                                     label: "FUEL",
@@ -332,32 +348,11 @@ impl SubwindowTrait for MainPage {
                                     }
                                 });
                             }
-                        });
-                        ui.horizontal(|ui| {
-                            if let Some(rpm) = sensors.engine_rpm {
-                                gauge::Gauge {
-                                    label: "TACHOMETER",
-                                    unit: "x100 RPM",
-                                    min: 0.0,
-                                    max: 36.0,
-                                    start_deg: 220.0,
-                                    end_deg: -40.0,
-                                    red_start: Some(30.0),
-                                    major_interval: 6.0,
-                                    minor_per_major: 5,
-                                }
-                                .draw(
-                                    ui,
-                                    sz,
-                                    rpm as f32 / 100.0,
-                                    |v| format!("{:.0}", v),
-                                );
-                            }
 
-                            if let Some(temp) = sensors.engine_coolant_temp {
+                            if let Some(temp) = sensors.engine_oil_temp {
                                 gauge::Gauge {
-                                    label: "TEMP",
-                                    unit: "",
+                                    label: "OIL",
+                                    unit: "F",
                                     min: 70.0,
                                     max: 260.0,
                                     start_deg: 215.0,
@@ -366,21 +361,13 @@ impl SubwindowTrait for MainPage {
                                     major_interval: 40.0,
                                     minor_per_major: 4,
                                 }
-                                .draw(ui, sz, temp, |v| {
-                                    if v < 130.0 {
-                                        "C".to_string()
-                                    } else if v < 200.0 {
-                                        "N".to_string()
-                                    } else {
-                                        "H".to_string()
-                                    }
-                                });
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
 
-                            if let Some(speed) = Some(0.5) {
+                            if let Some(speed) = sensors.engine_oil_pressure {
                                 gauge::Gauge {
-                                    label: "SPEEDOMETER",
-                                    unit: "MPH",
+                                    label: "OIL PRESSURE",
+                                    unit: "PSI",
                                     min: 0.0,
                                     max: 120.0,
                                     start_deg: 220.0,
@@ -398,30 +385,10 @@ impl SubwindowTrait for MainPage {
                     if let Some(sensors) = common.radio.sensors.value() {
                         let sz = egui::Vec2::splat(200.0);
                         ui.horizontal(|ui| {
-                            if let Some(rpm) = sensors.engine_rpm {
+                            if let Some(temp) = sensors.front_diff_temp {
                                 gauge::Gauge {
-                                    label: "TACHOMETER",
-                                    unit: "x100 RPM",
-                                    min: 0.0,
-                                    max: 36.0,
-                                    start_deg: 220.0,
-                                    end_deg: -40.0,
-                                    red_start: Some(30.0),
-                                    major_interval: 6.0,
-                                    minor_per_major: 5,
-                                }
-                                .draw(
-                                    ui,
-                                    sz,
-                                    rpm as f32 / 100.0,
-                                    |v| format!("{:.0}", v),
-                                );
-                            }
-
-                            if let Some(temp) = sensors.engine_coolant_temp {
-                                gauge::Gauge {
-                                    label: "TEMP",
-                                    unit: "",
+                                    label: "F AXLE",
+                                    unit: "F",
                                     min: 70.0,
                                     max: 260.0,
                                     start_deg: 215.0,
@@ -430,65 +397,44 @@ impl SubwindowTrait for MainPage {
                                     major_interval: 40.0,
                                     minor_per_major: 4,
                                 }
-                                .draw(ui, sz, temp, |v| {
-                                    if v < 130.0 {
-                                        "C".to_string()
-                                    } else if v < 200.0 {
-                                        "N".to_string()
-                                    } else {
-                                        "H".to_string()
-                                    }
-                                });
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
 
-                            if let Some(level) = Some(0.42) {
+                            if let Some(temp) = sensors.trans_temp {
                                 gauge::Gauge {
-                                    label: "FUEL",
-                                    unit: "",
-                                    min: 0.0,
-                                    max: 1.0,
+                                    label: "TRANSMISSION",
+                                    unit: "F",
+                                    min: 70.0,
+                                    max: 260.0,
                                     start_deg: 215.0,
                                     end_deg: -35.0,
-                                    red_start: Some(0.12),
-                                    major_interval: 0.25,
-                                    minor_per_major: 2,
+                                    red_start: Some(230.0),
+                                    major_interval: 40.0,
+                                    minor_per_major: 4,
                                 }
-                                .draw(ui, sz, level, |v| {
-                                    match (v * 4.0).round() as i32 {
-                                        0 => "E".to_string(),
-                                        1 => "1/4".to_string(),
-                                        2 => "1/2".to_string(),
-                                        3 => "3/4".to_string(),
-                                        _ => "F".to_string(),
-                                    }
-                                });
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
+                            }
+
+                            if let Some(v) = sensors.main_voltage {
+                                gauge::Gauge {
+                                    label: "VOLTAGE",
+                                    unit: "V",
+                                    min: 10.0,
+                                    max: 16.0,
+                                    start_deg: 215.0,
+                                    end_deg: -35.0,
+                                    red_start: Some(15.0),
+                                    major_interval: 1.0,
+                                    minor_per_major: 5,
+                                }
+                                .draw(ui, sz, v, |v| format!("{:.0}", v));
                             }
                         });
                         ui.horizontal(|ui| {
-                            if let Some(rpm) = sensors.engine_rpm {
+                            if let Some(temp) = sensors.rear_diff_temp {
                                 gauge::Gauge {
-                                    label: "TACHOMETER",
-                                    unit: "x100 RPM",
-                                    min: 0.0,
-                                    max: 36.0,
-                                    start_deg: 220.0,
-                                    end_deg: -40.0,
-                                    red_start: Some(30.0),
-                                    major_interval: 6.0,
-                                    minor_per_major: 5,
-                                }
-                                .draw(
-                                    ui,
-                                    sz,
-                                    rpm as f32 / 100.0,
-                                    |v| format!("{:.0}", v),
-                                );
-                            }
-
-                            if let Some(temp) = sensors.engine_coolant_temp {
-                                gauge::Gauge {
-                                    label: "TEMP",
-                                    unit: "",
+                                    label: "R AXLE",
+                                    unit: "F",
                                     min: 70.0,
                                     max: 260.0,
                                     start_deg: 215.0,
@@ -497,15 +443,22 @@ impl SubwindowTrait for MainPage {
                                     major_interval: 40.0,
                                     minor_per_major: 4,
                                 }
-                                .draw(ui, sz, temp, |v| {
-                                    if v < 130.0 {
-                                        "C".to_string()
-                                    } else if v < 200.0 {
-                                        "N".to_string()
-                                    } else {
-                                        "H".to_string()
-                                    }
-                                });
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
+                            }
+
+                            if let Some(temp) = sensors.transfer_temp {
+                                gauge::Gauge {
+                                    label: "XFER CASE",
+                                    unit: "F",
+                                    min: 70.0,
+                                    max: 260.0,
+                                    start_deg: 215.0,
+                                    end_deg: -35.0,
+                                    red_start: Some(230.0),
+                                    major_interval: 40.0,
+                                    minor_per_major: 4,
+                                }
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
 
                             if let Some(speed) = Some(0.5) {
@@ -660,85 +613,6 @@ impl SubwindowTrait for MainPage {
                     log::error!("Unknown page {page}");
                 }
             });
-            if false {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false; 2])
-                    .show(ui, |ui| {
-                        if let Some(sensors) = common.radio.sensors.value() {
-                            ui.horizontal(|ui| {
-                                if let Some(t) = &sensors.engine_coolant_temp {
-                                    ui.label(
-                                        egui::RichText::new(format!("Engine: {:.0}", t)).size(32.0),
-                                    );
-                                }
-                                if let Some(t) = &sensors.engine_exhaust_temp {
-                                    ui.label(
-                                        egui::RichText::new(format!("EGT: {:.0}", t)).size(32.0),
-                                    );
-                                }
-                            });
-                            ui.horizontal(|ui| {
-                                if let Some(t) = &sensors.trans_temp {
-                                    ui.label(
-                                        egui::RichText::new(format!("TRANS: {:.0}", t)).size(32.0),
-                                    );
-                                }
-                                if let Some(t) = &sensors.transfer_temp {
-                                    ui.label(
-                                        egui::RichText::new(format!("XFER CASE: {:.0}", t))
-                                            .size(32.0),
-                                    );
-                                }
-                            });
-                            if let Some(t) = &sensors.engine_oil_temp {
-                                ui.label(
-                                    egui::RichText::new(format!("Engine Oil: {:.0}", t)).size(32.0),
-                                );
-                            }
-                            ui.horizontal(|ui| {
-                                if let Some(t) = &sensors.front_diff_temp {
-                                    ui.label(
-                                        egui::RichText::new(format!("Front diff: {:.0}", t))
-                                            .size(32.0),
-                                    );
-                                }
-                                if let Some(t) = &sensors.rear_diff_temp {
-                                    ui.label(
-                                        egui::RichText::new(format!("Rear diff: {:.0}", t))
-                                            .size(32.0),
-                                    );
-                                }
-                            });
-                            if let Some(t) = &sensors.engine_rpm {
-                                ui.label(
-                                    egui::RichText::new(format!("Engine RPM: {}", t)).size(32.0),
-                                );
-                            }
-                            ui.horizontal(|ui| {
-                                if let Some(t) = &sensors.coolant_pressure {
-                                    ui.label(
-                                        egui::RichText::new(format!("Coolant: {:.2} psi", t))
-                                            .size(32.0),
-                                    );
-                                }
-                                if let Some(t) = &sensors.engine_oil_pressure {
-                                    ui.label(
-                                        egui::RichText::new(format!("Oil: {:.1} psi", t))
-                                            .size(32.0),
-                                    );
-                                }
-                            });
-                            if let Some(t) = &sensors.main_voltage {
-                                ui.label(
-                                    egui::RichText::new(format!("Voltage: {:.2}", t)).size(32.0),
-                                );
-                            }
-                        }
-                        if ui.big_button(&theme, "Quit").clicked() {
-                            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                    });
-            }
         });
         r
     }
