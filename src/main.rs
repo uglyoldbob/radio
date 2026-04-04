@@ -12,6 +12,7 @@ mod video;
 #[cfg(any(feature = "wifi", feature = "bluetooth"))]
 mod wireless;
 
+mod gauge;
 mod h264;
 
 #[cfg(feature = "androidauto")]
@@ -254,6 +255,134 @@ impl SubwindowTrait for MainPage {
                 .auto_shrink([false; 2])
                 .show(ui, |ui| {
                     if let Some(sensors) = common.radio.sensors.value() {
+                        let sz = egui::Vec2::splat(200.0);
+                        ui.horizontal(|ui| {
+                            if let Some(rpm) = sensors.engine_rpm {
+                                gauge::Gauge {
+                                    label: "TACHOMETER",
+                                    unit: "x100 RPM",
+                                    min: 0.0,
+                                    max: 36.0,
+                                    start_deg: 220.0,
+                                    end_deg: -40.0,
+                                    red_start: Some(30.0),
+                                    major_interval: 6.0,
+                                    minor_per_major: 5,
+                                }
+                                .draw(
+                                    ui,
+                                    sz,
+                                    rpm as f32 / 100.0,
+                                    |v| format!("{:.0}", v),
+                                );
+                            }
+
+                            if let Some(temp) = sensors.engine_coolant_temp {
+                                gauge::Gauge {
+                                    label: "TEMP",
+                                    unit: "",
+                                    min: 70.0,
+                                    max: 260.0,
+                                    start_deg: 215.0,
+                                    end_deg: -35.0,
+                                    red_start: Some(230.0),
+                                    major_interval: 40.0,
+                                    minor_per_major: 4,
+                                }
+                                .draw(ui, sz, temp, |v| {
+                                    if v < 130.0 {
+                                        "C".to_string()
+                                    } else if v < 200.0 {
+                                        "N".to_string()
+                                    } else {
+                                        "H".to_string()
+                                    }
+                                });
+                            }
+
+                            if let Some(level) = Some(0.42) {
+                                gauge::Gauge {
+                                    label: "FUEL",
+                                    unit: "",
+                                    min: 0.0,
+                                    max: 1.0,
+                                    start_deg: 215.0,
+                                    end_deg: -35.0,
+                                    red_start: Some(0.12),
+                                    major_interval: 0.25,
+                                    minor_per_major: 2,
+                                }
+                                .draw(ui, sz, level, |v| {
+                                    match (v * 4.0).round() as i32 {
+                                        0 => "E".to_string(),
+                                        1 => "1/4".to_string(),
+                                        2 => "1/2".to_string(),
+                                        3 => "3/4".to_string(),
+                                        _ => "F".to_string(),
+                                    }
+                                });
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            if let Some(rpm) = sensors.engine_rpm {
+                                gauge::Gauge {
+                                    label: "TACHOMETER",
+                                    unit: "x100 RPM",
+                                    min: 0.0,
+                                    max: 36.0,
+                                    start_deg: 220.0,
+                                    end_deg: -40.0,
+                                    red_start: Some(30.0),
+                                    major_interval: 6.0,
+                                    minor_per_major: 5,
+                                }
+                                .draw(
+                                    ui,
+                                    sz,
+                                    rpm as f32 / 100.0,
+                                    |v| format!("{:.0}", v),
+                                );
+                            }
+
+                            if let Some(temp) = sensors.engine_coolant_temp {
+                                gauge::Gauge {
+                                    label: "TEMP",
+                                    unit: "",
+                                    min: 70.0,
+                                    max: 260.0,
+                                    start_deg: 215.0,
+                                    end_deg: -35.0,
+                                    red_start: Some(230.0),
+                                    major_interval: 40.0,
+                                    minor_per_major: 4,
+                                }
+                                .draw(ui, sz, temp, |v| {
+                                    if v < 130.0 {
+                                        "C".to_string()
+                                    } else if v < 200.0 {
+                                        "N".to_string()
+                                    } else {
+                                        "H".to_string()
+                                    }
+                                });
+                            }
+
+                            if let Some(speed) = Some(0.5) {
+                                gauge::Gauge {
+                                    label: "SPEEDOMETER",
+                                    unit: "MPH",
+                                    min: 0.0,
+                                    max: 120.0,
+                                    start_deg: 220.0,
+                                    end_deg: -40.0,
+                                    red_start: None,
+                                    major_interval: 20.0,
+                                    minor_per_major: 4,
+                                }
+                                .draw(ui, sz, speed, |v| format!("{:.0}", v));
+                            }
+                        });
+
                         ui.horizontal(|ui| {
                             if let Some(t) = &sensors.engine_coolant_temp {
                                 ui.label(
