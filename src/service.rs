@@ -40,6 +40,7 @@ use crate::sensors::{
 };
 
 mod sensors;
+mod outputs;
 mod video_service;
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
@@ -95,6 +96,8 @@ struct SystemSettings {
     main_voltage: VoltageSensor,
     /// Logging settings
     log: SensorLogConfig,
+    /// The oil pressure output
+    guage_oil_pressure: outputs::F32Output,
 }
 
 impl SystemSettings {
