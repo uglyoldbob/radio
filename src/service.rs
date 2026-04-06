@@ -137,29 +137,29 @@ impl SystemSettings {
     }
 
     /// Get sensor data
-    pub fn get_sensor_data(&mut self) -> uobradio_comms::Sensors {
+    pub fn get_sensor_data(&mut self) -> Result<uobradio_comms::Sensors, String> {
         use sensors::BoolSensorTrait;
         use sensors::InclinometerSensorTrait;
         use sensors::PressureSensorTrait;
         use sensors::RpmSensorTrait;
         use sensors::TemperatureSensorTrait;
         use sensors::VoltageSensorTrait;
-        uobradio_comms::Sensors {
-            intake_air_temperature: Some(self.intake_air.poll().fahrenheit()),
+        Ok(uobradio_comms::Sensors {
+            intake_air_temperature: Some(self.intake_air.poll()?.fahrenheit()),
             orientation: Some(self.orientation.poll()),
-            engine_coolant_temp: Some(self.engine_coolant_temp.poll().fahrenheit()),
-            engine_oil_temp: Some(self.engine_oil_temp.poll().fahrenheit()),
-            engine_exhaust_temp: Some(self.engine_exhaust_temp.poll().fahrenheit()),
-            front_diff_temp: Some(self.front_diff_temp.poll().fahrenheit()),
-            rear_diff_temp: Some(self.rear_diff_temp.poll().fahrenheit()),
-            engine_oil_pressure: Some(self.engine_oil_pressure.poll()),
-            coolant_pressure: Some(self.coolant_pressure.poll()),
-            trans_temp: Some(self.trans_temp.poll().fahrenheit()),
-            transfer_temp: Some(self.transfer_temp.poll().fahrenheit()),
-            door_open: Some(self.door_open.poll()),
-            engine_rpm: Some(self.engine_rpm.poll()),
-            main_voltage: Some(self.main_voltage.poll()),
-        }
+            engine_coolant_temp: Some(self.engine_coolant_temp.poll()?.fahrenheit()),
+            engine_oil_temp: Some(self.engine_oil_temp.poll()?.fahrenheit()),
+            engine_exhaust_temp: Some(self.engine_exhaust_temp.poll()?.fahrenheit()),
+            front_diff_temp: Some(self.front_diff_temp.poll()?.fahrenheit()),
+            rear_diff_temp: Some(self.rear_diff_temp.poll()?.fahrenheit()),
+            engine_oil_pressure: Some(self.engine_oil_pressure.poll()?),
+            coolant_pressure: Some(self.coolant_pressure.poll()?),
+            trans_temp: Some(self.trans_temp.poll()?.fahrenheit()),
+            transfer_temp: Some(self.transfer_temp.poll()?.fahrenheit()),
+            door_open: Some(self.door_open.poll()?),
+            engine_rpm: Some(self.engine_rpm.poll()?),
+            main_voltage: Some(self.main_voltage.poll()?),
+        })
     }
 }
 
@@ -1220,7 +1220,12 @@ async fn sensor_polling(
             }
             _ = interval_fast.tick() => {
                 let mut c = common.lock().await;
-                c.sensors = c.system.get_sensor_data();
+                match c.system.get_sensor_data() {
+                    Ok(s) => {
+                        c.sensors = s;
+                    }
+                    Err(e) => log::error!("Error getting sensor data: {}", e),
+                }
                 let c2 = c.sensors.clone();
                 c.historical_sensors.push_back(c2);
                 if c.historical_sensors.len() > c.num_historical_records {
@@ -1236,10 +1241,12 @@ async fn sensor_polling(
             _ = interval_1s.tick() => {
                 use crate::sensors::TemperatureSensorTrait;
                 let mut c = common.lock().await;
-                let cabin_temp = c.system.main_cabin_temperature_sensor.poll();
-                c.hvac.set_cabin_temperature(cabin_temp.fahrenheit());
-                let vent_temp = c.system.hvac_vent_temperature_sensor.poll();
-                c.hvac.set_hvac_vent_temperature(vent_temp.fahrenheit());
+                if let Ok(cabin_temp) = c.system.main_cabin_temperature_sensor.poll() {
+                    c.hvac.set_cabin_temperature(cabin_temp.fahrenheit());
+                }
+                if let Ok(vent_temp) = c.system.hvac_vent_temperature_sensor.poll() {
+                    c.hvac.set_hvac_vent_temperature(vent_temp.fahrenheit());
+                }
 
                 c.hvac_public = c.hvac.get_public_data();
             }

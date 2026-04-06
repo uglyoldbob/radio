@@ -48,6 +48,8 @@ version = "0.2.2"
 features = ["async", "serde", "prompt", "egui-prompt"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
+gpiocdev = "0.8.0"
+industrial-io = "0.6.1"
 nmrs = { version = "2.0.0", optional = true }
 
 [[bin]]
