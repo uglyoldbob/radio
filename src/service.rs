@@ -11,7 +11,10 @@ mod nmrs_extensions;
 use std::collections::HashSet;
 
 use std::{
-    collections::VecDeque, io::{Read, Seek, Write}, path::PathBuf, sync::Arc
+    collections::VecDeque,
+    io::{Read, Seek, Write},
+    path::PathBuf,
+    sync::Arc,
 };
 
 #[cfg(feature = "androidauto")]
@@ -449,7 +452,8 @@ async fn receive_message_from_app(
         match packet {
             uobradio_comms::MessageFromApp::GetHistoricalData => {
                 let mut c = common.lock().await;
-                let packet = MessageToApp::HistoricalSensorData(c.historical_sensors.clone().into());
+                let packet =
+                    MessageToApp::HistoricalSensorData(c.historical_sensors.clone().into());
                 packet.send_to_stream(&streamw).await?;
             }
             uobradio_comms::MessageFromApp::GetSensorData => {
@@ -1218,9 +1222,9 @@ async fn sensor_polling(
                 let mut c = common.lock().await;
                 c.sensors = c.system.get_sensor_data();
                 let c2 = c.sensors.clone();
-                c.historical_sensors.push_front(c2);
+                c.historical_sensors.push_back(c2);
                 if c.historical_sensors.len() > c.num_historical_records {
-                    c.historical_sensors.pop_back();
+                    c.historical_sensors.pop_front();
                 }
             }
             _ = interval_logging.tick() => {

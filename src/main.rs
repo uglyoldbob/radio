@@ -23,7 +23,7 @@ use eframe::egui::{self};
 use ringbuf::traits::{Consumer, Observer, Producer};
 #[cfg(feature = "androidauto")]
 use uobradio_comms::PendingAudioCommand;
-use uobradio_comms::{Pollable, Sensors};
+use uobradio_comms::{InclinometerOrientation, Pollable, Sensors};
 
 /// The trait that all main page elements must implement for the application
 #[enum_dispatch::enum_dispatch]
@@ -139,12 +139,32 @@ impl ConvenienceGui for egui::Ui {
     }
 }
 
+#[derive(Clone, Copy)]
+enum GaugeValue {
+    OrientationX,
+    OrientationY,
+    CoolantTemp,
+    OilTemp,
+    IntakeTemp,
+    ExhaustTemp,
+    FrontAxleTemp,
+    RearAxleTemp,
+    TranmissionTemp,
+    TCaseTemp,
+    EngineRpm,
+    MainVoltage,
+    OilPressure,
+    CoolantPressure,
+    VehicleSpeed,
+    FuelLevel,
+}
+
 /// The main page for the gui
 #[derive(Clone)]
 struct MainPage {
     pages: swipable::SwipablePages,
     historical: Pollable<Vec<Sensors>>,
-    history_popup: Option<u32>,
+    history_popup: Option<GaugeValue>,
 }
 
 impl MainPage {
@@ -276,7 +296,9 @@ impl SubwindowTrait for MainPage {
                     .with_max_inner_size(ctx.screen_rect().size() / 2.0);
                 ctx.show_viewport_immediate(id, builder, |ctx, _class| {
                     self.historical.poll_action(|| {
-                        common.radio.send_packet(uobradio_comms::MessageFromApp::GetHistoricalData);
+                        common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::GetHistoricalData);
                     });
                     egui::CentralPanel::default().show(ctx, |ui| {
                         if ui.big_button(theme, "Close").clicked() {
@@ -284,13 +306,74 @@ impl SubwindowTrait for MainPage {
                         }
                         ui.vertical_centered(|ui| {
                             if let Some(hp) = self.historical.value() {
-                                let points : Vec<[f64; 2]> = hp.iter().enumerate().map(|v| {
-                                    let a = match index {
-                                        0 => v.1.engine_rpm.unwrap_or_default() as f64,
-                                        _ => 0.0,
-                                    };
-                                    [v.0 as f64, a]
-                                }).collect();
+                                let points: Vec<[f64; 2]> = hp
+                                    .iter()
+                                    .enumerate()
+                                    .map(|v| {
+                                        let a = match index {
+                                            GaugeValue::OrientationX => {
+                                                v.1.orientation
+                                                    .clone()
+                                                    .unwrap_or(InclinometerOrientation {
+                                                        x: 0.0,
+                                                        y: 0.0,
+                                                    })
+                                                    .x
+                                                    as f64
+                                            }
+                                            GaugeValue::OrientationY => {
+                                                v.1.orientation
+                                                    .clone()
+                                                    .unwrap_or(InclinometerOrientation {
+                                                        x: 0.0,
+                                                        y: 0.0,
+                                                    })
+                                                    .y
+                                                    as f64
+                                            }
+                                            GaugeValue::CoolantTemp => {
+                                                v.1.engine_coolant_temp.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::OilTemp => {
+                                                v.1.engine_oil_temp.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::IntakeTemp => {
+                                                v.1.intake_air_temperature.unwrap_or_default()
+                                                    as f64
+                                            }
+                                            GaugeValue::ExhaustTemp => {
+                                                v.1.engine_exhaust_temp.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::FrontAxleTemp => {
+                                                v.1.front_diff_temp.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::RearAxleTemp => {
+                                                v.1.rear_diff_temp.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::TranmissionTemp => {
+                                                v.1.trans_temp.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::TCaseTemp => {
+                                                v.1.transfer_temp.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::EngineRpm => {
+                                                v.1.engine_rpm.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::MainVoltage => {
+                                                v.1.main_voltage.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::OilPressure => {
+                                                v.1.engine_oil_pressure.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::CoolantPressure => {
+                                                v.1.coolant_pressure.unwrap_or_default() as f64
+                                            }
+                                            GaugeValue::VehicleSpeed => 42.42,
+                                            GaugeValue::FuelLevel => 0.25,
+                                        };
+                                        [v.0 as f64, a]
+                                    })
+                                    .collect();
                                 let line = egui_plot::Line::new("Gauge", points);
                                 egui_plot::Plot::new("gauge_plot")
                                     .show(ui, |plot_ui| plot_ui.line(line));
@@ -316,18 +399,15 @@ impl SubwindowTrait for MainPage {
                                     major_interval: 6.0,
                                     minor_per_major: 5,
                                 })
-                                .draw(
-                                    ui,
-                                    sz,
-                                    rpm as f32 / 100.0,
-                                    |v| format!("{:.0}", v),
-                                ).clicked() {
-                                    self.history_popup = Some(0);
+                                .draw(ui, sz, rpm as f32 / 100.0, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::EngineRpm);
                                 }
                             }
 
                             if let Some(temp) = sensors.engine_coolant_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "ENGINE",
                                     unit: "F",
                                     min: 70.0,
@@ -337,7 +417,7 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(230.0),
                                     major_interval: 40.0,
                                     minor_per_major: 4,
-                                }
+                                })
                                 .draw(ui, sz, temp, |v| {
                                     if v < 130.0 {
                                         "C".to_string()
@@ -346,11 +426,15 @@ impl SubwindowTrait for MainPage {
                                     } else {
                                         "H".to_string()
                                     }
-                                });
+                                })
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::CoolantTemp);
+                                }
                             }
 
                             if let Some(temp) = sensors.engine_exhaust_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "EGR",
                                     unit: "F",
                                     min: 100.0,
@@ -360,13 +444,17 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(1100.0),
                                     major_interval: 150.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::ExhaustTemp);
                                 }
-                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
                         });
                         ui.horizontal(|ui| {
                             if let Some(temp) = sensors.engine_oil_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "OIL",
                                     unit: "F",
                                     min: 70.0,
@@ -376,12 +464,16 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(230.0),
                                     major_interval: 40.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::OilTemp);
                                 }
-                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
 
                             if let Some(speed) = sensors.engine_oil_pressure {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "OIL PRESSURE",
                                     unit: "PSI",
                                     min: 0.0,
@@ -391,12 +483,16 @@ impl SubwindowTrait for MainPage {
                                     red_start: None,
                                     major_interval: 20.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, speed, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::OilPressure);
                                 }
-                                .draw(ui, sz, speed, |v| format!("{:.0}", v));
                             }
 
                             if let Some(p) = sensors.coolant_pressure {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "COOLANT PRESSURE",
                                     unit: "PSI",
                                     min: 0.0,
@@ -406,8 +502,12 @@ impl SubwindowTrait for MainPage {
                                     red_start: None,
                                     major_interval: 5.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, p, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::CoolantPressure);
                                 }
-                                .draw(ui, sz, p, |v| format!("{:.0}", v));
                             }
                         });
                     }
@@ -417,7 +517,7 @@ impl SubwindowTrait for MainPage {
                         let sz = egui::Vec2::splat(200.0);
                         ui.horizontal(|ui| {
                             if let Some(temp) = sensors.front_diff_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "F AXLE",
                                     unit: "F",
                                     min: 70.0,
@@ -427,12 +527,16 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(230.0),
                                     major_interval: 40.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::FrontAxleTemp);
                                 }
-                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
 
                             if let Some(temp) = sensors.trans_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "TRANSMISSION",
                                     unit: "F",
                                     min: 70.0,
@@ -442,12 +546,16 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(230.0),
                                     major_interval: 40.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::TranmissionTemp);
                                 }
-                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
 
                             if let Some(v) = sensors.main_voltage {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "VOLTAGE",
                                     unit: "V",
                                     min: 10.0,
@@ -457,13 +565,17 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(15.0),
                                     major_interval: 1.0,
                                     minor_per_major: 5,
+                                })
+                                .draw(ui, sz, v, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::MainVoltage);
                                 }
-                                .draw(ui, sz, v, |v| format!("{:.0}", v));
                             }
                         });
                         ui.horizontal(|ui| {
                             if let Some(temp) = sensors.rear_diff_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "R AXLE",
                                     unit: "F",
                                     min: 70.0,
@@ -473,12 +585,16 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(230.0),
                                     major_interval: 40.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::RearAxleTemp);
                                 }
-                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
 
                             if let Some(temp) = sensors.transfer_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "XFER CASE",
                                     unit: "F",
                                     min: 70.0,
@@ -488,12 +604,16 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(230.0),
                                     major_interval: 40.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, temp, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::TCaseTemp);
                                 }
-                                .draw(ui, sz, temp, |v| format!("{:.0}", v));
                             }
 
                             if let Some(speed) = Some(0.5) {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "SPEEDOMETER",
                                     unit: "MPH",
                                     min: 0.0,
@@ -503,8 +623,12 @@ impl SubwindowTrait for MainPage {
                                     red_start: None,
                                     major_interval: 20.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, speed, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::VehicleSpeed);
                                 }
-                                .draw(ui, sz, speed, |v| format!("{:.0}", v));
                             }
                         });
                     }
@@ -514,7 +638,7 @@ impl SubwindowTrait for MainPage {
                         let sz = egui::Vec2::splat(200.0);
                         ui.horizontal(|ui| {
                             if let Some(level) = Some(0.42) {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "FUEL",
                                     unit: "",
                                     min: 0.0,
@@ -524,20 +648,22 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(0.12),
                                     major_interval: 0.25,
                                     minor_per_major: 2,
+                                })
+                                .draw(ui, sz, level, |v| match (v * 4.0).round() as i32 {
+                                    0 => "E".to_string(),
+                                    1 => "1/4".to_string(),
+                                    2 => "1/2".to_string(),
+                                    3 => "3/4".to_string(),
+                                    _ => "F".to_string(),
+                                })
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::FuelLevel);
                                 }
-                                .draw(ui, sz, level, |v| {
-                                    match (v * 4.0).round() as i32 {
-                                        0 => "E".to_string(),
-                                        1 => "1/4".to_string(),
-                                        2 => "1/2".to_string(),
-                                        3 => "3/4".to_string(),
-                                        _ => "F".to_string(),
-                                    }
-                                });
                             }
 
                             if let Some(temp) = sensors.engine_coolant_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "TEMP",
                                     unit: "",
                                     min: 70.0,
@@ -547,7 +673,7 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(230.0),
                                     major_interval: 40.0,
                                     minor_per_major: 4,
-                                }
+                                })
                                 .draw(ui, sz, temp, |v| {
                                     if v < 130.0 {
                                         "C".to_string()
@@ -556,11 +682,15 @@ impl SubwindowTrait for MainPage {
                                     } else {
                                         "H".to_string()
                                     }
-                                });
+                                })
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::CoolantTemp);
+                                }
                             }
 
                             if let Some(level) = Some(0.42) {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "FUEL",
                                     unit: "",
                                     min: 0.0,
@@ -570,21 +700,23 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(0.12),
                                     major_interval: 0.25,
                                     minor_per_major: 2,
+                                })
+                                .draw(ui, sz, level, |v| match (v * 4.0).round() as i32 {
+                                    0 => "E".to_string(),
+                                    1 => "1/4".to_string(),
+                                    2 => "1/2".to_string(),
+                                    3 => "3/4".to_string(),
+                                    _ => "F".to_string(),
+                                })
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::FuelLevel);
                                 }
-                                .draw(ui, sz, level, |v| {
-                                    match (v * 4.0).round() as i32 {
-                                        0 => "E".to_string(),
-                                        1 => "1/4".to_string(),
-                                        2 => "1/2".to_string(),
-                                        3 => "3/4".to_string(),
-                                        _ => "F".to_string(),
-                                    }
-                                });
                             }
                         });
                         ui.horizontal(|ui| {
                             if let Some(rpm) = sensors.engine_rpm {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "TACHOMETER",
                                     unit: "x100 RPM",
                                     min: 0.0,
@@ -594,17 +726,16 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(30.0),
                                     major_interval: 6.0,
                                     minor_per_major: 5,
+                                })
+                                .draw(ui, sz, rpm as f32 / 100.0, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::EngineRpm);
                                 }
-                                .draw(
-                                    ui,
-                                    sz,
-                                    rpm as f32 / 100.0,
-                                    |v| format!("{:.0}", v),
-                                );
                             }
 
                             if let Some(temp) = sensors.engine_coolant_temp {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "TEMP",
                                     unit: "",
                                     min: 70.0,
@@ -614,7 +745,7 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(230.0),
                                     major_interval: 40.0,
                                     minor_per_major: 4,
-                                }
+                                })
                                 .draw(ui, sz, temp, |v| {
                                     if v < 130.0 {
                                         "C".to_string()
@@ -623,11 +754,15 @@ impl SubwindowTrait for MainPage {
                                     } else {
                                         "H".to_string()
                                     }
-                                });
+                                })
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::CoolantTemp);
+                                }
                             }
 
                             if let Some(speed) = Some(0.5) {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "SPEEDOMETER",
                                     unit: "MPH",
                                     min: 0.0,
@@ -637,8 +772,12 @@ impl SubwindowTrait for MainPage {
                                     red_start: None,
                                     major_interval: 20.0,
                                     minor_per_major: 4,
+                                })
+                                .draw(ui, sz, speed, |v| format!("{:.0}", v))
+                                .clicked()
+                                {
+                                    self.history_popup = Some(GaugeValue::VehicleSpeed);
                                 }
-                                .draw(ui, sz, speed, |v| format!("{:.0}", v));
                             }
                         });
                     }
@@ -1118,8 +1257,11 @@ impl eframe::App for MyEguiApp {
             let frames = self.common.android_auto_video_decoder.drain_frames();
             if let Some(image) = frames.last().cloned() {
                 if self.common.android_auto_texture.is_none() {
-                    self.common.android_auto_texture =
-                        Some(ui.ctx().load_texture("android_auto", image, egui::TextureOptions::LINEAR));
+                    self.common.android_auto_texture = Some(ui.ctx().load_texture(
+                        "android_auto",
+                        image,
+                        egui::TextureOptions::LINEAR,
+                    ));
                 } else if let Some(t) = &mut self.common.android_auto_texture {
                     t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
                 }
@@ -1238,47 +1380,49 @@ impl eframe::App for MyEguiApp {
                 .with_title("Bluetooth passkey")
                 .with_always_on_top()
                 .with_max_inner_size(ui.ctx().screen_rect().size() / 2.0);
-            ui.ctx().show_viewport_immediate(id, builder, |ctx, _class| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.label(format!("Passkey: {:06}", 1));
-                    ui.label(format!("Passkey: {:06}", pass));
+            ui.ctx()
+                .show_viewport_immediate(id, builder, |ctx, _class| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.label(format!("Passkey: {:06}", 1));
+                        ui.label(format!("Passkey: {:06}", pass));
+                    });
                 });
-            });
         } else if let Some(pass) = self.common.radio.confirm_passkey {
             let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
             let builder = egui::ViewportBuilder::default()
                 .with_title("Bluetooth passkey")
                 .with_always_on_top()
                 .with_max_inner_size(ui.ctx().screen_rect().size() / 2.0);
-            ui.ctx().show_viewport_immediate(id, builder, |ctx, _class| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    ui.vertical_centered(|ui| {
-                        let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
-                        ui.label(t);
-                        if ui.big_button(&self.theme, "Confirm").clicked() {
-                            let r = bluetooth_rust::ResponseToPasskey::Yes;
-                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            let _ = self.common.radio.send_packet(packet);
-                            log::info!("Got confirm request from user for bluetooth passkey");
-                        }
-                        if ui.big_button(&self.theme, "Reject").clicked() {
-                            let r = bluetooth_rust::ResponseToPasskey::No;
-                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            let _ = self.common.radio.send_packet(packet);
-                            log::info!("Got reject request from user for bluetooth passkey");
-                        }
-                        if ui.big_button(&self.theme, "Cancel").clicked() {
-                            let r = bluetooth_rust::ResponseToPasskey::Cancel;
-                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            let _ = self.common.radio.send_packet(packet);
-                            log::info!("Got cancel request from user for bluetooth passkey");
-                        }
-                    })
+            ui.ctx()
+                .show_viewport_immediate(id, builder, |ctx, _class| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.vertical_centered(|ui| {
+                            let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
+                            ui.label(t);
+                            if ui.big_button(&self.theme, "Confirm").clicked() {
+                                let r = bluetooth_rust::ResponseToPasskey::Yes;
+                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                                let _ = self.common.radio.send_packet(packet);
+                                log::info!("Got confirm request from user for bluetooth passkey");
+                            }
+                            if ui.big_button(&self.theme, "Reject").clicked() {
+                                let r = bluetooth_rust::ResponseToPasskey::No;
+                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                                let _ = self.common.radio.send_packet(packet);
+                                log::info!("Got reject request from user for bluetooth passkey");
+                            }
+                            if ui.big_button(&self.theme, "Cancel").clicked() {
+                                let r = bluetooth_rust::ResponseToPasskey::Cancel;
+                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                                let _ = self.common.radio.send_packet(packet);
+                                log::info!("Got cancel request from user for bluetooth passkey");
+                            }
+                        })
+                    });
                 });
-            });
         }
         {
             egui::Panel::top("status_bar")
@@ -1395,9 +1539,9 @@ impl eframe::App for MyEguiApp {
                     }
                 });
 
-            if let Some(sub) = self
-                .subwindow
-                .update(ui.ctx(), frame, &mut self.common, &mut self.theme)
+            if let Some(sub) =
+                self.subwindow
+                    .update(ui.ctx(), frame, &mut self.common, &mut self.theme)
             {
                 self.subwindow = sub;
             }

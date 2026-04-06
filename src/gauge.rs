@@ -44,7 +44,13 @@ impl Gauge {
     /// Allocate space in the UI and draw the gauge at the given value.
     /// `label_fn` maps a tick value to its display string.
     /// Returns a `Response` so callers can detect clicks, hovers, etc.
-    pub fn draw(&self, ui: &mut Ui, sz: Vec2, val: f32, label_fn: impl Fn(f32) -> String) -> egui::Response {
+    pub fn draw(
+        &self,
+        ui: &mut Ui,
+        sz: Vec2,
+        val: f32,
+        label_fn: impl Fn(f32) -> String,
+    ) -> egui::Response {
         let (rect, response) = ui.allocate_exact_size(sz, Sense::click());
         if ui.is_rect_visible(rect) {
             let p = ui.painter_at(rect);
