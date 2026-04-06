@@ -237,6 +237,8 @@ pub struct Sensors {
     pub engine_coolant_temp: Option<f32>,
     /// The engine oil temperature
     pub engine_oil_temp: Option<f32>,
+    /// The intake air temperature
+    pub intake_air_temperature: Option<f32>,
     /// The engine exhaust temperature
     pub engine_exhaust_temp: Option<f32>,
     /// Front differential temperature
@@ -1173,13 +1175,26 @@ pub struct VolatileSettings {
 }
 
 /// Non-volatile settings that should be saved to nonvolatile storage of some kind
-#[derive(Clone, Debug, Default, PartialEq, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct NonvolatileSettings {
     /// The hvac settings
     pub hvac: hvac::Settings,
     #[cfg(feature = "wifi")]
     /// The wifi configuration
     pub wifi_config: wireless::NvSettings,
+    /// The interval for logging
+    pub logging_interval_seconds: u8,
+}
+
+impl Default for NonvolatileSettings {
+    fn default() -> Self {
+        Self {
+            hvac: hvac::Settings::default(),
+            #[cfg(feature = "wifi")]
+            wifi_config: wireless::NvSettings::default(),
+            logging_interval_seconds: 1,
+        }
+    }
 }
 
 impl NonvolatileSettings {

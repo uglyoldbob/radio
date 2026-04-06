@@ -137,7 +137,27 @@ impl SubwindowTrait for Settings {
             });
         egui::CentralPanel::default().show(ctx, |ui| {
             match common.vsettings.settings.tab {
-                uobradio_comms::settings::Subsetting::General => {}
+                uobradio_comms::settings::Subsetting::General => {
+                    let mut changed = false;
+                    ui.horizontal(|ui| {
+                        ui.label("Logging interval (seconds): ");
+                        for v in [1,2,5,10] {
+                            if ui.selectable_button(theme, common.settings.logging_interval_seconds == v, &v.to_string()).clicked() {
+                                changed = true;
+                                common.settings.logging_interval_seconds = v;
+                            }
+                        }
+                        if changed {
+                            let _ = common.radio.send_packet(
+                                uobradio_comms::MessageFromApp::NewSettings {
+                                    settings: common.settings.clone(),
+                                    #[cfg(feature = "wifi")]
+                                    wifi_reconnect: false,
+                                },
+                            );
+                        }
+                    });
+                }
                 uobradio_comms::settings::Subsetting::Video => {
                     let mut size = ui.available_size();
                     size.x *= 0.95;

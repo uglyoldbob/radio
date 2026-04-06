@@ -76,6 +76,8 @@ struct SystemSettings {
     front_diff_temp: TemperatureSensor,
     /// Rear differential temperature
     rear_diff_temp: TemperatureSensor,
+    /// Intake air temperature
+    intake_air: TemperatureSensor,
     /// The engine oil pressure (psi)
     engine_oil_pressure: PressureSensor,
     /// The coolant pressure (psi)
@@ -142,6 +144,7 @@ impl SystemSettings {
         use sensors::TemperatureSensorTrait;
         use sensors::VoltageSensorTrait;
         uobradio_comms::Sensors {
+            intake_air_temperature: Some(self.intake_air.poll().fahrenheit()),
             orientation: Some(self.orientation.poll()),
             engine_coolant_temp: Some(self.engine_coolant_temp.poll().fahrenheit()),
             engine_oil_temp: Some(self.engine_oil_temp.poll().fahrenheit()),
@@ -288,7 +291,6 @@ impl SwupdateChannel {
                 let (write, mut read) = ws_stream.split();
                 service::log::error!("About to read websocket messages");
                 while let Some(Ok(message)) = read.next().await {
-                    service::log::error!("The message received is {:?}", message);
                     let a = message
                         .to_text()
                         .map(|a| a.to_string())
@@ -384,6 +386,8 @@ pub struct AppUserCommon {
     shutdown_send: tokio::sync::broadcast::Sender<()>,
     #[cfg(feature = "androidauto")]
     token: android_auto::AndroidAutoSetup,
+    /// The channel for updating the sensor polling thread
+    polling_channel: tokio::sync::mpsc::Sender<MessageToSensorPollThread>,
 }
 
 async fn receive_message_from_app(
@@ -825,6 +829,7 @@ async fn receive_message_from_app(
                 wifi_reconnect,
             } => {
                 let mut common2 = common.lock().await;
+                common2.polling_channel.send(MessageToSensorPollThread::NewLogInterval(settings.logging_interval_seconds));
                 common2.settings = settings;
                 log::info!("Saving nonvolatile config to {:?}", common2.args.nvconfig);
                 common2.settings.save(&common2.args.nvconfig);
@@ -1033,13 +1038,27 @@ impl Default for SensorLogConfig {
 impl SensorLogConfig {
     /// Start the sensor log
     pub async fn start_log(&mut self) -> Result<SensorLog, String> {
-        let c = self
-            .base_path
-            .read_dir()
-            .map_err(|e| e.to_string())?
-            .count();
+        let mut p = self.base_path.clone();
+        p.push("index");
+        let i: u32 = {
+            match std::fs::File::options().read(true).write(true).open(&p) {
+                Ok(mut f) => {
+                    let mut contents = String::new();
+                    f.read_to_string(&mut contents).map_err(|e| e.to_string())?;
+                    let i = contents.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                    let j: u32 = i + 1;
+                    f.write_all(j.to_string().as_bytes()).map_err(|e| e.to_string())?;
+                    i
+                }
+                Err(_e) => {
+                    let mut f = std::fs::File::create_new(p).map_err(|e| e.to_string())?;
+                    f.write_all("0".as_bytes());
+                    0
+                }
+            }
+        };
         let mut p2 = self.base_path.clone();
-        p2.push(format!("{}.csv", c));
+        p2.push(format!("{}.csv", i));
         SensorLog::new(p2)
     }
 }
@@ -1065,6 +1084,8 @@ struct SensorLogRecord {
     pub engine_oil_temp: f32,
     /// The engine exhaust temperature
     pub engine_exhaust_temp: f32,
+    /// Intake air temperatue for the engine
+    pub intake_air_temperature: f32,
     /// Front differential temperature
     pub front_diff_temp: f32,
     /// Rear differential temperature
@@ -1115,6 +1136,7 @@ impl SensorLog {
             engine_coolant_temp: sensors.engine_coolant_temp.unwrap_or_default(),
             engine_oil_temp: sensors.engine_oil_temp.unwrap_or_default(),
             engine_exhaust_temp: sensors.engine_exhaust_temp.unwrap_or_default(),
+            intake_air_temperature: sensors.intake_air_temperature.unwrap_or_default(),
             front_diff_temp: sensors.front_diff_temp.unwrap_or_default(),
             rear_diff_temp: sensors.rear_diff_temp.unwrap_or_default(),
             engine_oil_pressure: sensors.engine_oil_pressure.unwrap_or_default(),
@@ -1130,13 +1152,24 @@ impl SensorLog {
     }
 }
 
+enum MessageToSensorPollThread {
+    RestartLog,
+    NewLogInterval(u8),
+}
+
 /// Polls the sensors in the system
 async fn sensor_polling(
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
     mut kill: tokio::sync::broadcast::Receiver<()>,
+    mut recv: tokio::sync::mpsc::Receiver<MessageToSensorPollThread>,
 ) -> Result<(), String> {
     let mut interval_fast = tokio::time::interval(std::time::Duration::from_millis(100));
     let mut interval_1s = tokio::time::interval(std::time::Duration::from_millis(1000));
+    let mut interval_log_time = {
+        let c = common.lock().await;
+        c.settings.logging_interval_seconds as u64
+    };
+    let mut interval_logging = tokio::time::interval(std::time::Duration::from_millis(interval_log_time));
     let mut interval_1500ms = tokio::time::interval(std::time::Duration::from_millis(1500));
 
     let mut logger = None;
@@ -1148,9 +1181,31 @@ async fn sensor_polling(
     }
     loop {
         tokio::select! {
+            Some(m) = recv.recv() => {
+                match m {
+                    MessageToSensorPollThread::RestartLog => {
+                        let mut c = common.lock().await;
+                        if let Ok(log) = c.system.log.start_log().await {
+                            logger = Some(log);
+                        }
+                    }
+                    MessageToSensorPollThread::NewLogInterval(i) => {
+                        if i as u64 != interval_log_time {
+                            interval_log_time = i as u64;
+                            interval_logging = tokio::time::interval(std::time::Duration::from_millis(interval_log_time));
+                        }
+                    }
+                }
+            }
             _ = interval_fast.tick() => {
                 let mut c = common.lock().await;
                 c.sensors = c.system.get_sensor_data();
+            }
+            _ = interval_logging.tick() => {
+                if let Some(log) = &mut logger {
+                    let c = common.lock().await;
+                    log.log_entry(c.hvac_public.clone(), c.sensors.clone()).await;
+                }
             }
             _ = interval_1s.tick() => {
                 use crate::sensors::TemperatureSensorTrait;
@@ -1161,9 +1216,6 @@ async fn sensor_polling(
                 c.hvac.set_hvac_vent_temperature(vent_temp.fahrenheit());
 
                 c.hvac_public = c.hvac.get_public_data();
-                if let Some(log) = &mut logger {
-                    log.log_entry(c.hvac_public.clone(), c.sensors.clone()).await;
-                }
             }
             _ = interval_1500ms.tick() => {
             }
@@ -1669,6 +1721,7 @@ async fn smain() {
         swupdate.run().await;
     });
     let shutdown_recv2 = shutdown_send.subscribe();
+    let polling_channel = tokio::sync::mpsc::channel(5);
 
     let mut hvac = HvacController::new();
     hvac.set_ac_setpoint(s.hvac.ac_target);
@@ -1709,6 +1762,7 @@ async fn smain() {
         token,
         hvac_public: PublicData::default(),
         sensors: Sensors::default(),
+        polling_channel: polling_channel.0,
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(auc));
@@ -1740,7 +1794,7 @@ async fn smain() {
     });
     let common2 = common.clone();
     tasks.spawn(async move {
-        sensor_polling(common2, shutdown_recv2)
+        sensor_polling(common2, shutdown_recv2, polling_channel.1)
             .await
             .inspect_err(|a| log::error!("Sensor polling ended: {:?}", a))
     });
