@@ -22,7 +22,7 @@ impl SwipablePages {
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui, add_contents: impl Fn(&mut egui::Ui, usize)) {
+    pub fn show(&mut self, ui: &mut egui::Ui, mut add_contents: impl FnMut(&mut egui::Ui, usize)) {
         let width = ui.available_width();
         let height = ui.available_height();
         let rect = ui.available_rect_before_wrap();

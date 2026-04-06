@@ -12,9 +12,10 @@ chrono = { version = "0.4.43", features = ["serde"] }
 clap = { version = "4.5.38", features = ["derive"] }
 cpal = "0.15.3"
 csv = "1.4.0"
-eframe = { version = "0.31.1" }
-egui = { version = "0.31.1", features = ["serde"] }
-egui_extras = { version = "0.31.1", features = ["all_loaders"] }
+eframe = { version = "0.34.1", default-features = false, features = ["accesskit", "default_fonts", "wayland", "glow"] }
+egui = { version = "0.34.1", features = ["serde"] }
+egui_extras = { version = "0.34.1", features = ["all_loaders"] }
+egui_plot = "0.35.0"
 enum_dispatch = "0.3.13"
 ffimage = "0.10.0"
 ffimage_yuv = "0.10.0"

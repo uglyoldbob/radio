@@ -97,6 +97,7 @@ impl From<PixelImage<RgbPixel>> for egui::ColorImage {
             .map(|p| egui::Color32::from_rgb(p.colors[0], p.colors[1], p.colors[2]))
             .collect();
         Self {
+            source_size: [value.width as f32, value.height as f32].into(),
             size: [value.width as usize, value.height as usize],
             pixels,
         }

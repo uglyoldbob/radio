@@ -7,7 +7,7 @@ mod hvac;
 pub use hvac::*;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     io::{Read, Write},
 };
 
@@ -42,8 +42,8 @@ pub enum RadioReceiveStatus {
 
 /// A type that allows for polling of a value, without sending a whole ton of requests.
 /// This limits the number of outstanding requests to one. This is useful for queries that take a while to run, compared to how often the data is displayed to the user.
-#[derive(Debug)]
-pub enum Pollable<T: std::fmt::Debug> {
+#[derive(Clone, Debug)]
+pub enum Pollable<T: Clone + std::fmt::Debug> {
     /// The variable is idle
     Idle {
         /// The last known value
@@ -63,13 +63,13 @@ pub enum Pollable<T: std::fmt::Debug> {
     },
 }
 
-impl<T: std::fmt::Debug> Default for Pollable<T> {
+impl<T: Clone + std::fmt::Debug> Default for Pollable<T> {
     fn default() -> Self {
         Self::Idle { last_known: None }
     }
 }
 
-impl<T: std::fmt::Debug> Pollable<T> {
+impl<T: Clone + std::fmt::Debug> Pollable<T> {
     /// Try to get the contained value
     pub fn value(&self) -> Option<&T> {
         match self {
@@ -493,6 +493,8 @@ pub enum MessageFromApp {
     GetUpdateProgress,
     /// Query all sensor data
     GetSensorData,
+    /// Get all historical data
+    GetHistoricalData,
 }
 
 #[cfg(feature = "bluetooth")]
@@ -606,6 +608,8 @@ pub enum MessageToApp {
     NoUpdateInProgress,
     /// All the sensor data
     SensorData(Sensors),
+    /// All the historical data
+    HistoricalSensorData(Vec<Sensors>),
 }
 
 impl MessageFromApp {
@@ -711,6 +715,7 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::HistoricalSensorData(_) => {}
                                         MessageToApp::SensorData(s) => {
                                             self.sensors.new_value_optional(Some(s.clone()));
                                         }

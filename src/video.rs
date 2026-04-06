@@ -82,6 +82,7 @@ impl SubwindowTrait for Video {
                             if let Some(image) = &vsrc.image {
                                 if let Some(pd) = &image.pixel_data {
                                     let image = egui::ColorImage {
+                                        source_size: [image.width as f32, image.height as f32].into(),
                                         size: [image.width as usize, image.height as usize],
                                         pixels: pd.get_egui(),
                                     };

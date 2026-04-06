@@ -102,6 +102,7 @@ impl InnerDecoder {
                                 let h = frame.actual_height;
                                 let pixels = imxvpuapi2::nv12_to_egui(&frame);
                                 frames.push(egui::ColorImage {
+                                    source_size: [w as f32, h as f32].into(),
                                     size: [w, h],
                                     pixels,
                                 });
@@ -119,6 +120,7 @@ impl InnerDecoder {
                             for (nv12, w, h) in nv12_frames {
                                 let pixels = v4l2m2m::nv12_to_egui(&nv12, w, h);
                                 frames.push(egui::ColorImage {
+                                    source_size: [w as f32, h as f32].into(),
                                     size: [w as usize, h as usize],
                                     pixels,
                                 });
@@ -159,6 +161,7 @@ impl InnerDecoder {
                                         .map(|p| egui::Color32::from_rgb(p[0], p[1], p[2]))
                                         .collect();
                                     frames.push(egui::ColorImage {
+                                        source_size: [w as f32, h as f32].into(),
                                         size: [w, h],
                                         pixels,
                                     });
@@ -180,6 +183,7 @@ impl InnerDecoder {
                             let (w, h) = image.dimensions_uv();
                             let ei = uobradio_comms::video::PixelData::Rgb(rgb_raw);
                             frames.push(egui::ColorImage {
+                                source_size: [w as f32, h as f32].into(),
                                 size: [w * 2, h * 2],
                                 pixels: ei.get_egui(),
                             });

@@ -43,15 +43,16 @@ impl Gauge {
 
     /// Allocate space in the UI and draw the gauge at the given value.
     /// `label_fn` maps a tick value to its display string.
-    pub fn draw(&self, ui: &mut Ui, sz: Vec2, val: f32, label_fn: impl Fn(f32) -> String) {
-        let (rect, _) = ui.allocate_exact_size(sz, Sense::hover());
-        if !ui.is_rect_visible(rect) {
-            return;
+    /// Returns a `Response` so callers can detect clicks, hovers, etc.
+    pub fn draw(&self, ui: &mut Ui, sz: Vec2, val: f32, label_fn: impl Fn(f32) -> String) -> egui::Response {
+        let (rect, response) = ui.allocate_exact_size(sz, Sense::click());
+        if ui.is_rect_visible(rect) {
+            let p = ui.painter_at(rect);
+            let c = rect.center();
+            let r = sz.x.min(sz.y) * 0.5 - 4.0;
+            self.paint(&p, c, r, val, label_fn);
         }
-        let p = ui.painter_at(rect);
-        let c = rect.center();
-        let r = sz.x.min(sz.y) * 0.5 - 4.0;
-        self.paint(&p, c, r, val, label_fn);
+        response
     }
 
     /// Core painter — draws everything onto `p` centred at `c` with radius `r`.

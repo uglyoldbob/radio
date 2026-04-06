@@ -1118,7 +1118,7 @@ impl VirtualKeyboard {
 
         let rect = Rect::from_min_size(min, size);
         let resp = ui.allocate_rect(rect, Sense::click());
-        let text = WidgetText::RichText(RichText::new(&button.text).monospace()).into_galley(
+        let text = WidgetText::RichText(std::sync::Arc::new(RichText::new(&button.text).monospace())).into_galley(
             ui,
             None,
             size.y,

@@ -212,6 +212,7 @@ impl SubwindowTrait for Settings {
                                                 y: image.height as f32 * zoom,
                                             };
                                             let image = egui::ColorImage {
+                                                source_size: [image.width as f32, image.height as f32].into(),
                                                 size: [image.width as usize, image.height as usize],
                                                 pixels: pd.get_egui(),
                                             };

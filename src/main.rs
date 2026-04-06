@@ -23,6 +23,7 @@ use eframe::egui::{self};
 use ringbuf::traits::{Consumer, Observer, Producer};
 #[cfg(feature = "androidauto")]
 use uobradio_comms::PendingAudioCommand;
+use uobradio_comms::{Pollable, Sensors};
 
 /// The trait that all main page elements must implement for the application
 #[enum_dispatch::enum_dispatch]
@@ -139,15 +140,19 @@ impl ConvenienceGui for egui::Ui {
 }
 
 /// The main page for the gui
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct MainPage {
     pages: swipable::SwipablePages,
+    historical: Pollable<Vec<Sensors>>,
+    history_popup: Option<u32>,
 }
 
 impl MainPage {
     pub fn new() -> Self {
         Self {
             pages: swipable::SwipablePages::new(3),
+            historical: Default::default(),
+            history_popup: None,
         }
     }
 }
@@ -262,13 +267,45 @@ impl SubwindowTrait for MainPage {
                     }
                 }
             }
+            if let Some(index) = self.history_popup {
+                let id: egui::ViewportId = egui::ViewportId::from_hash_of("gauge_history");
+                let builder = egui::ViewportBuilder::default()
+                    .with_title("Gauge history")
+                    .with_always_on_top()
+                    .with_position((ctx.screen_rect().size() / 4.0).to_pos2())
+                    .with_max_inner_size(ctx.screen_rect().size() / 2.0);
+                ctx.show_viewport_immediate(id, builder, |ctx, _class| {
+                    self.historical.poll_action(|| {
+                        common.radio.send_packet(uobradio_comms::MessageFromApp::GetHistoricalData);
+                    });
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        if ui.big_button(theme, "Close").clicked() {
+                            self.history_popup = None;
+                        }
+                        ui.vertical_centered(|ui| {
+                            if let Some(hp) = self.historical.value() {
+                                let points : Vec<[f64; 2]> = hp.iter().enumerate().map(|v| {
+                                    let a = match index {
+                                        0 => v.1.engine_rpm.unwrap_or_default() as f64,
+                                        _ => 0.0,
+                                    };
+                                    [v.0 as f64, a]
+                                }).collect();
+                                let line = egui_plot::Line::new("Gauge", points);
+                                egui_plot::Plot::new("gauge_plot")
+                                    .show(ui, |plot_ui| plot_ui.line(line));
+                            }
+                        })
+                    });
+                });
+            }
             self.pages.show(ui, |ui, page| match page {
                 0 => {
                     if let Some(sensors) = common.radio.sensors.value() {
                         let sz = egui::Vec2::splat(200.0);
                         ui.horizontal(|ui| {
                             if let Some(rpm) = sensors.engine_rpm {
-                                gauge::Gauge {
+                                if (gauge::Gauge {
                                     label: "TACHOMETER",
                                     unit: "x100 RPM",
                                     min: 6.0,
@@ -278,13 +315,15 @@ impl SubwindowTrait for MainPage {
                                     red_start: Some(30.0),
                                     major_interval: 6.0,
                                     minor_per_major: 5,
-                                }
+                                })
                                 .draw(
                                     ui,
                                     sz,
                                     rpm as f32 / 100.0,
                                     |v| format!("{:.0}", v),
-                                );
+                                ).clicked() {
+                                    self.history_popup = Some(0);
+                                }
                             }
 
                             if let Some(temp) = sensors.engine_coolant_temp {
@@ -621,12 +660,18 @@ impl SubwindowTrait for MainPage {
         &mut self,
         _settings: &mut uobradio_comms::NonvolatileSettings,
         _vsettings: &mut uobradio_comms::VolatileSettings,
-        _packet: &uobradio_comms::MessageToApp,
+        packet: &uobradio_comms::MessageToApp,
     ) {
+        match packet {
+            uobradio_comms::MessageToApp::HistoricalSensorData(h) => {
+                self.historical.new_value_optional(Some(h.clone()));
+            }
+            _ => {}
+        }
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 #[enum_dispatch::enum_dispatch(SubwindowTrait)]
 /// The types of subwindows that can exist for the main page
 enum Subwindow {
@@ -974,8 +1019,8 @@ impl eframe::App for MyEguiApp {
         self.common.keyboard.bump_events(ctx, raw_input);
     }
 
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        ctx.request_repaint();
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        ui.ctx().request_repaint();
         self.common.radio.connect();
         if self.common.radio.ping().is_err() {
             self.common.radio.disconnect();
@@ -1074,7 +1119,7 @@ impl eframe::App for MyEguiApp {
             if let Some(image) = frames.last().cloned() {
                 if self.common.android_auto_texture.is_none() {
                     self.common.android_auto_texture =
-                        Some(ctx.load_texture("android_auto", image, egui::TextureOptions::LINEAR));
+                        Some(ui.ctx().load_texture("android_auto", image, egui::TextureOptions::LINEAR));
                 } else if let Some(t) = &mut self.common.android_auto_texture {
                     t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
                 }
@@ -1090,6 +1135,7 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::HistoricalSensorData(_) => {}
                 uobradio_comms::MessageToApp::SensorData(_) => {}
                 #[cfg(feature = "wifi")]
                 uobradio_comms::MessageToApp::KnownWifiNetworks(list) => {
@@ -1184,15 +1230,15 @@ impl eframe::App for MyEguiApp {
                     wifi_reconnect: settings_changed,
                 });
         }
-        egui_extras::install_image_loaders(ctx);
+        egui_extras::install_image_loaders(ui.ctx());
         #[cfg(feature = "bluetooth")]
         if let Some(pass) = &self.common.radio.display_passkey {
             let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
             let builder = egui::ViewportBuilder::default()
                 .with_title("Bluetooth passkey")
                 .with_always_on_top()
-                .with_max_inner_size(ctx.screen_rect().size() / 2.0);
-            ctx.show_viewport_immediate(id, builder, |ctx, _class| {
+                .with_max_inner_size(ui.ctx().screen_rect().size() / 2.0);
+            ui.ctx().show_viewport_immediate(id, builder, |ctx, _class| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.label(format!("Passkey: {:06}", 1));
                     ui.label(format!("Passkey: {:06}", pass));
@@ -1203,8 +1249,8 @@ impl eframe::App for MyEguiApp {
             let builder = egui::ViewportBuilder::default()
                 .with_title("Bluetooth passkey")
                 .with_always_on_top()
-                .with_max_inner_size(ctx.screen_rect().size() / 2.0);
-            ctx.show_viewport_immediate(id, builder, |ctx, _class| {
+                .with_max_inner_size(ui.ctx().screen_rect().size() / 2.0);
+            ui.ctx().show_viewport_immediate(id, builder, |ctx, _class| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
                         let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
@@ -1235,13 +1281,13 @@ impl eframe::App for MyEguiApp {
             });
         }
         {
-            egui::TopBottomPanel::top("status_bar")
+            egui::Panel::top("status_bar")
                 .frame(
                     egui::Frame::new()
                         .fill(self.theme.bg_primary)
                         .inner_margin(10.0),
                 )
-                .show(ctx, |ui| {
+                .show(ui.ctx(), |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 20.0;
 
@@ -1275,15 +1321,15 @@ impl eframe::App for MyEguiApp {
                         });
                     });
                 });
-            egui::SidePanel::left("Main Icons")
+            egui::Panel::left("Main Icons")
                 .resizable(false)
                 .frame(
-                    egui::Frame::side_top_panel(&ctx.style())
+                    egui::Frame::side_top_panel(&ui.ctx().style())
                         .fill(self.theme.bg_primary)
                         .inner_margin(10.0)
                         .outer_margin(0.0),
                 )
-                .show(ctx, |ui| {
+                .show(ui.ctx(), |ui| {
                     {
                         let vw = Subwindow::MainPage(MainPage::new());
                         if vw.card(
@@ -1351,7 +1397,7 @@ impl eframe::App for MyEguiApp {
 
             if let Some(sub) = self
                 .subwindow
-                .update(ctx, frame, &mut self.common, &mut self.theme)
+                .update(ui.ctx(), frame, &mut self.common, &mut self.theme)
             {
                 self.subwindow = sub;
             }

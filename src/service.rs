@@ -11,9 +11,7 @@ mod nmrs_extensions;
 use std::collections::HashSet;
 
 use std::{
-    io::{Read, Write},
-    path::PathBuf,
-    sync::Arc,
+    collections::VecDeque, io::{Read, Seek, Write}, path::PathBuf, sync::Arc
 };
 
 #[cfg(feature = "androidauto")]
@@ -377,6 +375,10 @@ pub struct AppUserCommon {
     hvac: HvacController,
     /// The last sensor data
     sensors: Sensors,
+    /// The historic sensor data for showing guage history
+    historical_sensors: VecDeque<Sensors>,
+    /// The number of records to keep
+    num_historical_records: usize,
     /// Public hvac data
     hvac_public: uobradio_comms::PublicData,
     #[cfg(feature = "swupdate")]
@@ -445,6 +447,11 @@ async fn receive_message_from_app(
             }
         }
         match packet {
+            uobradio_comms::MessageFromApp::GetHistoricalData => {
+                let mut c = common.lock().await;
+                let packet = MessageToApp::HistoricalSensorData(c.historical_sensors.clone().into());
+                packet.send_to_stream(&streamw).await?;
+            }
             uobradio_comms::MessageFromApp::GetSensorData => {
                 let mut c = common.lock().await;
                 let packet = MessageToApp::SensorData(c.sensors.clone());
@@ -829,7 +836,12 @@ async fn receive_message_from_app(
                 wifi_reconnect,
             } => {
                 let mut common2 = common.lock().await;
-                common2.polling_channel.send(MessageToSensorPollThread::NewLogInterval(settings.logging_interval_seconds));
+                let _ = common2
+                    .polling_channel
+                    .send(MessageToSensorPollThread::NewLogInterval(
+                        settings.logging_interval_seconds,
+                    ))
+                    .await;
                 common2.settings = settings;
                 log::info!("Saving nonvolatile config to {:?}", common2.args.nvconfig);
                 common2.settings.save(&common2.args.nvconfig);
@@ -1045,14 +1057,18 @@ impl SensorLogConfig {
                 Ok(mut f) => {
                     let mut contents = String::new();
                     f.read_to_string(&mut contents).map_err(|e| e.to_string())?;
-                    let i = contents.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+                    let i = contents
+                        .parse()
+                        .map_err(|e: std::num::ParseIntError| e.to_string())?;
                     let j: u32 = i + 1;
-                    f.write_all(j.to_string().as_bytes()).map_err(|e| e.to_string())?;
+                    f.rewind().map_err(|e| e.to_string())?;
+                    f.write_all(j.to_string().as_bytes())
+                        .map_err(|e| e.to_string())?;
                     i
                 }
                 Err(_e) => {
                     let mut f = std::fs::File::create_new(p).map_err(|e| e.to_string())?;
-                    f.write_all("0".as_bytes());
+                    f.write_all("1".as_bytes()).map_err(|e| e.to_string())?;
                     0
                 }
             }
@@ -1167,9 +1183,10 @@ async fn sensor_polling(
     let mut interval_1s = tokio::time::interval(std::time::Duration::from_millis(1000));
     let mut interval_log_time = {
         let c = common.lock().await;
-        c.settings.logging_interval_seconds as u64
+        c.settings.logging_interval_seconds as u64 * 1000
     };
-    let mut interval_logging = tokio::time::interval(std::time::Duration::from_millis(interval_log_time));
+    let mut interval_logging =
+        tokio::time::interval(std::time::Duration::from_millis(interval_log_time));
     let mut interval_1500ms = tokio::time::interval(std::time::Duration::from_millis(1500));
 
     let mut logger = None;
@@ -1191,7 +1208,7 @@ async fn sensor_polling(
                     }
                     MessageToSensorPollThread::NewLogInterval(i) => {
                         if i as u64 != interval_log_time {
-                            interval_log_time = i as u64;
+                            interval_log_time = i as u64 * 1000;
                             interval_logging = tokio::time::interval(std::time::Duration::from_millis(interval_log_time));
                         }
                     }
@@ -1200,6 +1217,11 @@ async fn sensor_polling(
             _ = interval_fast.tick() => {
                 let mut c = common.lock().await;
                 c.sensors = c.system.get_sensor_data();
+                let c2 = c.sensors.clone();
+                c.historical_sensors.push_front(c2);
+                if c.historical_sensors.len() > c.num_historical_records {
+                    c.historical_sensors.pop_back();
+                }
             }
             _ = interval_logging.tick() => {
                 if let Some(log) = &mut logger {
@@ -1762,6 +1784,8 @@ async fn smain() {
         token,
         hvac_public: PublicData::default(),
         sensors: Sensors::default(),
+        historical_sensors: VecDeque::new(),
+        num_historical_records: 1800,
         polling_channel: polling_channel.0,
     };
 
