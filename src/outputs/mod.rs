@@ -88,3 +88,55 @@ impl F32OutputTrait for IioOutput {
         device.attr_write_float(&self.attribute, val as f64).map_err(|e| e.to_string())
     }
 }
+
+/// The boolean vector output trait
+#[enum_dispatch::enum_dispatch]
+pub trait BoolVecOutputTrait {
+    /// Write the output to the destination
+    fn output(&mut self, val: &[bool]) -> Result<(), String>;
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[enum_dispatch::enum_dispatch(BoolVecOutputTrait)]
+pub enum BoolVecOutput {
+    Dummy(DummyOutput),
+    Gpio(GpioVecOutput),
+}
+
+impl Default for BoolVecOutput {
+    fn default() -> Self {
+        Self::Dummy(DummyOutput { })
+    }
+}
+
+impl BoolVecOutputTrait for DummyOutput {
+    fn output(&mut self, val: &[bool]) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// An output that writes to a gpio line
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct GpioVecOutput {
+    outputs: Vec<GpioOutput>,
+}
+
+impl Default for GpioVecOutput {
+    fn default() -> Self {
+        Self {
+            outputs: Vec::new(),
+        }
+    }
+}
+
+impl BoolVecOutputTrait for GpioVecOutput {
+    fn output(&mut self, val: &[bool]) -> Result<(), String> {
+        if self.outputs.len() != val.len() {
+            return Err("Wrong number of outputs".to_string());
+        }
+        for o in &mut self.outputs.iter_mut().zip(val) {
+            o.0.output(*o.1)?;
+        }
+        Ok(())
+    }
+}

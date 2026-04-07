@@ -97,7 +97,19 @@ struct SystemSettings {
     /// Logging settings
     log: SensorLogConfig,
     /// The oil pressure output
-    guage_oil_pressure: outputs::F32Output,
+    gauge_oil_pressure: outputs::F32Output,
+    /// the coolant temperature gauge output
+    gauge_engine_temp: outputs::F32Output,
+    /// The tachometer gauge output
+    gauge_tachometer: outputs::F32Output,
+    /// The ac clutch enable
+    ac_clutch_enable: outputs::BoolOutput,
+    /// Heater enable output
+    heater_enable_output: outputs::BoolOutput,
+    /// The temperature control output
+    hvac_temperature_control: outputs::F32Output,
+    /// The hvac fan output (low medium high)
+    hvac_fan_output: outputs::BoolVecOutput,
 }
 
 impl SystemSettings {
@@ -1024,23 +1036,6 @@ async fn udp_listener(_common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result
     }
 }
 
-/// run the control for the hvac on the vehicle
-async fn hvac_control(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<(), String> {
-    loop {
-        {
-            let mut common2 = common.lock().await;
-            common2.hvac.run_controls();
-            let fan_duty = common2.hvac.get_fan_speed();
-            //log::info!("Fan speed: {}", fan_duty);
-            let ac_duty = common2.hvac.get_ac_compressor_duty_cycle();
-            //log::info!("AC Compressor duty: {:02}", ac_duty * 100.0);
-            let heat_duty = common2.hvac.get_heat_control_duty_cycle();
-            //log::info!("Heat duty cycle: {:02}", heat_duty * 100.0);
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    }
-}
-
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 struct SensorLogConfig {
     base_path: PathBuf,
@@ -1227,7 +1222,19 @@ async fn sensor_polling(
                     Ok(s) => {
                         use crate::outputs::F32OutputTrait;
                         if let Some(p) = s.engine_oil_pressure {
-                            let _ = c.system.guage_oil_pressure.output(p);
+                            if let Err(e) = c.system.gauge_oil_pressure.output(p) {
+                                log::error!("Erro writing oil pressure gauge: {}", e);
+                            }
+                        }
+                        if let Some(p) = s.engine_coolant_temp {
+                            if let Err(e) = c.system.gauge_engine_temp.output(p) {
+                                log::error!("Erro writing oil pressure gauge: {}", e);
+                            }
+                        }
+                        if let Some(p) = s.engine_rpm {
+                            if let Err(e) = c.system.gauge_tachometer.output(p as f32) {
+                                log::error!("Erro writing oil pressure gauge: {}", e);
+                            }
                         }
                         c.sensors = s;
                     }
@@ -1247,6 +1254,7 @@ async fn sensor_polling(
             }
             _ = interval_1s.tick() => {
                 use crate::sensors::TemperatureSensorTrait;
+                 use crate::outputs::BoolVecOutputTrait;
                 let mut c = common.lock().await;
                 if let Ok(cabin_temp) = c.system.main_cabin_temperature_sensor.poll() {
                     c.hvac.set_cabin_temperature(cabin_temp.fahrenheit());
@@ -1256,6 +1264,27 @@ async fn sensor_polling(
                 }
 
                 c.hvac_public = c.hvac.get_public_data();
+
+                c.hvac.run_controls();
+                let fan_duty = c.hvac.get_fan_speed();
+                let fan_duty = fan_duty as f32 / 255.0;
+                let fan_output = if fan_duty < 0.05 {
+                    [false, false, false]
+                } else if fan_duty < 1.0 / 3.0 {
+                    [true, false, false]
+                } else if fan_duty < 2.0 / 3.0 {
+                    [false, true, false]
+                } else {
+                    [false, false, true]
+                };
+                if let Err(e) = c.system.hvac_fan_output.output(&fan_output) {
+                    log::error!("Failed to write fan output: {}", e);
+                }
+                //log::info!("Fan speed: {}", fan_duty);
+                let ac_duty = c.hvac.get_ac_compressor_duty_cycle();
+                //log::info!("AC Compressor duty: {:02}", ac_duty * 100.0);
+                let heat_duty = c.hvac.get_heat_control_duty_cycle();
+                //log::info!("Heat duty cycle: {:02}", heat_duty * 100.0);
             }
             _ = interval_1500ms.tick() => {
             }
@@ -1827,12 +1856,6 @@ async fn smain() {
         tcp_listener(common2)
             .await
             .inspect_err(|a| log::error!("Radio tcp listener ended: {:?}", a))
-    });
-    let common2 = common.clone();
-    tasks.spawn(async move {
-        hvac_control(common2)
-            .await
-            .inspect_err(|a| log::error!("Radio hvac control ended: {:?}", a))
     });
     let common2 = common.clone();
     tasks.spawn(async move {
