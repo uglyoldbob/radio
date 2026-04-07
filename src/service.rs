@@ -1225,6 +1225,10 @@ async fn sensor_polling(
                 let mut c = common.lock().await;
                 match c.system.get_sensor_data() {
                     Ok(s) => {
+                        use crate::outputs::F32OutputTrait;
+                        if let Some(p) = s.engine_oil_pressure {
+                            let _ = c.system.guage_oil_pressure.output(p);
+                        }
                         c.sensors = s;
                     }
                     Err(e) => log::error!("Error getting sensor data: {}", e),
