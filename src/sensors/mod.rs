@@ -60,6 +60,7 @@ impl Default for InclinometerSensor {
 #[enum_dispatch::enum_dispatch(TemperatureSensorTrait)]
 pub enum TemperatureSensor {
     Simulated(TemperatureSimulator),
+    #[cfg(feature = "iio")]
     Iio(IioTemperatureSensor),
 }
 
@@ -90,6 +91,7 @@ impl InclinometerSensorTrait for InclinometerSimulator {
     }
 }
 
+#[cfg(feature = "iio")]
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct IioTemperatureSensor {
     device: usize,
@@ -97,11 +99,15 @@ pub struct IioTemperatureSensor {
     fahrenheit: bool,
 }
 
+#[cfg(feature = "iio")]
 impl TemperatureSensorTrait for IioTemperatureSensor {
     fn poll(&mut self) -> Result<Temperature, String> {
-        let context: industrial_io::Context = industrial_io::context::Context::new().map_err(|e|e.to_string())?;
-        let device = context.get_device(self.device).map_err(|e|e.to_string())?;
-        let a = device.attr_read_float(&self.attribute).map_err(|e|e.to_string())? as f32;
+        let context: industrial_io::Context =
+            industrial_io::context::Context::new().map_err(|e| e.to_string())?;
+        let device = context.get_device(self.device).map_err(|e| e.to_string())?;
+        let a = device
+            .attr_read_float(&self.attribute)
+            .map_err(|e| e.to_string())? as f32;
         if self.fahrenheit {
             Ok(Temperature::Fahrenheit(a))
         } else {
@@ -110,17 +116,22 @@ impl TemperatureSensorTrait for IioTemperatureSensor {
     }
 }
 
+#[cfg(feature = "iio")]
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct IioPressureSensor {
     device: usize,
     attribute: String,
 }
 
+#[cfg(feature = "iio")]
 impl PressureSensorTrait for IioPressureSensor {
     fn poll(&mut self) -> Result<f32, String> {
-        let context: industrial_io::Context = industrial_io::context::Context::new().map_err(|e|e.to_string())?;
-        let device = context.get_device(self.device).map_err(|e|e.to_string())?;
-        let a = device.attr_read_float(&self.attribute).map_err(|e|e.to_string())? as f32;
+        let context: industrial_io::Context =
+            industrial_io::context::Context::new().map_err(|e| e.to_string())?;
+        let device = context.get_device(self.device).map_err(|e| e.to_string())?;
+        let a = device
+            .attr_read_float(&self.attribute)
+            .map_err(|e| e.to_string())? as f32;
         Ok(a)
     }
 }
@@ -155,6 +166,7 @@ pub trait PressureSensorTrait {
 #[enum_dispatch::enum_dispatch(PressureSensorTrait)]
 pub enum PressureSensor {
     Simulator(PressureSensorSimulator),
+    #[cfg(feature = "iio")]
     Iio(IioPressureSensor),
 }
 
@@ -188,6 +200,7 @@ pub trait BoolSensorTrait {
 #[enum_dispatch::enum_dispatch(BoolSensorTrait)]
 pub enum BoolSensor {
     Simulator(BoolSensorSimulator),
+    #[cfg(feature = "gpio")]
     GpioSensor(GpioSensor),
 }
 
@@ -197,12 +210,14 @@ impl Default for BoolSensor {
     }
 }
 
+#[cfg(feature = "gpio")]
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct GpioSensor {
     chip: String,
     line: u32,
 }
 
+#[cfg(feature = "gpio")]
 impl BoolSensorTrait for GpioSensor {
     fn poll(&mut self) -> Result<bool, String> {
         Ok(gpiocdev::Request::builder()
@@ -238,6 +253,7 @@ pub trait VoltageSensorTrait {
 #[enum_dispatch::enum_dispatch(VoltageSensorTrait)]
 pub enum VoltageSensor {
     Simulator(VoltageSensorSimulator),
+    #[cfg(feature = "iio")]
     Iio(IioVoltageSensor),
 }
 
@@ -247,17 +263,22 @@ impl Default for VoltageSensor {
     }
 }
 
+#[cfg(feature = "iio")]
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct IioVoltageSensor {
     device: usize,
     attribute: String,
 }
 
+#[cfg(feature = "iio")]
 impl VoltageSensorTrait for IioVoltageSensor {
     fn poll(&mut self) -> Result<f32, String> {
-        let context: industrial_io::Context = industrial_io::context::Context::new().map_err(|e|e.to_string())?;
-        let device = context.get_device(self.device).map_err(|e|e.to_string())?;
-        let a = device.attr_read_float(&self.attribute).map_err(|e|e.to_string())? as f32;
+        let context: industrial_io::Context =
+            industrial_io::context::Context::new().map_err(|e| e.to_string())?;
+        let device = context.get_device(self.device).map_err(|e| e.to_string())?;
+        let a = device
+            .attr_read_float(&self.attribute)
+            .map_err(|e| e.to_string())? as f32;
         Ok(a)
     }
 }
@@ -286,6 +307,7 @@ pub trait RpmSensorTrait {
 #[enum_dispatch::enum_dispatch(RpmSensorTrait)]
 pub enum RpmSensor {
     Simulator(RpmSensorSimulator),
+    #[cfg(feature = "iio")]
     Iio(IioRpmSensor),
 }
 
@@ -309,17 +331,22 @@ impl RpmSensorTrait for RpmSensorSimulator {
     }
 }
 
+#[cfg(feature = "iio")]
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct IioRpmSensor {
     device: usize,
     attribute: String,
 }
 
+#[cfg(feature = "iio")]
 impl RpmSensorTrait for IioRpmSensor {
     fn poll(&mut self) -> Result<u16, String> {
-        let context: industrial_io::Context = industrial_io::context::Context::new().map_err(|e|e.to_string())?;
-        let device = context.get_device(self.device).map_err(|e|e.to_string())?;
-        let a = device.attr_read_int(&self.attribute).map_err(|e|e.to_string())? as u16;
+        let context: industrial_io::Context =
+            industrial_io::context::Context::new().map_err(|e| e.to_string())?;
+        let device = context.get_device(self.device).map_err(|e| e.to_string())?;
+        let a = device
+            .attr_read_int(&self.attribute)
+            .map_err(|e| e.to_string())? as u16;
         Ok(a)
     }
 }

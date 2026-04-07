@@ -2,7 +2,10 @@
 
 use crate::gauge;
 use crate::swipable;
-use crate::{CommonWindowProperties, GraphicsTheme, GaugeValue, InclinometerOrientation, Pollable, Sensors, Subwindow, SubwindowTrait};
+use crate::{
+    CommonWindowProperties, GaugeValue, GraphicsTheme, InclinometerOrientation, Pollable, Sensors,
+    Subwindow, SubwindowTrait,
+};
 
 use crate::ConvenienceGui;
 

@@ -39,8 +39,8 @@ use crate::sensors::{
     BoolSensor, InclinometerSensor, PressureSensor, RpmSensor, TemperatureSensor, VoltageSensor,
 };
 
-mod sensors;
 mod outputs;
+mod sensors;
 mod video_service;
 
 #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
