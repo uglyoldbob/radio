@@ -118,8 +118,8 @@ impl SubwindowTrait for MainPage {
                 let builder = egui::ViewportBuilder::default()
                     .with_title("Gauge history")
                     .with_always_on_top()
-                    .with_position((ctx.screen_rect().size() / 4.0).to_pos2())
-                    .with_max_inner_size(ctx.screen_rect().size() / 2.0);
+                    .with_position((ctx.content_rect().size() / 4.0).to_pos2())
+                    .with_max_inner_size(ctx.content_rect().size() / 2.0);
                 ctx.show_viewport_immediate(id, builder, |ctx, _class| {
                     self.historical.poll_action(|| {
                         common

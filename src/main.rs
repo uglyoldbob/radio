@@ -753,7 +753,7 @@ impl eframe::App for MyEguiApp {
             let builder = egui::ViewportBuilder::default()
                 .with_title("Bluetooth passkey")
                 .with_always_on_top()
-                .with_max_inner_size(ui.ctx().screen_rect().size() / 2.0);
+                .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
             ui.ctx()
                 .show_viewport_immediate(id, builder, |ctx, _class| {
                     egui::CentralPanel::default().show(ctx, |ui| {
@@ -766,7 +766,7 @@ impl eframe::App for MyEguiApp {
             let builder = egui::ViewportBuilder::default()
                 .with_title("Bluetooth passkey")
                 .with_always_on_top()
-                .with_max_inner_size(ui.ctx().screen_rect().size() / 2.0);
+                .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
             ui.ctx()
                 .show_viewport_immediate(id, builder, |ctx, _class| {
                     egui::CentralPanel::default().show(ctx, |ui| {
@@ -842,7 +842,7 @@ impl eframe::App for MyEguiApp {
             egui::Panel::left("Main Icons")
                 .resizable(false)
                 .frame(
-                    egui::Frame::side_top_panel(&ui.ctx().style())
+                    egui::Frame::side_top_panel(&ui.ctx().global_style())
                         .fill(self.theme.bg_primary)
                         .inner_margin(10.0)
                         .outer_margin(0.0),

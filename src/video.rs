@@ -39,8 +39,8 @@ impl SubwindowTrait for Video {
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
-        let h = ctx.screen_rect().height();
-        egui::SidePanel::right("Camera view").show(ctx, |ui| {
+        let h = ctx.content_rect().height();
+        egui::Panel::right("Camera view").show(ctx, |ui| {
             let size = ui.available_size();
             if let Some(t) = &common.vsettings.video_texture {
                 let isize = t.size()[1];

@@ -113,10 +113,10 @@ impl SubwindowTrait for Config {
         #[cfg(feature = "wifi")]
         self.update_qr_code(ctx, common);
 
-        egui::SidePanel::left("Settings tabs")
+        egui::Panel::left("Settings tabs")
             .resizable(false)
             .frame(
-                egui::Frame::side_top_panel(&ctx.style())
+                egui::Frame::side_top_panel(&ctx.global_style())
                     .fill(theme.bg_primary)
                     .inner_margin(10.0)
                     .outer_margin(0.0),
@@ -434,7 +434,7 @@ impl SubwindowTrait for Config {
                             common.vsettings.wireless.wifi_state = state;
                         }
                         if common.vsettings.wireless.show_keyboard {
-                            egui::TopBottomPanel::bottom("KBD").show(ctx, |ui| {
+                            egui::Panel::bottom("KBD").show(ctx, |ui| {
                                 ui.set_min_width(ui.available_width());
                                 common.keyboard.show(ui);
                             });

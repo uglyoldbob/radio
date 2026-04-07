@@ -9,12 +9,16 @@ use crate::ConvenienceGui;
 
 /// The settings page for the application, with sub-menus
 #[derive(Clone, Copy)]
-pub struct Settings {}
+pub struct Settings {
+    show_usb_page: bool,
+}
 
 impl Settings {
     /// construct a new Self
     pub fn new() -> Self {
-        Self {}
+        Self {
+            show_usb_page: false,
+        }
     }
 }
 
@@ -39,10 +43,10 @@ impl SubwindowTrait for Settings {
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
-        egui::SidePanel::left("Settings tabs")
+        egui::Panel::left("Settings tabs")
             .resizable(false)
             .frame(
-                egui::Frame::side_top_panel(&ctx.style())
+                egui::Frame::side_top_panel(&ctx.global_style())
                     .fill(theme.bg_primary)
                     .inner_margin(10.0)
                     .outer_margin(0.0),
@@ -157,6 +161,9 @@ impl SubwindowTrait for Settings {
                             );
                         }
                     });
+                    if ui.big_button(theme, "USB").clicked() {
+                        self.show_usb_page = true;
+                    }
                 }
                 uobradio_comms::settings::Subsetting::Video => {
                     let mut size = ui.available_size();
