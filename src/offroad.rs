@@ -32,14 +32,14 @@ impl SubwindowTrait for Window {
             .clicked()
     }
 
-    fn update(
+    fn show(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut egui::Ui,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             if let Some(sensors) = common.radio.sensors.value() {
                 if let Some(oriented) = &sensors.orientation {
                     ui.label(

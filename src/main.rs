@@ -30,9 +30,9 @@ use uobradio_comms::{InclinometerOrientation, Pollable, Sensors};
 #[enum_dispatch::enum_dispatch]
 trait SubwindowTrait {
     /// Show the window, return a new subwindow if the subwindow needs to change
-    fn update(
+    fn show(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut egui::Ui,
         frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
         theme: &mut GraphicsTheme,
@@ -754,49 +754,47 @@ impl eframe::App for MyEguiApp {
                 .with_title("Bluetooth passkey")
                 .with_always_on_top()
                 .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
-            ui.ctx()
-                .show_viewport_immediate(id, builder, |ctx, _class| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        ui.label(format!("Passkey: {:06}", 1));
-                        ui.label(format!("Passkey: {:06}", pass));
-                    });
+            ui.ctx().show_viewport_immediate(id, builder, |ui, _class| {
+                egui::CentralPanel::default().show_inside(ui, |ui| {
+                    ui.label(format!("Passkey: {:06}", 1));
+                    ui.label(format!("Passkey: {:06}", pass));
                 });
+            });
         } else if let Some(pass) = self.common.radio.confirm_passkey {
             let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
             let builder = egui::ViewportBuilder::default()
                 .with_title("Bluetooth passkey")
                 .with_always_on_top()
                 .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
-            ui.ctx()
-                .show_viewport_immediate(id, builder, |ctx, _class| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        ui.vertical_centered(|ui| {
-                            let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
-                            ui.label(t);
-                            if ui.big_button(&self.theme, "Confirm").clicked() {
-                                let r = bluetooth_rust::ResponseToPasskey::Yes;
-                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                                let _ = self.common.radio.send_packet(packet);
-                                log::info!("Got confirm request from user for bluetooth passkey");
-                            }
-                            if ui.big_button(&self.theme, "Reject").clicked() {
-                                let r = bluetooth_rust::ResponseToPasskey::No;
-                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                                let _ = self.common.radio.send_packet(packet);
-                                log::info!("Got reject request from user for bluetooth passkey");
-                            }
-                            if ui.big_button(&self.theme, "Cancel").clicked() {
-                                let r = bluetooth_rust::ResponseToPasskey::Cancel;
-                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                                let _ = self.common.radio.send_packet(packet);
-                                log::info!("Got cancel request from user for bluetooth passkey");
-                            }
-                        })
-                    });
+            ui.ctx().show_viewport_immediate(id, builder, |ui, _class| {
+                egui::CentralPanel::default().show_inside(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
+                        ui.label(t);
+                        if ui.big_button(&self.theme, "Confirm").clicked() {
+                            let r = bluetooth_rust::ResponseToPasskey::Yes;
+                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                            let _ = self.common.radio.send_packet(packet);
+                            log::info!("Got confirm request from user for bluetooth passkey");
+                        }
+                        if ui.big_button(&self.theme, "Reject").clicked() {
+                            let r = bluetooth_rust::ResponseToPasskey::No;
+                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                            let _ = self.common.radio.send_packet(packet);
+                            log::info!("Got reject request from user for bluetooth passkey");
+                        }
+                        if ui.big_button(&self.theme, "Cancel").clicked() {
+                            let r = bluetooth_rust::ResponseToPasskey::Cancel;
+                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                            let _ = self.common.radio.send_packet(packet);
+                            log::info!("Got cancel request from user for bluetooth passkey");
+                        }
+                    })
                 });
+            });
         }
         {
             egui::Panel::top("status_bar")
@@ -805,7 +803,7 @@ impl eframe::App for MyEguiApp {
                         .fill(self.theme.bg_primary)
                         .inner_margin(10.0),
                 )
-                .show(ui.ctx(), |ui| {
+                .show_inside(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 20.0;
 
@@ -847,7 +845,7 @@ impl eframe::App for MyEguiApp {
                         .inner_margin(10.0)
                         .outer_margin(0.0),
                 )
-                .show(ui.ctx(), |ui| {
+                .show_inside(ui, |ui| {
                     {
                         let vw = Subwindow::MainPage(home::MainPage::new());
                         if vw.card(
@@ -913,9 +911,9 @@ impl eframe::App for MyEguiApp {
                     }
                 });
 
-            if let Some(sub) =
-                self.subwindow
-                    .update(ui.ctx(), frame, &mut self.common, &mut self.theme)
+            if let Some(sub) = self
+                .subwindow
+                .show(ui, frame, &mut self.common, &mut self.theme)
             {
                 self.subwindow = sub;
             }

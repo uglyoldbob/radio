@@ -36,9 +36,9 @@ impl SubwindowTrait for Settings {
             .clicked()
     }
 
-    fn update(
+    fn show(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut egui::Ui,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
@@ -46,12 +46,12 @@ impl SubwindowTrait for Settings {
         egui::Panel::left("Settings tabs")
             .resizable(false)
             .frame(
-                egui::Frame::side_top_panel(&ctx.global_style())
+                egui::Frame::side_top_panel(&ui.ctx().global_style())
                     .fill(theme.bg_primary)
                     .inner_margin(10.0)
                     .outer_margin(0.0),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 {
                     let active = common.vsettings.settings.tab
                         == uobradio_comms::settings::Subsetting::General;
@@ -139,7 +139,7 @@ impl SubwindowTrait for Settings {
                     }
                 }
             });
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             match common.vsettings.settings.tab {
                 uobradio_comms::settings::Subsetting::General => {
                     let mut changed = false;
@@ -225,7 +225,7 @@ impl SubwindowTrait for Settings {
                                             };
                                             if common.vsettings.video_texture.is_none() {
                                                 common.vsettings.video_texture =
-                                                    Some(ctx.load_texture(
+                                                    Some(ui.ctx().load_texture(
                                                         "camera0",
                                                         image,
                                                         egui::TextureOptions::LINEAR,

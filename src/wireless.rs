@@ -92,9 +92,9 @@ impl SubwindowTrait for Config {
             .clicked()
     }
 
-    fn update(
+    fn show(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut egui::Ui,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
@@ -111,17 +111,17 @@ impl SubwindowTrait for Config {
             });
         }
         #[cfg(feature = "wifi")]
-        self.update_qr_code(ctx, common);
+        self.update_qr_code(ui.ctx(), common);
 
         egui::Panel::left("Settings tabs")
             .resizable(false)
             .frame(
-                egui::Frame::side_top_panel(&ctx.global_style())
+                egui::Frame::side_top_panel(&ui.ctx().global_style())
                     .fill(theme.bg_primary)
                     .inner_margin(10.0)
                     .outer_margin(0.0),
             )
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 {
                     let active = common.vsettings.wireless.submenu
                         == uobradio_comms::wireless::Submenu::Normal;
@@ -245,7 +245,7 @@ impl SubwindowTrait for Config {
 
         match &common.vsettings.wireless.submenu {
             uobradio_comms::wireless::Submenu::Normal => {
-                egui::CentralPanel::default().show(ctx, |ui| {
+                egui::CentralPanel::default().show_inside(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, true])
                         .show(ui, |ui| {});
@@ -253,7 +253,7 @@ impl SubwindowTrait for Config {
             }
             #[cfg(feature = "bluetooth")]
             uobradio_comms::wireless::Submenu::Bluetooth => {
-                egui::CentralPanel::default().show(ctx, |ui| {
+                egui::CentralPanel::default().show_inside(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
@@ -273,7 +273,7 @@ impl SubwindowTrait for Config {
             }
             #[cfg(feature = "wifi")]
             uobradio_comms::wireless::Submenu::Wifi => {
-                egui::CentralPanel::default().show(ctx, |ui| {
+                egui::CentralPanel::default().show_inside(ui, |ui| {
                     egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
                         let mut save = false;
                         let mut reconnect = false;
@@ -434,7 +434,7 @@ impl SubwindowTrait for Config {
                             common.vsettings.wireless.wifi_state = state;
                         }
                         if common.vsettings.wireless.show_keyboard {
-                            egui::Panel::bottom("KBD").show(ctx, |ui| {
+                            egui::Panel::bottom("KBD").show_inside(ui, |ui| {
                                 ui.set_min_width(ui.available_width());
                                 common.keyboard.show(ui);
                             });
@@ -444,7 +444,7 @@ impl SubwindowTrait for Config {
             }
             #[cfg(feature = "wifi")]
             uobradio_comms::wireless::Submenu::ShareWifi => {
-                egui::CentralPanel::default().show(ctx, |ui| {
+                egui::CentralPanel::default().show_inside(ui, |ui| {
                     if let Some(t) = &common.vsettings.wireless.wifi_texture {
                         let size = ui.available_size();
                         let isize = t.size()[1];

@@ -32,16 +32,16 @@ impl SubwindowTrait for Window {
             .clicked()
     }
 
-    fn update(
+    fn show(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut egui::Ui,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme.bg_primary))
-            .show(ctx, |ui| {
+            .show_inside(ui, |ui| {
                 ui.label(egui::RichText::new("Current mode").size(32.0));
                 ui.horizontal(|ui| {
                     if ui

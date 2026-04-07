@@ -28,15 +28,15 @@ impl MainPage {
 }
 
 impl SubwindowTrait for MainPage {
-    fn update(
+    fn show(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut egui::Ui,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
         theme: &mut GraphicsTheme,
     ) -> Option<Subwindow> {
         let r = None;
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             #[cfg(feature = "androidauto")]
             {
                 if common.radio.android_auto_frontend() {
@@ -118,15 +118,15 @@ impl SubwindowTrait for MainPage {
                 let builder = egui::ViewportBuilder::default()
                     .with_title("Gauge history")
                     .with_always_on_top()
-                    .with_position((ctx.content_rect().size() / 4.0).to_pos2())
-                    .with_max_inner_size(ctx.content_rect().size() / 2.0);
-                ctx.show_viewport_immediate(id, builder, |ctx, _class| {
+                    .with_position((ui.ctx().content_rect().size() / 4.0).to_pos2())
+                    .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
+                ui.ctx().show_viewport_immediate(id, builder, |ui, _class| {
                     self.historical.poll_action(|| {
                         common
                             .radio
                             .send_packet(uobradio_comms::MessageFromApp::GetHistoricalData);
                     });
-                    egui::CentralPanel::default().show(ctx, |ui| {
+                    egui::CentralPanel::default().show_inside(ui, |ui| {
                         if ui.big_button(theme, "Close").clicked() {
                             self.history_popup = None;
                         }

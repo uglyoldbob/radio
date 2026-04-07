@@ -32,15 +32,15 @@ impl SubwindowTrait for Video {
             .clicked()
     }
 
-    fn update(
+    fn show(
         &mut self,
-        ctx: &egui::Context,
+        ui: &mut egui::Ui,
         _frame: &mut eframe::Frame,
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
-        let h = ctx.content_rect().height();
-        egui::Panel::right("Camera view").show(ctx, |ui| {
+        let h = ui.ctx().content_rect().height();
+        egui::Panel::right("Camera view").show_inside(ui, |ui| {
             let size = ui.available_size();
             if let Some(t) = &common.vsettings.video_texture {
                 let isize = t.size()[1];
@@ -52,7 +52,7 @@ impl SubwindowTrait for Video {
                 }));
             }
         });
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.label(format!("This is the video page {}", h));
             if common
                 .radio
@@ -88,11 +88,12 @@ impl SubwindowTrait for Video {
                                         pixels: pd.get_egui(),
                                     };
                                     if common.vsettings.video_texture.is_none() {
-                                        common.vsettings.video_texture = Some(ctx.load_texture(
-                                            "camera0",
-                                            image,
-                                            egui::TextureOptions::LINEAR,
-                                        ));
+                                        common.vsettings.video_texture =
+                                            Some(ui.ctx().load_texture(
+                                                "camera0",
+                                                image,
+                                                egui::TextureOptions::LINEAR,
+                                            ));
                                     } else if let Some(t) = &mut common.vsettings.video_texture {
                                         t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
                                     }
