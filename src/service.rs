@@ -58,7 +58,7 @@ struct Arguments {
 }
 
 /// System specific settings (not set by the user)
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 struct SystemSettings {
     /// Inclinometer sensor
     inclinometer: InclinometerSensor,
@@ -110,6 +110,41 @@ struct SystemSettings {
     hvac_temperature_control: outputs::F32Output,
     /// The hvac fan output (low medium high)
     hvac_fan_output: outputs::BoolVecOutput,
+    /// The offroad lights
+    offroad_lights: Vec<outputs::BoolOutput>,
+}
+
+impl Default for SystemSettings {
+    fn default() -> Self {
+        Self {
+            inclinometer: InclinometerSensor::default(),
+            main_cabin_temperature_sensor: Default::default(),
+            hvac_vent_temperature_sensor: Default::default(),
+            orientation: Default::default(),
+            engine_coolant_temp: Default::default(),
+            engine_oil_temp: Default::default(),
+            engine_exhaust_temp: Default::default(),
+            front_diff_temp: Default::default(),
+            rear_diff_temp: Default::default(),
+            intake_air: Default::default(),
+            engine_oil_pressure: Default::default(),
+            coolant_pressure: Default::default(),
+            trans_temp: Default::default(),
+            transfer_temp: Default::default(),
+            door_open: Default::default(),
+            engine_rpm: Default::default(),
+            main_voltage: Default::default(),
+            log: Default::default(),
+            gauge_oil_pressure: Default::default(),
+            gauge_engine_temp: Default::default(),
+            gauge_tachometer: Default::default(),
+            ac_clutch_enable: Default::default(),
+            heater_enable_output: Default::default(),
+            hvac_temperature_control: Default::default(),
+            hvac_fan_output: Default::default(),
+            offroad_lights: vec![Default::default(), Default::default()],
+        }
+    }
 }
 
 impl SystemSettings {
@@ -509,6 +544,25 @@ async fn receive_message_from_app(
             }
         }
         match packet {
+            uobradio_comms::MessageFromApp::GpioQuery(query) => {
+                let val = {
+                    let c = common.lock().await;
+                    use crate::outputs::BoolOutputTrait;
+                    match query {
+                        uobradio_comms::GpioQuery::CameraLedControl(_) => false,
+                        uobradio_comms::GpioQuery::LightControl(i) => {
+                            let v = c.system.offroad_lights[i as usize].last_output();
+                            v
+                        }
+                        uobradio_comms::GpioQuery::InverterPower => false,
+                        uobradio_comms::GpioQuery::AuxOutput(_) => false,
+                        uobradio_comms::GpioQuery::GetAuxInput(_) => false,
+                        uobradio_comms::GpioQuery::GetAuxOutput(_) => false,
+                    }
+                };
+                let packet = uobradio_comms::MessageToApp::GpioQueryResponse(query, val);
+                packet.send_to_stream(&streamw).await?;
+            }
             uobradio_comms::MessageFromApp::StartLogCopy => {
                 let p = {
                     let c = common.lock().await;
@@ -976,35 +1030,44 @@ async fn receive_message_from_app(
                     response.send_to_stream(&streamw).await?;
                 }
             }
-            uobradio_comms::MessageFromApp::GpioControl(gpio) => match gpio {
-                uobradio_comms::Gpio::AuxOutput(id, v) => {
-                    log::info!("Set aux output {} to {}", id, v);
+            uobradio_comms::MessageFromApp::GpioControl(gpio) => {
+                {
+                    let mut common2 = common.lock().await;
+                    match gpio {
+                        uobradio_comms::Gpio::AuxOutput(id, v) => {
+                            log::info!("Set aux output {} to {}", id, v);
+                        }
+                        uobradio_comms::Gpio::GetAuxInput(id) => {
+                            log::info!("Request for aux input {}", id);
+                        }
+                        uobradio_comms::Gpio::InverterPower(p) => {
+                            log::info!("Set inverter power to {}", p);
+                        }
+                        uobradio_comms::Gpio::LightControl(id, v) => {
+                            log::info!("Set light output {} to {}", id, v);
+                            use outputs::BoolOutputTrait;
+                            common2.system.offroad_lights[id as usize].output(v);
+                        }
+                        uobradio_comms::Gpio::WinchControl(f, r) => {
+                            log::info!("Winch control {} {}", f, r)
+                        }
+                        uobradio_comms::Gpio::CameraLedControl(i, s) => {
+                            log::info!("Camera led {} to {}", i, s)
+                        }
+                        uobradio_comms::Gpio::LockDoors => {
+                            log::info!("Received request to lock all doors")
+                        }
+                        uobradio_comms::Gpio::UnlockDoors => {
+                            log::info!("Recieved request to unlock all doors")
+                        }
+                        uobradio_comms::Gpio::WindowControl { id, up, down } => {
+                            log::info!("Window {} {}/{}", id, up, down)
+                        }
+                    }
                 }
-                uobradio_comms::Gpio::GetAuxInput(id) => {
-                    log::info!("Request for aux input {}", id);
-                }
-                uobradio_comms::Gpio::InverterPower(p) => {
-                    log::info!("Set inverter power to {}", p);
-                }
-                uobradio_comms::Gpio::LightControl(id, v) => {
-                    log::info!("Set light output {} to {}", id, v);
-                }
-                uobradio_comms::Gpio::WinchControl(f, r) => {
-                    log::info!("Winch control {} {}", f, r)
-                }
-                uobradio_comms::Gpio::CameraLedControl(i, s) => {
-                    log::info!("Camera led {} to {}", i, s)
-                }
-                uobradio_comms::Gpio::LockDoors => {
-                    log::info!("Received request to lock all doors")
-                }
-                uobradio_comms::Gpio::UnlockDoors => {
-                    log::info!("Recieved request to unlock all doors")
-                }
-                uobradio_comms::Gpio::WindowControl { id, up, down } => {
-                    log::info!("Window {} {}/{}", id, up, down)
-                }
-            },
+                let response = uobradio_comms::MessageToApp::GpioConfirmation(gpio);
+                response.send_to_stream(&streamw).await?;
+            }
         }
         #[cfg(feature = "androidauto")]
         {

@@ -39,6 +39,15 @@ impl SubwindowTrait for Window {
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
+        for or in common.offroad_lights.iter_mut().enumerate() {
+            or.1.poll_action(|| {
+                common
+                    .radio
+                    .send_packet(uobradio_comms::MessageFromApp::GpioQuery(
+                        uobradio_comms::GpioQuery::LightControl(or.0 as u8),
+                    ));
+            });
+        }
         egui::CentralPanel::default().show_inside(ui, |ui| {
             if let Some(sensors) = common.radio.sensors.value() {
                 if let Some(oriented) = &sensors.orientation {
@@ -50,6 +59,47 @@ impl SubwindowTrait for Window {
                         .size(32.0),
                     );
                 }
+                ui.horizontal(|ui| {
+                    let r = ui.big_momentary_button(theme, "Winch IN");
+                    if r.drag_started() {
+                        common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::GpioControl(
+                                uobradio_comms::Gpio::WinchControl(true, false),
+                            ));
+                    } else if r.drag_stopped() {
+                        common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::GpioControl(
+                                uobradio_comms::Gpio::WinchControl(false, false),
+                            ));
+                    }
+                    let r = ui.big_momentary_button(theme, "Winch OUT");
+                    if r.drag_started() {
+                        common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::GpioControl(
+                                uobradio_comms::Gpio::WinchControl(false, true),
+                            ));
+                    } else if r.drag_stopped() {
+                        common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::GpioControl(
+                                uobradio_comms::Gpio::WinchControl(false, false),
+                            ));
+                    }
+                });
+                ui.horizontal(|ui| {
+                    for or in common.offroad_lights.iter_mut().enumerate() {
+                        if ui.big_toggle(theme, or.1, &format!("L{}", or.0)).clicked() {
+                            if let Some(v) = or.1.proposed_value() {
+                                let _ = common
+                                    .radio
+                                    .send_gpio(uobradio_comms::Gpio::LightControl(or.0 as u8, v));
+                            }
+                        }
+                    }
+                });
             }
         });
         None

@@ -22,6 +22,7 @@ use std::io::Write;
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui::{self};
+use egui::Sense;
 #[cfg(feature = "androidauto")]
 use ringbuf::traits::{Consumer, Observer, Producer};
 #[cfg(feature = "androidauto")]
@@ -55,6 +56,17 @@ trait ConvenienceGui {
     /// Make a button big enough for fingers to touch
     fn big_button(&mut self, theme: &GraphicsTheme, text: &str) -> egui::Response;
 
+    /// Make a button big enough for fingers to touch, with a disabled flag
+    fn big_enabled_button(
+        &mut self,
+        theme: &GraphicsTheme,
+        text: &str,
+        disabled: bool,
+    ) -> egui::Response;
+
+    /// A momentary button big enough to touch
+    fn big_momentary_button(&mut self, theme: &GraphicsTheme, text: &str) -> egui::Response;
+
     /// A selectable button that is big enough for fingers
     fn selectable_button(
         &mut self,
@@ -70,6 +82,13 @@ trait ConvenienceGui {
         select: T,
         text: &str,
     ) -> egui::Response;
+
+    fn big_toggle(
+        &mut self,
+        theme: &GraphicsTheme,
+        v: &mut uobradio_comms::ToggleBool,
+        text: &str,
+    ) -> egui::Response;
 }
 
 impl ConvenienceGui for egui::Ui {
@@ -82,6 +101,36 @@ impl ConvenienceGui for egui::Ui {
         .fill(theme.bg_secondary)
         .min_size(egui::vec2(70.0, 70.0))
         .corner_radius(12.0);
+        self.add(button)
+    }
+
+    fn big_enabled_button(
+        &mut self,
+        theme: &GraphicsTheme,
+        text: &str,
+        disabled: bool,
+    ) -> egui::Response {
+        let button = egui::Button::new(
+            egui::RichText::new(text)
+                .size(16.0)
+                .color(theme.text_secondary),
+        )
+        .fill(theme.bg_secondary)
+        .min_size(egui::vec2(70.0, 70.0))
+        .corner_radius(12.0);
+        self.add_enabled(!disabled, button)
+    }
+
+    fn big_momentary_button(&mut self, theme: &GraphicsTheme, text: &str) -> egui::Response {
+        let button = egui::Button::new(
+            egui::RichText::new(text)
+                .size(16.0)
+                .color(theme.text_secondary),
+        )
+        .fill(theme.bg_secondary)
+        .min_size(egui::vec2(70.0, 70.0))
+        .corner_radius(12.0)
+        .sense(Sense::drag());
         self.add(button)
     }
 
@@ -139,6 +188,42 @@ impl ConvenienceGui for egui::Ui {
             r.mark_changed();
         }
         r
+    }
+
+    fn big_toggle(
+        &mut self,
+        theme: &GraphicsTheme,
+        v: &mut uobradio_comms::ToggleBool,
+        text: &str,
+    ) -> egui::Response {
+        let selected = v.confirmed_value().unwrap_or(false);
+        let button_color = if selected {
+            theme.accent_primary
+        } else {
+            theme.bg_secondary
+        };
+        let text_color = if selected {
+            egui::Color32::WHITE
+        } else {
+            theme.text_secondary
+        };
+        let button = egui::Button::new(egui::RichText::new(text).size(16.0).color(text_color))
+            .fill(button_color)
+            .selected(selected)
+            .min_size(egui::vec2(70.0, 70.0))
+            .corner_radius(12.0);
+        let enabled = v.confirmed_value().is_some();
+        if let Some(val) = v.value() {
+            let r = self.add_enabled(true, button);
+            if r.clicked() {
+                v.toggle();
+                let newv = v.proposed_value();
+                log::info!("Toggle value to {:?}", newv);
+            }
+            r
+        } else {
+            self.add_enabled(false, button)
+        }
     }
 }
 
@@ -266,6 +351,8 @@ struct CommonWindowProperties {
     usb_drive: Option<std::path::PathBuf>,
     /// usb file copy in progress
     usb_writing: bool,
+    /// Offroad lights
+    offroad_lights: [uobradio_comms::ToggleBool; 4],
 }
 
 impl CommonWindowProperties {
@@ -290,6 +377,7 @@ impl CommonWindowProperties {
             logfile: None,
             usb_drive: None,
             usb_writing: false,
+            offroad_lights: [Default::default(); 4],
         }
     }
 }
@@ -662,6 +750,30 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::GpioQueryResponse(query, val) => match query {
+                    uobradio_comms::GpioQuery::CameraLedControl(_) => todo!(),
+                    uobradio_comms::GpioQuery::LightControl(i) => {
+                        log::info!("The value for light {} is now {}", i, val);
+                        self.common.offroad_lights[*i as usize].provide_value(*val);
+                    }
+                    uobradio_comms::GpioQuery::InverterPower => todo!(),
+                    uobradio_comms::GpioQuery::AuxOutput(_) => todo!(),
+                    uobradio_comms::GpioQuery::GetAuxInput(_) => todo!(),
+                    uobradio_comms::GpioQuery::GetAuxOutput(_) => todo!(),
+                },
+                uobradio_comms::MessageToApp::GpioConfirmation(gpio) => match gpio {
+                    uobradio_comms::Gpio::WinchControl(_, _) => {}
+                    uobradio_comms::Gpio::CameraLedControl(_, _) => {}
+                    uobradio_comms::Gpio::LockDoors => {}
+                    uobradio_comms::Gpio::UnlockDoors => {}
+                    uobradio_comms::Gpio::WindowControl { id, up, down } => {}
+                    uobradio_comms::Gpio::LightControl(id, val) => {
+                        self.common.offroad_lights[*id as usize].provide_value(*val);
+                    }
+                    uobradio_comms::Gpio::InverterPower(_) => {}
+                    uobradio_comms::Gpio::AuxOutput(_, _) => {}
+                    uobradio_comms::Gpio::GetAuxInput(_) => {}
+                },
                 uobradio_comms::MessageToApp::LogFilePartial(name, data) => {
                     if let Some(usb) = &self.common.usb_drive {
                         if self.common.logfile.is_none() {

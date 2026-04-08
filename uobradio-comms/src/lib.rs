@@ -40,6 +40,224 @@ pub enum RadioReceiveStatus {
     GotPacket(Vec<u8>),
 }
 
+/// An enum that allows intermediate states of on and off
+#[derive(Copy, Clone, Default)]
+pub enum ToggleBoolEnum {
+    #[default]
+    /// The state is unknown
+    Unknown,
+    /// The state is off
+    Off,
+    /// The state is transitioning from off to on
+    TurningOn,
+    /// The state is transitioning from on to off
+    TurningOff,
+    /// The state is off
+    On,
+}
+
+impl ToggleBoolEnum {
+    /// Construct a new self with the specified initial value
+    pub fn new(b: bool) -> Self {
+        if b {
+            Self::On
+        } else {
+            Self::Off
+        }
+    }
+
+    /// Provide the new value for the item
+    pub fn provide_value(&mut self, v: bool) {
+        match self {
+            Self::Unknown => {
+                *self = if v {
+                    Self::On
+                } else {
+                    Self::Off
+                };
+            }
+            Self::Off => {
+                if v {
+                    *self = Self::On;
+                }
+            }
+            Self::TurningOff => {
+                if !v {
+                    *self = Self::Off;
+                }
+            }
+            Self::TurningOn => {
+                if v {
+                    *self = Self::On;
+                }
+            }
+            Self::On => {
+                if !v {
+                    *self = Self::Off;
+                }
+            }
+        }
+    }
+
+    /// Get the present value
+    pub fn value(&self) -> Option<bool> {
+        match self {
+            Self::Unknown => {
+                None
+            }
+            Self::Off => {
+                Some(false)
+            }
+            Self::TurningOff => {
+                Some(true)
+            }
+            Self::TurningOn => {
+                Some(false)
+            }
+            Self::On => {
+                Some(true)
+            }
+        }
+    }
+
+    /// Get the confirmed value
+    pub fn confirmed_value(&self) -> Option<bool> {
+        match self {
+            Self::Unknown => {
+                None
+            }
+            Self::Off => {
+                Some(false)
+            }
+            Self::TurningOff => {
+                None
+            }
+            Self::TurningOn => {
+                None
+            }
+            Self::On => {
+                Some(true)
+            }
+        }
+    }
+
+    /// Get the proposed value
+    pub fn proposed_value(&self) -> Option<bool> {
+        match self {
+            Self::Unknown => {
+                None
+            }
+            Self::Off => {
+                Some(false)
+            }
+            Self::TurningOff => {
+                Some(false)
+            }
+            Self::TurningOn => {
+                Some(true)
+            }
+            Self::On => {
+                Some(true)
+            }
+        }
+    }
+
+    /// True when there is a pending value
+    pub fn pending_value(&self) -> bool {
+        match self {
+            Self::Unknown => {
+                false
+            }
+            Self::Off => {
+                false
+            }
+            Self::TurningOff => {
+                true
+            }
+            Self::TurningOn => {
+                true
+            }
+            Self::On => {
+                false
+            }
+        }
+    }
+
+    /// Toggle the value
+    pub fn toggle(&mut self) -> Result<(), ()> {
+        match self {
+            Self::Unknown => {
+                log::error!("Attempt to toggle an unknown value");
+                Err(())
+            }
+            Self::Off => {
+                *self = Self::TurningOn;
+                Ok(())
+            }
+            Self::TurningOff => {
+                *self = Self::On;
+                Ok(())
+            }
+            Self::TurningOn => {
+                *self = Self::Off;
+                Ok(())
+            }
+            Self::On => {
+                *self = Self::TurningOff;
+                Ok(())
+            }
+        }
+    }
+}
+
+/// A struct that allows toggling a bool, with polling
+#[derive(Copy, Clone, Default)]
+pub struct ToggleBool {
+    val: ToggleBoolEnum,
+    polled: bool,
+}
+
+impl ToggleBool {
+    /// Get the present value
+    pub fn value(&self) -> Option<bool> {
+        self.val.value()
+    }
+
+    /// Get the proposed value
+    pub fn proposed_value(&self) -> Option<bool> {
+        self.val.proposed_value()
+    }
+
+    /// Get the confirmed value
+    pub fn confirmed_value(&self) -> Option<bool> {
+        self.val.confirmed_value()
+    }
+
+    /// Provide the new value for the item
+    pub fn provide_value(&mut self, v: bool) {
+        self.val.provide_value(v);
+        self.polled = false;
+    }
+
+    /// True when there is a pending value
+    pub fn pending_value(&self) -> bool {
+        self.val.pending_value()
+    }
+
+    /// Toggle the value
+    pub fn toggle(&mut self) -> Result<(), ()> {
+        self.val.toggle()
+    }
+
+    /// Runs a closure when poll action is possible
+    pub fn poll_action<U: FnOnce()>(&mut self, closure: U) {
+        if !self.polled {
+            self.polled = true;
+            closure();
+        }
+    }
+}
+
 /// A type that allows for polling of a value, without sending a whole ton of requests.
 /// This limits the number of outstanding requests to one. This is useful for queries that take a while to run, compared to how often the data is displayed to the user.
 #[derive(Clone, Debug)]
@@ -401,8 +619,25 @@ pub enum Gpio {
     InverterPower(bool),
     /// Control an auxiliary output
     AuxOutput(u8, bool),
-    /// Retrieve the value of an auxiliarry input
+    /// Retrieve the value of an auxiliary input
     GetAuxInput(u8),
+}
+
+/// They type of gpio to query
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub enum GpioQuery {
+    /// Is the led for the specified camera enabled?
+    CameraLedControl(u8),
+    /// Light control (light id and whether to enable or disable the light)
+    LightControl(u8),
+    /// inverter main power
+    InverterPower,
+    /// Control an auxiliary output
+    AuxOutput(u8),
+    /// Retrieve the value of an auxiliary input
+    GetAuxInput(u8),
+    /// Retrieve the value of an auxiliary output
+    GetAuxOutput(u8),
 }
 
 /// Commands for an external radio attached to the radio
@@ -429,6 +664,8 @@ pub enum MessageFromApp {
     RequestCameras,
     /// Manipulate gpio in the manner specified
     GpioControl(Gpio),
+    /// Query a gpio value
+    GpioQuery(GpioQuery),
     /// The camera index with the bincode encoded data for the setting to change
     CameraSettingControl(u8, u8, video::ControlValue),
     /// Update the nonvolatile settings on the radio
@@ -618,6 +855,10 @@ pub enum MessageToApp {
     LogFileComplete(String),
     /// All log file copy complete
     LogFileCopiesComplete,
+    /// A confirmation of a gpio output change
+    GpioConfirmation(Gpio),
+    /// The response to a gpio query
+    GpioQueryResponse(GpioQuery, bool),
 }
 
 impl MessageFromApp {
@@ -723,6 +964,8 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::GpioQueryResponse(_, _) => {}
+                                        MessageToApp::GpioConfirmation(_) => {}
                                         MessageToApp::LogFileCopiesComplete => {}
                                         MessageToApp::LogFilePartial(_, _) => {}
                                         MessageToApp::LogFileComplete(_) => {}

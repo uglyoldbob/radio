@@ -5,6 +5,8 @@
 pub trait BoolOutputTrait {
     /// Write the output to the destination
     fn output(&mut self, val: bool) -> Result<(), String>;
+    /// Get the last written output
+    fn last_output(&self) -> bool;
 }
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -17,17 +19,24 @@ pub enum BoolOutput {
 
 impl Default for BoolOutput {
     fn default() -> Self {
-        Self::Dummy(DummyOutput {})
+        Self::Dummy(DummyOutput { val: false })
     }
 }
 
 /// An output that goes nowhere
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct DummyOutput {}
+pub struct DummyOutput {
+    val: bool,
+}
 
 impl BoolOutputTrait for DummyOutput {
     fn output(&mut self, val: bool) -> Result<(), String> {
+        self.val = val;
         Ok(())
+    }
+
+    fn last_output(&self) -> bool {
+        self.val
     }
 }
 
@@ -37,6 +46,7 @@ impl BoolOutputTrait for DummyOutput {
 pub struct GpioOutput {
     chip: String,
     line: u32,
+    output: bool,
 }
 
 #[cfg(feature = "gpio")]
@@ -51,7 +61,12 @@ impl BoolOutputTrait for GpioOutput {
                 gpiocdev::line::Value::Inactive
             })
             .request();
+        self.output = val;
         Ok(())
+    }
+
+    fn last_output(&self) -> bool {
+        self.output
     }
 }
 
@@ -72,7 +87,7 @@ pub enum F32Output {
 
 impl Default for F32Output {
     fn default() -> Self {
-        Self::Dummy(DummyOutput {})
+        Self::Dummy(DummyOutput { val: false })
     }
 }
 
@@ -118,7 +133,7 @@ pub enum BoolVecOutput {
 
 impl Default for BoolVecOutput {
     fn default() -> Self {
-        Self::Dummy(DummyOutput {})
+        Self::Dummy(DummyOutput { val: false })
     }
 }
 
