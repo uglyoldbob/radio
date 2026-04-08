@@ -666,6 +666,8 @@ impl eframe::App for MyEguiApp {
                     if let Some(usb) = &self.common.usb_drive {
                         if self.common.logfile.is_none() {
                             let mut p = usb.clone();
+                            p.push("logs");
+                            std::fs::create_dir_all(&p);
                             p.push(name);
                             let asdf = std::fs::File::create(p);
                             if let Err(e) = &asdf {
