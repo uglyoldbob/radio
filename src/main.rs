@@ -17,6 +17,8 @@ mod gauge;
 mod h264;
 mod swipable;
 
+use std::io::Write;
+
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use eframe::egui::{self};
@@ -258,6 +260,12 @@ struct CommonWindowProperties {
     android_auto_texture: Option<egui::TextureHandle>,
     /// the onscreen keyboard
     keyboard: crate::keyboard::VirtualKeyboard,
+    /// The log file currently being written
+    logfile: Option<std::fs::File>,
+    /// The usb drive to use
+    usb_drive: Option<std::path::PathBuf>,
+    /// usb file copy in progress
+    usb_writing: bool,
 }
 
 impl CommonWindowProperties {
@@ -279,6 +287,9 @@ impl CommonWindowProperties {
             #[cfg(feature = "androidauto")]
             android_auto_texture: None,
             keyboard: Default::default(),
+            logfile: None,
+            usb_drive: None,
+            usb_writing: false,
         }
     }
 }
@@ -651,6 +662,33 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                uobradio_comms::MessageToApp::LogFilePartial(name, data) => {
+                    if let Some(usb) = &self.common.usb_drive {
+                        if self.common.logfile.is_none() {
+                            let mut p = usb.clone();
+                            p.push(name);
+                            let asdf = std::fs::File::create(p);
+                            if let Err(e) = &asdf {
+                                log::error!("Error creating file: {:?}", e);
+                            }
+                            self.common.logfile = asdf.ok();
+                        }
+                        if let Some(f) = &mut self.common.logfile {
+                            use std::io::Write;
+                            f.write_all(data);
+                        }
+                    }
+                }
+                uobradio_comms::MessageToApp::LogFileComplete(name) => {
+                    self.common.logfile.as_mut().map(|a| a.flush());
+                    if let Err(e) = self.common.logfile.take().unwrap().sync_all() {
+                        log::error!("Error syncing file: {}", e);
+                    }
+                }
+                uobradio_comms::MessageToApp::LogFileCopiesComplete => {
+                    log::info!("Done writing all log files");
+                    self.common.usb_writing = false;
+                }
                 uobradio_comms::MessageToApp::HistoricalSensorData(_) => {}
                 uobradio_comms::MessageToApp::SensorData(_) => {}
                 #[cfg(feature = "wifi")]

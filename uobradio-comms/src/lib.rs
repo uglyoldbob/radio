@@ -495,6 +495,8 @@ pub enum MessageFromApp {
     GetSensorData,
     /// Get all historical data
     GetHistoricalData,
+    /// Start download all csv log files
+    StartLogCopy,
 }
 
 #[cfg(feature = "bluetooth")]
@@ -610,6 +612,12 @@ pub enum MessageToApp {
     SensorData(Sensors),
     /// All the historical data
     HistoricalSensorData(Vec<Sensors>),
+    /// Part of a csv log file
+    LogFilePartial(String, Vec<u8>),
+    /// Completion indicator for file
+    LogFileComplete(String),
+    /// All log file copy complete
+    LogFileCopiesComplete,
 }
 
 impl MessageFromApp {
@@ -715,6 +723,9 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        MessageToApp::LogFileCopiesComplete => {}
+                                        MessageToApp::LogFilePartial(_, _) => {}
+                                        MessageToApp::LogFileComplete(_) => {}
                                         MessageToApp::HistoricalSensorData(_) => {}
                                         MessageToApp::SensorData(s) => {
                                             self.sensors.new_value_optional(Some(s.clone()));

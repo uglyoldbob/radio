@@ -8,16 +8,16 @@ use eframe::egui;
 use crate::ConvenienceGui;
 
 /// The settings page for the application, with sub-menus
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Settings {
-    show_usb_page: bool,
+    show_usb_page: Option<std::path::PathBuf>,
 }
 
 impl Settings {
     /// construct a new Self
     pub fn new() -> Self {
         Self {
-            show_usb_page: false,
+            show_usb_page: None,
         }
     }
 }
@@ -43,6 +43,29 @@ impl SubwindowTrait for Settings {
         common: &mut CommonWindowProperties,
         theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
+        if let Some(p) = self.show_usb_page.clone() {
+            let id: egui::ViewportId = egui::ViewportId::from_hash_of("usb_page");
+            let builder = egui::ViewportBuilder::default()
+                .with_title("Usb actions")
+                .with_always_on_top()
+                .with_position((ui.ctx().content_rect().size() / 4.0).to_pos2())
+                .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
+            ui.ctx().show_viewport_immediate(id, builder, |ui, _class| {
+                if ui.big_button(theme, "Close").clicked() {
+                    self.show_usb_page = None;
+                }
+                if !common.usb_writing {
+                    if ui.big_button(theme, "Copy log data to USB").clicked() {
+                        common.usb_writing = true;
+                        let _ = common
+                            .radio
+                            .send_packet(uobradio_comms::MessageFromApp::StartLogCopy);
+                    }
+                } else {
+                    ui.label("Copying");
+                }
+            });
+        }
         egui::Panel::left("Settings tabs")
             .resizable(false)
             .frame(
@@ -161,8 +184,24 @@ impl SubwindowTrait for Settings {
                             );
                         }
                     });
-                    if ui.big_button(theme, "USB").clicked() {
-                        self.show_usb_page = true;
+                    let mut have_usb = Vec::new();
+                    if let Ok(rd) = std::path::PathBuf::from("/run/media").read_dir() {
+                        for d in rd {
+                            if let Ok(d) = d {
+                                if let Ok(md) = d.metadata() {
+                                    if md.is_dir() {
+                                        have_usb.push(d.path());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for usb in have_usb {
+                        if ui.big_button(theme, &format!("USB {}", usb.file_name().unwrap().display())).clicked() {
+                            self.show_usb_page = Some(usb.clone());
+                            common.usb_drive = Some(usb);
+                        }
                     }
                 }
                 uobradio_comms::settings::Subsetting::Video => {

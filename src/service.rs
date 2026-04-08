@@ -410,6 +410,50 @@ pub struct AppUserCommon {
     polling_channel: tokio::sync::mpsc::Sender<MessageToSensorPollThread>,
 }
 
+async fn send_log_files(
+    p: PathBuf,
+    streamw: Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>,
+) -> Result<(), String> {
+    if let Ok(a) = p.read_dir() {
+        for f in a {
+            if let Ok(f) = f {
+                if let Ok(md) = f.metadata() {
+                    if md.is_file() {
+                        let name = f.file_name();
+                        if let Some(ext) = f.path().extension() {
+                            if ext.to_str() == Some("csv") {
+                                if let Ok(mut f) = std::fs::File::open(f.path()) {
+                                    let mut reader = std::io::BufReader::new(f);
+                                    let mut buffer = [0_u8; 65536];
+                                    loop {
+                                        let count =
+                                            reader.read(&mut buffer).map_err(|e| e.to_string())?;
+                                        if count == 0 {
+                                            break;
+                                        }
+                                        let packet = uobradio_comms::MessageToApp::LogFilePartial(
+                                            name.to_str().unwrap().to_string(),
+                                            buffer[..count].to_vec(),
+                                        );
+                                        packet.send_to_stream(&streamw).await?;
+                                    }
+                                    let packet = uobradio_comms::MessageToApp::LogFileComplete(
+                                        name.to_str().unwrap().to_string(),
+                                    );
+                                    packet.send_to_stream(&streamw).await?;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let packet = uobradio_comms::MessageToApp::LogFileCopiesComplete;
+        packet.send_to_stream(&streamw).await?;
+    }
+    Ok(())
+}
+
 async fn receive_message_from_app(
     streamr: &mut tokio::net::tcp::OwnedReadHalf,
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
@@ -465,6 +509,19 @@ async fn receive_message_from_app(
             }
         }
         match packet {
+            uobradio_comms::MessageFromApp::StartLogCopy => {
+                let p = {
+                    let c = common.lock().await;
+                    let p = c.system.log.base_path.clone();
+                    p
+                };
+                let streamw2 = streamw.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = send_log_files(p, streamw2).await {
+                        log::error!("Error copying usb files: {}", e);
+                    }
+                });
+            }
             uobradio_comms::MessageFromApp::GetHistoricalData => {
                 let mut c = common.lock().await;
                 let packet =
