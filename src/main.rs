@@ -13,6 +13,7 @@ mod video;
 #[cfg(any(feature = "wifi", feature = "bluetooth"))]
 mod wireless;
 
+mod buttons;
 mod gauge;
 mod h264;
 mod swipable;
@@ -320,6 +321,70 @@ fn main() {
     .unwrap();
 }
 
+/// The configuration for all of the buttons
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct GuiConfig {
+    b1: buttons::sync_buttons::ButtonInputConfig,
+    b2: buttons::sync_buttons::ButtonInputConfig,
+    b3: buttons::sync_buttons::ButtonInputConfig,
+}
+
+struct Buttons {
+    b1: buttons::sync_buttons::ButtonInput,
+    b2: buttons::sync_buttons::ButtonInput,
+    b3: buttons::sync_buttons::ButtonInput,
+}
+
+impl GuiConfig {
+    /// Load the system settings from the current directory
+    pub fn load() -> Self {
+        let mut paths = Vec::new();
+        paths.push(std::path::Path::new("./gui-settings.toml"));
+        #[cfg(target_os = "linux")]
+        {
+            paths.push(std::path::Path::new("/etc/radio/gui-settings.toml"));
+        }
+
+        use std::io::Read;
+        for p in paths {
+            let f = std::fs::File::open(p);
+            if let Ok(mut f) = f {
+                let mut a = String::new();
+                if f.read_to_string(&mut a).is_ok() {
+                    if let Ok(t) = toml::from_str(&a) {
+                        return t;
+                    }
+                }
+            }
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let p = std::path::Path::new("/tmp/gui-settings.toml");
+            log::info!("Creating example settings at {}", p.display());
+            let config = Self::default();
+            config.save(p.into());
+        }
+        Self::default()
+    }
+
+    /// Save the system settings to the current directory
+    pub fn save(&self, path: std::path::PathBuf) {
+        let s = toml::to_string_pretty(self).unwrap();
+        if let Ok(mut f) = std::fs::File::create_new(path) {
+            f.write_all(s.as_bytes());
+        }
+    }
+
+    fn build_buttons(&self) -> Result<Buttons, String> {
+        use buttons::sync_buttons::ButtonInputConfigTrait;
+        Ok(Buttons {
+            b1: self.b1.build()?,
+            b2: self.b2.build()?,
+            b3: self.b3.build()?,
+        })
+    }
+}
+
 /// The properties common to every window in the application
 struct CommonWindowProperties {
     /// The object to communicate with the radio service
@@ -353,11 +418,13 @@ struct CommonWindowProperties {
     usb_writing: bool,
     /// Offroad lights
     offroad_lights: [uobradio_comms::ToggleBool; 4],
+    /// The button inputs
+    buttons: Buttons,
 }
 
 impl CommonWindowProperties {
     /// Construct a new Self with default settings
-    pub fn new() -> Self {
+    pub fn new(bc: GuiConfig) -> Self {
         Self {
             vsettings: uobradio_comms::VolatileSettings::default(),
             radio: uobradio_comms::UobRadio::localhost(),
@@ -378,6 +445,7 @@ impl CommonWindowProperties {
             usb_drive: None,
             usb_writing: false,
             offroad_lights: [Default::default(); 4],
+            buttons: bc.build_buttons().expect("Failed to load buttons"),
         }
     }
 }
@@ -596,10 +664,11 @@ impl MyEguiApp {
                 input_stream,
             )
         };
+        let bc = GuiConfig::load();
         Self {
             theme: GraphicsTheme::dark(),
             subwindow: Subwindow::MainPage(home::MainPage::new()),
-            common: CommonWindowProperties::new(),
+            common: CommonWindowProperties::new(bc),
             #[cfg(feature = "androidauto")]
             audio_output: ao,
             #[cfg(feature = "androidauto")]
@@ -737,6 +806,15 @@ impl eframe::App for MyEguiApp {
                     ));
                 } else if let Some(t) = &mut self.common.android_auto_texture {
                     t.set_partial([0, 0], image, egui::TextureOptions::LINEAR);
+                }
+            }
+        }
+        {
+            use buttons::sync_buttons::ButtonInputTrait;
+            if let Ok(p) = self.common.buttons.b1.poll() {
+                if p.any_pressed() {
+                    let vw = Subwindow::MainPage(home::MainPage::new());
+                    self.subwindow = vw;
                 }
             }
         }
