@@ -97,6 +97,26 @@ struct SystemSettings {
     /// Logging settings
     log: SensorLogConfig,
     /// The oil pressure output
+    gauge_oil_pressure: outputs::F32OutputConfig,
+    /// the coolant temperature gauge output
+    gauge_engine_temp: outputs::F32OutputConfig,
+    /// The tachometer gauge output
+    gauge_tachometer: outputs::F32OutputConfig,
+    /// The ac clutch enable
+    ac_clutch_enable: outputs::BoolOutputConfig,
+    /// Heater enable output
+    heater_enable_output: outputs::BoolOutputConfig,
+    /// The temperature control output
+    hvac_temperature_control: outputs::F32OutputConfig,
+    /// The hvac fan output (low medium high)
+    hvac_fan_output: outputs::BoolVecOutputConfig,
+    /// The offroad lights
+    offroad_lights: Vec<outputs::BoolOutputConfig>,
+}
+
+/// All the outputs for the system
+pub struct SystemOutputs {
+    /// The oil pressure output
     gauge_oil_pressure: outputs::F32Output,
     /// the coolant temperature gauge output
     gauge_engine_temp: outputs::F32Output,
@@ -142,7 +162,12 @@ impl Default for SystemSettings {
             heater_enable_output: Default::default(),
             hvac_temperature_control: Default::default(),
             hvac_fan_output: Default::default(),
-            offroad_lights: vec![Default::default(), Default::default()],
+            offroad_lights: vec![
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ],
         }
     }
 }
@@ -184,6 +209,28 @@ impl SystemSettings {
         if let Ok(mut f) = std::fs::File::create_new(path) {
             f.write_all(s.as_bytes());
         }
+    }
+
+    /// Get the outputs for the system
+    pub fn get_outputs(&self) -> Result<SystemOutputs, String> {
+        use outputs::BoolOutputConfigTrait;
+        use outputs::BoolVecOutputConfigTrait;
+        use outputs::F32OutputConfigTrait;
+        let mut orls = Vec::new();
+        for or in &self.offroad_lights {
+            let b = or.build()?;
+            orls.push(b);
+        }
+        Ok(SystemOutputs {
+            gauge_oil_pressure: self.gauge_oil_pressure.build()?,
+            gauge_engine_temp: self.gauge_engine_temp.build()?,
+            gauge_tachometer: self.gauge_tachometer.build()?,
+            ac_clutch_enable: self.ac_clutch_enable.build()?,
+            heater_enable_output: self.heater_enable_output.build()?,
+            hvac_temperature_control: self.hvac_temperature_control.build()?,
+            hvac_fan_output: self.hvac_fan_output.build()?,
+            offroad_lights: orls,
+        })
     }
 
     /// Get sensor data
@@ -397,6 +444,8 @@ pub struct AppUserCommon {
     aauto_service: Option<AndroidAutoService>,
     /// The system specific (not user set) settings.
     system: SystemSettings,
+    /// The actual outputs for the system
+    outputs: Option<SystemOutputs>,
     /// The network details for android auto
     #[cfg(all(feature = "androidauto", feature = "wifi"))]
     aa_network: Option<NetworkInformation>,
@@ -548,16 +597,20 @@ async fn receive_message_from_app(
                 let val = {
                     let c = common.lock().await;
                     use crate::outputs::BoolOutputTrait;
-                    match query {
-                        uobradio_comms::GpioQuery::CameraLedControl(_) => false,
-                        uobradio_comms::GpioQuery::LightControl(i) => {
-                            let v = c.system.offroad_lights[i as usize].last_output();
-                            v
+                    if let Some(os) = &c.outputs {
+                        match query {
+                            uobradio_comms::GpioQuery::CameraLedControl(_) => false,
+                            uobradio_comms::GpioQuery::LightControl(i) => {
+                                let v = os.offroad_lights[i as usize].last_output();
+                                v
+                            }
+                            uobradio_comms::GpioQuery::InverterPower => false,
+                            uobradio_comms::GpioQuery::AuxOutput(_) => false,
+                            uobradio_comms::GpioQuery::GetAuxInput(_) => false,
+                            uobradio_comms::GpioQuery::GetAuxOutput(_) => false,
                         }
-                        uobradio_comms::GpioQuery::InverterPower => false,
-                        uobradio_comms::GpioQuery::AuxOutput(_) => false,
-                        uobradio_comms::GpioQuery::GetAuxInput(_) => false,
-                        uobradio_comms::GpioQuery::GetAuxOutput(_) => false,
+                    } else {
+                        false
                     }
                 };
                 let packet = uobradio_comms::MessageToApp::GpioQueryResponse(query, val);
@@ -1033,35 +1086,37 @@ async fn receive_message_from_app(
             uobradio_comms::MessageFromApp::GpioControl(gpio) => {
                 {
                     let mut common2 = common.lock().await;
-                    match gpio {
-                        uobradio_comms::Gpio::AuxOutput(id, v) => {
-                            log::info!("Set aux output {} to {}", id, v);
-                        }
-                        uobradio_comms::Gpio::GetAuxInput(id) => {
-                            log::info!("Request for aux input {}", id);
-                        }
-                        uobradio_comms::Gpio::InverterPower(p) => {
-                            log::info!("Set inverter power to {}", p);
-                        }
-                        uobradio_comms::Gpio::LightControl(id, v) => {
-                            log::info!("Set light output {} to {}", id, v);
-                            use outputs::BoolOutputTrait;
-                            common2.system.offroad_lights[id as usize].output(v);
-                        }
-                        uobradio_comms::Gpio::WinchControl(f, r) => {
-                            log::info!("Winch control {} {}", f, r)
-                        }
-                        uobradio_comms::Gpio::CameraLedControl(i, s) => {
-                            log::info!("Camera led {} to {}", i, s)
-                        }
-                        uobradio_comms::Gpio::LockDoors => {
-                            log::info!("Received request to lock all doors")
-                        }
-                        uobradio_comms::Gpio::UnlockDoors => {
-                            log::info!("Recieved request to unlock all doors")
-                        }
-                        uobradio_comms::Gpio::WindowControl { id, up, down } => {
-                            log::info!("Window {} {}/{}", id, up, down)
+                    if let Some(os) = &mut common2.outputs {
+                        match gpio {
+                            uobradio_comms::Gpio::AuxOutput(id, v) => {
+                                log::info!("Set aux output {} to {}", id, v);
+                            }
+                            uobradio_comms::Gpio::GetAuxInput(id) => {
+                                log::info!("Request for aux input {}", id);
+                            }
+                            uobradio_comms::Gpio::InverterPower(p) => {
+                                log::info!("Set inverter power to {}", p);
+                            }
+                            uobradio_comms::Gpio::LightControl(id, v) => {
+                                log::info!("Set light output {} to {}", id, v);
+                                use outputs::BoolOutputTrait;
+                                os.offroad_lights[id as usize].output(v);
+                            }
+                            uobradio_comms::Gpio::WinchControl(f, r) => {
+                                log::info!("Winch control {} {}", f, r)
+                            }
+                            uobradio_comms::Gpio::CameraLedControl(i, s) => {
+                                log::info!("Camera led {} to {}", i, s)
+                            }
+                            uobradio_comms::Gpio::LockDoors => {
+                                log::info!("Received request to lock all doors")
+                            }
+                            uobradio_comms::Gpio::UnlockDoors => {
+                                log::info!("Recieved request to unlock all doors")
+                            }
+                            uobradio_comms::Gpio::WindowControl { id, up, down } => {
+                                log::info!("Window {} {}/{}", id, up, down)
+                            }
                         }
                     }
                 }
@@ -1342,18 +1397,24 @@ async fn sensor_polling(
                     Ok(s) => {
                         use crate::outputs::F32OutputTrait;
                         if let Some(p) = s.engine_oil_pressure {
-                            if let Err(e) = c.system.gauge_oil_pressure.output(p) {
-                                log::error!("Erro writing oil pressure gauge: {}", e);
+                            if let Some(os) = &mut c.outputs {
+                                if let Err(e) = os.gauge_oil_pressure.output(p) {
+                                    log::error!("Error writing oil pressure gauge: {}", e);
+                                }
                             }
                         }
                         if let Some(p) = s.engine_coolant_temp {
-                            if let Err(e) = c.system.gauge_engine_temp.output(p) {
-                                log::error!("Erro writing oil pressure gauge: {}", e);
+                            if let Some(os) = &mut c.outputs {
+                                if let Err(e) = os.gauge_engine_temp.output(p) {
+                                    log::error!("Error writing engine temp gauge: {}", e);
+                                }
                             }
                         }
                         if let Some(p) = s.engine_rpm {
-                            if let Err(e) = c.system.gauge_tachometer.output(p as f32) {
-                                log::error!("Erro writing oil pressure gauge: {}", e);
+                            if let Some(os) = &mut c.outputs {
+                                if let Err(e) = os.gauge_tachometer.output(p as f32) {
+                                    log::error!("Error writing tachometer gauge: {}", e);
+                                }
                             }
                         }
                         c.sensors = s;
@@ -1397,8 +1458,10 @@ async fn sensor_polling(
                 } else {
                     [false, false, true]
                 };
-                if let Err(e) = c.system.hvac_fan_output.output(&fan_output) {
-                    log::error!("Failed to write fan output: {}", e);
+                if let Some(os) = &mut c.outputs {
+                    if let Err(e) = os.hvac_fan_output.output(&fan_output) {
+                        log::error!("Failed to write fan output: {}", e);
+                    }
                 }
                 //log::info!("Fan speed: {}", fan_duty);
                 let ac_duty = c.hvac.get_ac_compressor_duty_cycle();
@@ -1860,6 +1923,11 @@ async fn smain() {
     }
     let s = NonvolatileSettings::load(&args.nvconfig);
     let sys = SystemSettings::load();
+    let outputs = sys.get_outputs();
+    if let Err(e) = &outputs {
+        log::error!("Failed to build outputs: {}", e);
+    }
+    let outputs = outputs.ok();
     #[cfg(feature = "bluetooth")]
     let (bluechan, bluetooth) = {
         let bluechan = tokio::sync::mpsc::channel(5);
@@ -1954,6 +2022,7 @@ async fn smain() {
         historical_sensors: VecDeque::new(),
         num_historical_records: 1800,
         polling_channel: polling_channel.0,
+        outputs,
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(auc));

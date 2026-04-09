@@ -24,7 +24,7 @@ use android_auto::AudioChannelType;
 #[cfg(target_os = "linux")]
 pub use v4l;
 
-/// A list of radios, according the ip adress and port the live at
+/// A list of radios, according the ip adress and port they live at
 pub type UobRadios = BTreeMap<std::net::SocketAddr, UobRadio>;
 
 /// Defines the state for the state machine of receiving packets from the radio

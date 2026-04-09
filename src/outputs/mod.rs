@@ -1,5 +1,35 @@
 //! Code for handling the various outputs of the radio system
 
+/// The boolean output configuration trait
+#[enum_dispatch::enum_dispatch]
+pub trait BoolOutputConfigTrait {
+    /// Build the output
+    fn build(&self) -> Result<BoolOutput, String>;
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[enum_dispatch::enum_dispatch(BoolOutputConfigTrait)]
+pub enum BoolOutputConfig {
+    Dummy(DummyConfigOutput),
+    #[cfg(feature = "gpio")]
+    Gpio(GpioOutputConfig),
+}
+
+impl Default for BoolOutputConfig {
+    fn default() -> Self {
+        Self::Dummy(DummyConfigOutput {})
+    }
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct DummyConfigOutput {}
+
+impl BoolOutputConfigTrait for DummyConfigOutput {
+    fn build(&self) -> Result<BoolOutput, String> {
+        Ok(BoolOutput::Dummy(DummyOutput { val: false }))
+    }
+}
+
 /// The boolean output trait
 #[enum_dispatch::enum_dispatch]
 pub trait BoolOutputTrait {
@@ -9,7 +39,7 @@ pub trait BoolOutputTrait {
     fn last_output(&self) -> bool;
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug)]
 #[enum_dispatch::enum_dispatch(BoolOutputTrait)]
 pub enum BoolOutput {
     Dummy(DummyOutput),
@@ -24,7 +54,7 @@ impl Default for BoolOutput {
 }
 
 /// An output that goes nowhere
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug)]
 pub struct DummyOutput {
     val: bool,
 }
@@ -43,8 +73,39 @@ impl BoolOutputTrait for DummyOutput {
 /// An output that writes to a gpio line
 #[cfg(feature = "gpio")]
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub struct GpioOutput {
+pub struct GpioOutputConfig {
     chip: String,
+    line: u32,
+    output: bool,
+}
+
+#[cfg(feature = "gpio")]
+impl BoolOutputConfigTrait for GpioOutputConfig {
+    fn build(&self) -> Result<BoolOutput, String> {
+        let mut a = gpiocdev::Request::builder()
+            .on_chip(&self.chip)
+            .with_line(self.line)
+            .as_output(if self.output {
+                gpiocdev::line::Value::Active
+            } else {
+                gpiocdev::line::Value::Inactive
+            })
+            .request()
+            .map_err(|e| e.to_string())?;
+        let g = GpioOutput {
+            req: a,
+            line: self.line,
+            output: self.output,
+        };
+        Ok(BoolOutput::Gpio(g))
+    }
+}
+
+/// An output that writes to a gpio line
+#[cfg(feature = "gpio")]
+#[derive(Debug)]
+pub struct GpioOutput {
+    req: gpiocdev::request::Request,
     line: u32,
     output: bool,
 }
@@ -52,15 +113,16 @@ pub struct GpioOutput {
 #[cfg(feature = "gpio")]
 impl BoolOutputTrait for GpioOutput {
     fn output(&mut self, val: bool) -> Result<(), String> {
-        let mut a = gpiocdev::Request::builder()
-            .on_chip(&self.chip)
-            .with_line(self.line)
-            .as_output(if val {
-                gpiocdev::line::Value::Active
-            } else {
-                gpiocdev::line::Value::Inactive
-            })
-            .request();
+        self.req
+            .set_value(
+                self.line,
+                if val {
+                    gpiocdev::line::Value::Active
+                } else {
+                    gpiocdev::line::Value::Inactive
+                },
+            )
+            .map_err(|e| e.to_string())?;
         self.output = val;
         Ok(())
     }
@@ -72,12 +134,59 @@ impl BoolOutputTrait for GpioOutput {
 
 /// The f32 output trait
 #[enum_dispatch::enum_dispatch]
+pub trait F32OutputConfigTrait {
+    /// Build the output
+    fn build(&self) -> Result<F32Output, String>;
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[enum_dispatch::enum_dispatch(F32OutputConfigTrait)]
+pub enum F32OutputConfig {
+    Dummy(DummyConfigOutput),
+    #[cfg(feature = "iio")]
+    Iio(IioOutputConfig),
+}
+
+impl Default for F32OutputConfig {
+    fn default() -> Self {
+        Self::Dummy(DummyConfigOutput {})
+    }
+}
+
+impl F32OutputConfigTrait for DummyConfigOutput {
+    fn build(&self) -> Result<F32Output, String> {
+        Ok(F32Output::Dummy(DummyOutput { val: false }))
+    }
+}
+
+#[cfg(feature = "iio")]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct IioOutputConfig {
+    device: usize,
+    attribute: String,
+}
+
+#[cfg(feature = "iio")]
+impl F32OutputConfigTrait for IioOutputConfig {
+    fn build(&self) -> Result<F32Output, String> {
+        let context: industrial_io::Context =
+            industrial_io::context::Context::new().map_err(|e| e.to_string())?;
+        let device = context.get_device(self.device).map_err(|e| e.to_string())?;
+        Ok(F32Output::Iio(IioOutput {
+            device,
+            attribute: self.attribute.clone(),
+        }))
+    }
+}
+
+/// The f32 output trait
+#[enum_dispatch::enum_dispatch]
 pub trait F32OutputTrait {
     /// Write the output to the destination
     fn output(&mut self, val: f32) -> Result<(), String>;
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug)]
 #[enum_dispatch::enum_dispatch(F32OutputTrait)]
 pub enum F32Output {
     Dummy(DummyOutput),
@@ -98,21 +207,64 @@ impl F32OutputTrait for DummyOutput {
 }
 
 #[cfg(feature = "iio")]
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug)]
 pub struct IioOutput {
-    device: usize,
+    device: industrial_io::device::Device,
     attribute: String,
 }
 
 #[cfg(feature = "iio")]
 impl F32OutputTrait for IioOutput {
     fn output(&mut self, val: f32) -> Result<(), String> {
-        let context: industrial_io::Context =
-            industrial_io::context::Context::new().map_err(|e| e.to_string())?;
-        let device = context.get_device(self.device).map_err(|e| e.to_string())?;
-        device
+        self.device
             .attr_write_float(&self.attribute, val as f64)
             .map_err(|e| e.to_string())
+    }
+}
+
+/// The boolean vector output trait
+#[enum_dispatch::enum_dispatch]
+pub trait BoolVecOutputConfigTrait {
+    /// Build the output object
+    fn build(&self) -> Result<BoolVecOutput, String>;
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[enum_dispatch::enum_dispatch(BoolVecOutputConfigTrait)]
+pub enum BoolVecOutputConfig {
+    Dummy(DummyConfigOutput),
+    #[cfg(feature = "gpio")]
+    Gpio(GpioVecOutputConfig),
+}
+
+impl Default for BoolVecOutputConfig {
+    fn default() -> Self {
+        Self::Dummy(DummyConfigOutput {})
+    }
+}
+
+impl BoolVecOutputConfigTrait for DummyConfigOutput {
+    fn build(&self) -> Result<BoolVecOutput, String> {
+        Ok(BoolVecOutput::Dummy(DummyOutput { val: false }))
+    }
+}
+
+/// An output that writes to a gpio line
+#[cfg(feature = "gpio")]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+pub struct GpioVecOutputConfig {
+    outputs: Vec<GpioOutputConfig>,
+}
+
+#[cfg(feature = "gpio")]
+impl BoolVecOutputConfigTrait for GpioVecOutputConfig {
+    fn build(&self) -> Result<BoolVecOutput, String> {
+        let mut outputs = Vec::new();
+        for o in &self.outputs {
+            let b = o.build()?;
+            outputs.push(b);
+        }
+        Ok(BoolVecOutput::Gpio(GpioVecOutput { outputs }))
     }
 }
 
@@ -123,7 +275,7 @@ pub trait BoolVecOutputTrait {
     fn output(&mut self, val: &[bool]) -> Result<(), String>;
 }
 
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug)]
 #[enum_dispatch::enum_dispatch(BoolVecOutputTrait)]
 pub enum BoolVecOutput {
     Dummy(DummyOutput),
@@ -145,9 +297,9 @@ impl BoolVecOutputTrait for DummyOutput {
 
 /// An output that writes to a gpio line
 #[cfg(feature = "gpio")]
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Debug)]
 pub struct GpioVecOutput {
-    outputs: Vec<GpioOutput>,
+    outputs: Vec<BoolOutput>,
 }
 
 #[cfg(feature = "gpio")]
