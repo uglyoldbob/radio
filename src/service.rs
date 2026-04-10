@@ -303,8 +303,13 @@ impl SystemSettings {
             if let Ok(mut f) = f {
                 let mut a = String::new();
                 if f.read_to_string(&mut a).is_ok() {
-                    if let Ok(t) = toml::from_str(&a) {
-                        return t;
+                    match toml::from_str(&a) {
+                        Ok(t) => {
+                            return t;
+                        }
+                        Err(e) => {
+                            log::error!("Failed to read config file {}: {}", p.display(), e);
+                        }
                     }
                 }
             }
