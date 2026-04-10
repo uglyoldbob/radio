@@ -835,7 +835,6 @@ impl eframe::App for MyEguiApp {
                         self.common.offroad_lights[*i as usize].provide_value(*val);
                     }
                     uobradio_comms::GpioQuery::InverterPower => todo!(),
-                    uobradio_comms::GpioQuery::AuxOutput(_) => todo!(),
                     uobradio_comms::GpioQuery::GetAuxInput(_) => todo!(),
                     uobradio_comms::GpioQuery::GetAuxOutput(_) => todo!(),
                 },

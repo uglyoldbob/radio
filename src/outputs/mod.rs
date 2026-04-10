@@ -273,6 +273,10 @@ impl BoolVecOutputConfigTrait for GpioVecOutputConfig {
 pub trait BoolVecOutputTrait {
     /// Write the output to the destination
     fn output(&mut self, val: &[bool]) -> Result<(), String>;
+    /// Update a single channel of the vec
+    fn set_channel(&mut self, i: u8, val: bool) -> Result<(), String>;
+    /// Get the last output value of the given channel
+    fn query_channel(&self, i: u8) -> Result<bool, String>;
 }
 
 #[derive(Debug)]
@@ -290,8 +294,16 @@ impl Default for BoolVecOutput {
 }
 
 impl BoolVecOutputTrait for DummyOutput {
-    fn output(&mut self, val: &[bool]) -> Result<(), String> {
+    fn output(&mut self, _val: &[bool]) -> Result<(), String> {
         Ok(())
+    }
+
+    fn set_channel(&mut self, _i: u8, _val: bool) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn query_channel(&self, i: u8) -> Result<bool, String> {
+        Ok(false)
     }
 }
 
@@ -321,5 +333,19 @@ impl BoolVecOutputTrait for GpioVecOutput {
             o.0.output(*o.1)?;
         }
         Ok(())
+    }
+
+    fn set_channel(&mut self, i: u8, val: bool) -> Result<(), String> {
+        if let Some(o) = self.outputs.get_mut(i as usize) {
+            o.output(val)?;
+        }
+        Ok(())
+    }
+
+    fn query_channel(&self, i: u8) -> Result<bool, String> {
+        if let Some(o) = self.outputs.get(i as usize) {
+            return Ok(o.last_output());
+        }
+        Err("Does not exist".to_string())
     }
 }

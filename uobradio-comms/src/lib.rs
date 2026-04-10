@@ -632,8 +632,6 @@ pub enum GpioQuery {
     LightControl(u8),
     /// inverter main power
     InverterPower,
-    /// Control an auxiliary output
-    AuxOutput(u8),
     /// Retrieve the value of an auxiliary input
     GetAuxInput(u8),
     /// Retrieve the value of an auxiliary output

@@ -39,6 +39,11 @@ use crate::sensors::{
     BoolSensor, InclinometerSensor, PressureSensor, RpmSensor, TemperatureSensor, VoltageSensor,
 };
 
+use crate::sensors::{
+    BoolSensorConfig, InclinometerSensorConfig, PressureSensorConfig, RpmSensorConfig,
+    TemperatureSensorConfig, VoltageSensorConfig,
+};
+
 mod outputs;
 mod sensors;
 mod video_service;
@@ -60,8 +65,78 @@ struct Arguments {
 /// System specific settings (not set by the user)
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 struct SystemSettings {
-    /// Inclinometer sensor
-    inclinometer: InclinometerSensor,
+    /// Main cabin temperature sensor
+    main_cabin_temperature_sensor: TemperatureSensorConfig,
+    /// hvac vent temperature sensor
+    hvac_vent_temperature_sensor: TemperatureSensorConfig,
+    /// Orientation of the system, left-right, forwards-backwards, both in degrees
+    orientation: InclinometerSensorConfig,
+    /// The engine coolant temperature
+    engine_coolant_temp: TemperatureSensorConfig,
+    /// The engine oil temperature
+    engine_oil_temp: TemperatureSensorConfig,
+    /// The engine exhaust temperature
+    engine_exhaust_temp: TemperatureSensorConfig,
+    /// Front differential temperature
+    front_diff_temp: TemperatureSensorConfig,
+    /// Rear differential temperature
+    rear_diff_temp: TemperatureSensorConfig,
+    /// Intake air temperature
+    intake_air: TemperatureSensorConfig,
+    /// The engine oil pressure (psi)
+    engine_oil_pressure: PressureSensorConfig,
+    /// The coolant pressure (psi)
+    coolant_pressure: PressureSensorConfig,
+    /// Transmission temperature
+    trans_temp: TemperatureSensorConfig,
+    /// Transfer case temperature
+    transfer_temp: TemperatureSensorConfig,
+    /// Door open sensor
+    door_open: BoolSensorConfig,
+    /// Engine rpm sensor
+    engine_rpm: RpmSensorConfig,
+    /// Main system voltage
+    main_voltage: VoltageSensorConfig,
+    /// Logging settings
+    log: SensorLogConfig,
+    /// The oil pressure output
+    gauge_oil_pressure: outputs::F32OutputConfig,
+    /// the coolant temperature gauge output
+    gauge_engine_temp: outputs::F32OutputConfig,
+    /// The tachometer gauge output
+    gauge_tachometer: outputs::F32OutputConfig,
+    /// The ac clutch enable
+    ac_clutch_enable: outputs::BoolOutputConfig,
+    /// Heater enable output
+    heater_enable_output: outputs::BoolOutputConfig,
+    /// The temperature control output
+    hvac_temperature_control: outputs::F32OutputConfig,
+    /// The hvac fan output (low medium high)
+    hvac_fan_output: outputs::BoolVecOutputConfig,
+    /// The offroad lights
+    offroad_lights: Vec<outputs::BoolOutputConfig>,
+    /// The winch control output
+    winch: outputs::BoolVecOutputConfig,
+    /// The auxiliary outputs
+    aux_out: outputs::BoolVecOutputConfig,
+    /// The inverter config
+    inverter: outputs::BoolOutputConfig,
+    /// Door lock config
+    door_lock: outputs::BoolOutputConfig,
+    /// Door unlock config
+    door_unlock: outputs::BoolOutputConfig,
+    /// Window controls
+    windows: Vec<outputs::BoolVecOutputConfig>,
+    /// Camera led controls
+    camera_leds: outputs::BoolVecOutputConfig,
+    /// aux input sensors
+    aux_in: Vec<sensors::BoolSensorConfig>,
+}
+
+/// All the inputs for the system
+pub struct SystemInputs {
+    /// aux input sensors
+    aux_in: Vec<sensors::BoolSensor>,
     /// Main cabin temperature sensor
     main_cabin_temperature_sensor: TemperatureSensor,
     /// hvac vent temperature sensor
@@ -94,24 +169,34 @@ struct SystemSettings {
     engine_rpm: RpmSensor,
     /// Main system voltage
     main_voltage: VoltageSensor,
-    /// Logging settings
-    log: SensorLogConfig,
-    /// The oil pressure output
-    gauge_oil_pressure: outputs::F32OutputConfig,
-    /// the coolant temperature gauge output
-    gauge_engine_temp: outputs::F32OutputConfig,
-    /// The tachometer gauge output
-    gauge_tachometer: outputs::F32OutputConfig,
-    /// The ac clutch enable
-    ac_clutch_enable: outputs::BoolOutputConfig,
-    /// Heater enable output
-    heater_enable_output: outputs::BoolOutputConfig,
-    /// The temperature control output
-    hvac_temperature_control: outputs::F32OutputConfig,
-    /// The hvac fan output (low medium high)
-    hvac_fan_output: outputs::BoolVecOutputConfig,
-    /// The offroad lights
-    offroad_lights: Vec<outputs::BoolOutputConfig>,
+}
+
+impl SystemInputs {
+    /// Get sensor data
+    pub fn get_sensor_data(&mut self) -> Result<uobradio_comms::Sensors, String> {
+        use sensors::BoolSensorTrait;
+        use sensors::InclinometerSensorTrait;
+        use sensors::PressureSensorTrait;
+        use sensors::RpmSensorTrait;
+        use sensors::TemperatureSensorTrait;
+        use sensors::VoltageSensorTrait;
+        Ok(uobradio_comms::Sensors {
+            intake_air_temperature: Some(self.intake_air.poll()?.fahrenheit()),
+            orientation: Some(self.orientation.poll()),
+            engine_coolant_temp: Some(self.engine_coolant_temp.poll()?.fahrenheit()),
+            engine_oil_temp: Some(self.engine_oil_temp.poll()?.fahrenheit()),
+            engine_exhaust_temp: Some(self.engine_exhaust_temp.poll()?.fahrenheit()),
+            front_diff_temp: Some(self.front_diff_temp.poll()?.fahrenheit()),
+            rear_diff_temp: Some(self.rear_diff_temp.poll()?.fahrenheit()),
+            engine_oil_pressure: Some(self.engine_oil_pressure.poll()?),
+            coolant_pressure: Some(self.coolant_pressure.poll()?),
+            trans_temp: Some(self.trans_temp.poll()?.fahrenheit()),
+            transfer_temp: Some(self.transfer_temp.poll()?.fahrenheit()),
+            door_open: Some(self.door_open.poll()?),
+            engine_rpm: Some(self.engine_rpm.poll()?),
+            main_voltage: Some(self.main_voltage.poll()?),
+        })
+    }
 }
 
 /// All the outputs for the system
@@ -132,12 +217,25 @@ pub struct SystemOutputs {
     hvac_fan_output: outputs::BoolVecOutput,
     /// The offroad lights
     offroad_lights: Vec<outputs::BoolOutput>,
+    /// The winch control output
+    winch: outputs::BoolVecOutput,
+    /// The auxiliary outputs
+    aux_out: outputs::BoolVecOutput,
+    /// The inverter power enable
+    inverter: outputs::BoolOutput,
+    /// Door lock output
+    door_lock: outputs::BoolOutput,
+    /// Door unlock output
+    door_unlock: outputs::BoolOutput,
+    /// Window controls
+    windows: Vec<outputs::BoolVecOutput>,
+    /// Camera led controls
+    camera_leds: outputs::BoolVecOutput,
 }
 
 impl Default for SystemSettings {
     fn default() -> Self {
         Self {
-            inclinometer: InclinometerSensor::default(),
             main_cabin_temperature_sensor: Default::default(),
             hvac_vent_temperature_sensor: Default::default(),
             orientation: Default::default(),
@@ -163,6 +261,24 @@ impl Default for SystemSettings {
             hvac_temperature_control: Default::default(),
             hvac_fan_output: Default::default(),
             offroad_lights: vec![
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ],
+            winch: Default::default(),
+            aux_out: Default::default(),
+            inverter: Default::default(),
+            door_lock: Default::default(),
+            door_unlock: Default::default(),
+            windows: vec![
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+            ],
+            camera_leds: Default::default(),
+            aux_in: vec![
                 Default::default(),
                 Default::default(),
                 Default::default(),
@@ -211,6 +327,39 @@ impl SystemSettings {
         }
     }
 
+    /// Get the inputs for the system
+    pub fn get_inputs(&self) -> Result<SystemInputs, String> {
+        use sensors::BoolSensorConfigTrait;
+        use sensors::InclinometerSensorConfigTrait;
+        use sensors::PressureSensorConfigTrait;
+        use sensors::RpmSensorConfigTrait;
+        use sensors::TemperatureSensorConfigTrait;
+        use sensors::VoltageSensorConfigTrait;
+        let mut aux = Vec::new();
+        for a in &self.aux_in {
+            aux.push(a.build()?);
+        }
+        Ok(SystemInputs {
+            aux_in: aux,
+            main_cabin_temperature_sensor: self.main_cabin_temperature_sensor.build()?,
+            hvac_vent_temperature_sensor: self.hvac_vent_temperature_sensor.build()?,
+            orientation: self.orientation.build()?,
+            engine_coolant_temp: self.engine_coolant_temp.build()?,
+            engine_oil_temp: self.engine_oil_temp.build()?,
+            engine_exhaust_temp: self.engine_exhaust_temp.build()?,
+            front_diff_temp: self.front_diff_temp.build()?,
+            rear_diff_temp: self.rear_diff_temp.build()?,
+            intake_air: self.intake_air.build()?,
+            engine_oil_pressure: self.engine_oil_pressure.build()?,
+            coolant_pressure: self.coolant_pressure.build()?,
+            trans_temp: self.trans_temp.build()?,
+            transfer_temp: self.transfer_temp.build()?,
+            door_open: self.door_open.build()?,
+            engine_rpm: self.engine_rpm.build()?,
+            main_voltage: self.main_voltage.build()?,
+        })
+    }
+
     /// Get the outputs for the system
     pub fn get_outputs(&self) -> Result<SystemOutputs, String> {
         use outputs::BoolOutputConfigTrait;
@@ -218,8 +367,11 @@ impl SystemSettings {
         use outputs::F32OutputConfigTrait;
         let mut orls = Vec::new();
         for or in &self.offroad_lights {
-            let b = or.build()?;
-            orls.push(b);
+            orls.push(or.build()?);
+        }
+        let mut ws = Vec::new();
+        for w in &self.windows {
+            ws.push(w.build()?);
         }
         Ok(SystemOutputs {
             gauge_oil_pressure: self.gauge_oil_pressure.build()?,
@@ -230,32 +382,13 @@ impl SystemSettings {
             hvac_temperature_control: self.hvac_temperature_control.build()?,
             hvac_fan_output: self.hvac_fan_output.build()?,
             offroad_lights: orls,
-        })
-    }
-
-    /// Get sensor data
-    pub fn get_sensor_data(&mut self) -> Result<uobradio_comms::Sensors, String> {
-        use sensors::BoolSensorTrait;
-        use sensors::InclinometerSensorTrait;
-        use sensors::PressureSensorTrait;
-        use sensors::RpmSensorTrait;
-        use sensors::TemperatureSensorTrait;
-        use sensors::VoltageSensorTrait;
-        Ok(uobradio_comms::Sensors {
-            intake_air_temperature: Some(self.intake_air.poll()?.fahrenheit()),
-            orientation: Some(self.orientation.poll()),
-            engine_coolant_temp: Some(self.engine_coolant_temp.poll()?.fahrenheit()),
-            engine_oil_temp: Some(self.engine_oil_temp.poll()?.fahrenheit()),
-            engine_exhaust_temp: Some(self.engine_exhaust_temp.poll()?.fahrenheit()),
-            front_diff_temp: Some(self.front_diff_temp.poll()?.fahrenheit()),
-            rear_diff_temp: Some(self.rear_diff_temp.poll()?.fahrenheit()),
-            engine_oil_pressure: Some(self.engine_oil_pressure.poll()?),
-            coolant_pressure: Some(self.coolant_pressure.poll()?),
-            trans_temp: Some(self.trans_temp.poll()?.fahrenheit()),
-            transfer_temp: Some(self.transfer_temp.poll()?.fahrenheit()),
-            door_open: Some(self.door_open.poll()?),
-            engine_rpm: Some(self.engine_rpm.poll()?),
-            main_voltage: Some(self.main_voltage.poll()?),
+            winch: self.winch.build()?,
+            aux_out: self.aux_out.build()?,
+            inverter: self.inverter.build()?,
+            door_lock: self.door_lock.build()?,
+            door_unlock: self.door_unlock.build()?,
+            windows: ws,
+            camera_leds: self.camera_leds.build()?,
         })
     }
 }
@@ -446,6 +579,8 @@ pub struct AppUserCommon {
     system: SystemSettings,
     /// The actual outputs for the system
     outputs: Option<SystemOutputs>,
+    /// The actual inputs for the system
+    inputs: Option<SystemInputs>,
     /// The network details for android auto
     #[cfg(all(feature = "androidauto", feature = "wifi"))]
     aa_network: Option<NetworkInformation>,
@@ -595,19 +730,26 @@ async fn receive_message_from_app(
         match packet {
             uobradio_comms::MessageFromApp::GpioQuery(query) => {
                 let val = {
-                    let c = common.lock().await;
+                    let mut c = common.lock().await;
                     use crate::outputs::BoolOutputTrait;
-                    if let Some(os) = &c.outputs {
+                    if let Some(os) = &mut c.outputs {
                         match query {
                             uobradio_comms::GpioQuery::CameraLedControl(_) => false,
                             uobradio_comms::GpioQuery::LightControl(i) => {
                                 let v = os.offroad_lights[i as usize].last_output();
                                 v
                             }
-                            uobradio_comms::GpioQuery::InverterPower => false,
-                            uobradio_comms::GpioQuery::AuxOutput(_) => false,
-                            uobradio_comms::GpioQuery::GetAuxInput(_) => false,
-                            uobradio_comms::GpioQuery::GetAuxOutput(_) => false,
+                            uobradio_comms::GpioQuery::InverterPower => os.inverter.last_output(),
+                            uobradio_comms::GpioQuery::GetAuxInput(i) => false,
+                            uobradio_comms::GpioQuery::GetAuxOutput(i) => {
+                                use outputs::BoolVecOutputTrait;
+                                if let Ok(v) = os.aux_out.query_channel(i) {
+                                    v
+                                } else {
+                                    log::error!("Failed to read aux output {}", i);
+                                    false
+                                }
+                            }
                         }
                     } else {
                         false
@@ -1090,12 +1232,16 @@ async fn receive_message_from_app(
                         match gpio {
                             uobradio_comms::Gpio::AuxOutput(id, v) => {
                                 log::info!("Set aux output {} to {}", id, v);
+                                use outputs::BoolVecOutputTrait;
+                                os.aux_out.set_channel(id, v);
                             }
                             uobradio_comms::Gpio::GetAuxInput(id) => {
-                                log::info!("Request for aux input {}", id);
+                                log::error!("NONSENSICAL Request for aux input control {}", id);
                             }
                             uobradio_comms::Gpio::InverterPower(p) => {
                                 log::info!("Set inverter power to {}", p);
+                                use outputs::BoolOutputTrait;
+                                os.inverter.output(p);
                             }
                             uobradio_comms::Gpio::LightControl(id, v) => {
                                 log::info!("Set light output {} to {}", id, v);
@@ -1103,19 +1249,63 @@ async fn receive_message_from_app(
                                 os.offroad_lights[id as usize].output(v);
                             }
                             uobradio_comms::Gpio::WinchControl(f, r) => {
-                                log::info!("Winch control {} {}", f, r)
+                                log::info!("Winch control {} {}", f, r);
+                                use outputs::BoolVecOutputTrait;
+                                os.winch.output(&[f, r]);
                             }
                             uobradio_comms::Gpio::CameraLedControl(i, s) => {
-                                log::info!("Camera led {} to {}", i, s)
+                                log::info!("Camera led {} to {}", i, s);
+                                use outputs::BoolVecOutputTrait;
+                                os.camera_leds.set_channel(i, s);
                             }
                             uobradio_comms::Gpio::LockDoors => {
-                                log::info!("Received request to lock all doors")
+                                log::info!("Received request to lock all doors");
+                                let common3 = common.clone();
+                                tokio::spawn(async move {
+                                    use outputs::BoolOutputTrait;
+                                    {
+                                        let mut c = common3.lock().await;
+                                        if let Some(os) = &mut c.outputs {
+                                            os.door_lock.output(true);
+                                        }
+                                    }
+                                    tokio::time::sleep(std::time::Duration::from_millis(1000))
+                                        .await;
+                                    {
+                                        let mut c = common3.lock().await;
+                                        if let Some(os) = &mut c.outputs {
+                                            os.door_lock.output(true);
+                                        }
+                                    }
+                                });
                             }
                             uobradio_comms::Gpio::UnlockDoors => {
-                                log::info!("Recieved request to unlock all doors")
+                                log::info!("Recieved request to unlock all doors");
+                                let common3 = common.clone();
+                                tokio::spawn(async move {
+                                    use outputs::BoolOutputTrait;
+                                    {
+                                        let mut c = common3.lock().await;
+                                        if let Some(os) = &mut c.outputs {
+                                            os.door_unlock.output(true);
+                                        }
+                                    }
+                                    tokio::time::sleep(std::time::Duration::from_millis(1000))
+                                        .await;
+                                    {
+                                        let mut c = common3.lock().await;
+                                        if let Some(os) = &mut c.outputs {
+                                            os.door_unlock.output(true);
+                                        }
+                                    }
+                                });
                             }
                             uobradio_comms::Gpio::WindowControl { id, up, down } => {
-                                log::info!("Window {} {}/{}", id, up, down)
+                                use outputs::BoolVecOutputTrait;
+                                log::info!("Window {} {}/{}", id, up, down);
+                                if let Some(w) = os.windows.get_mut(id as usize) {
+                                    w.output(&[up, down]);
+                                }
                             }
                         }
                     }
@@ -1393,33 +1583,35 @@ async fn sensor_polling(
             }
             _ = interval_fast.tick() => {
                 let mut c = common.lock().await;
-                match c.system.get_sensor_data() {
-                    Ok(s) => {
-                        use crate::outputs::F32OutputTrait;
-                        if let Some(p) = s.engine_oil_pressure {
-                            if let Some(os) = &mut c.outputs {
-                                if let Err(e) = os.gauge_oil_pressure.output(p) {
-                                    log::error!("Error writing oil pressure gauge: {}", e);
+                if let Some(inputs) = &mut c.inputs {
+                    match inputs.get_sensor_data() {
+                        Ok(s) => {
+                            use crate::outputs::F32OutputTrait;
+                            if let Some(p) = s.engine_oil_pressure {
+                                if let Some(os) = &mut c.outputs {
+                                    if let Err(e) = os.gauge_oil_pressure.output(p) {
+                                        log::error!("Error writing oil pressure gauge: {}", e);
+                                    }
                                 }
                             }
-                        }
-                        if let Some(p) = s.engine_coolant_temp {
-                            if let Some(os) = &mut c.outputs {
-                                if let Err(e) = os.gauge_engine_temp.output(p) {
-                                    log::error!("Error writing engine temp gauge: {}", e);
+                            if let Some(p) = s.engine_coolant_temp {
+                                if let Some(os) = &mut c.outputs {
+                                    if let Err(e) = os.gauge_engine_temp.output(p) {
+                                        log::error!("Error writing engine temp gauge: {}", e);
+                                    }
                                 }
                             }
-                        }
-                        if let Some(p) = s.engine_rpm {
-                            if let Some(os) = &mut c.outputs {
-                                if let Err(e) = os.gauge_tachometer.output(p as f32) {
-                                    log::error!("Error writing tachometer gauge: {}", e);
+                            if let Some(p) = s.engine_rpm {
+                                if let Some(os) = &mut c.outputs {
+                                    if let Err(e) = os.gauge_tachometer.output(p as f32) {
+                                        log::error!("Error writing tachometer gauge: {}", e);
+                                    }
                                 }
                             }
+                            c.sensors = s;
                         }
-                        c.sensors = s;
+                        Err(e) => log::error!("Error getting sensor data: {}", e),
                     }
-                    Err(e) => log::error!("Error getting sensor data: {}", e),
                 }
                 let c2 = c.sensors.clone();
                 c.historical_sensors.push_back(c2);
@@ -1437,11 +1629,18 @@ async fn sensor_polling(
                 use crate::sensors::TemperatureSensorTrait;
                  use crate::outputs::BoolVecOutputTrait;
                 let mut c = common.lock().await;
-                if let Ok(cabin_temp) = c.system.main_cabin_temperature_sensor.poll() {
-                    c.hvac.set_cabin_temperature(cabin_temp.fahrenheit());
+                let (cabin, vent) = if let Some(ins) = &mut c.inputs {
+                    let a = ins.main_cabin_temperature_sensor.poll();
+                    let b = ins.hvac_vent_temperature_sensor.poll();
+                    (a, b)
+                } else {
+                    (Err("No inputs".to_string()), Err("No inputs".to_string()))
+                };
+                if let Ok(cabin) = cabin {
+                    c.hvac.set_cabin_temperature(cabin.fahrenheit());
                 }
-                if let Ok(vent_temp) = c.system.hvac_vent_temperature_sensor.poll() {
-                    c.hvac.set_hvac_vent_temperature(vent_temp.fahrenheit());
+                if let Ok(vent) = vent {
+                    c.hvac.set_hvac_vent_temperature(vent.fahrenheit());
                 }
 
                 c.hvac_public = c.hvac.get_public_data();
@@ -1924,10 +2123,15 @@ async fn smain() {
     let s = NonvolatileSettings::load(&args.nvconfig);
     let sys = SystemSettings::load();
     let outputs = sys.get_outputs();
+    let inputs = sys.get_inputs();
     if let Err(e) = &outputs {
         log::error!("Failed to build outputs: {}", e);
     }
     let outputs = outputs.ok();
+    if let Err(e) = &inputs {
+        log::error!("Failed to build inputs: {}", e);
+    }
+    let inputs = inputs.ok();
     #[cfg(feature = "bluetooth")]
     let (bluechan, bluetooth) = {
         let bluechan = tokio::sync::mpsc::channel(5);
@@ -2023,6 +2227,7 @@ async fn smain() {
         num_historical_records: 1800,
         polling_channel: polling_channel.0,
         outputs,
+        inputs,
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(auc));
