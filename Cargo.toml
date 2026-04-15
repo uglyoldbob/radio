@@ -78,4 +78,3 @@ swupdate = ["dep:swupdate-ipc"]
 #this patch is needed for the v1 certificate in the android-auto crate of src/cert.rs
 [patch.crates-io]
 rustls-webpki = { path = "./webpki" }
-bluetooth-rust = { path = "./bluetooth-rust/bluetooth-rust" }
