@@ -211,9 +211,9 @@ dependencies = [
 
 [[package]]
 name = "android-auto"
-version = "0.3.6"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a44c3aa556ce451476f4940f05caff3f2ea265254ed51509c21a5cfdbaeb29da"
+checksum = "cfb89a0a8f7101f52a8d311a41527562a724c84beffcd8ab6d150455c729a534"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
@@ -895,10 +895,9 @@ dependencies = [
 
 [[package]]
 name = "bluetooth-rust"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "223351585aaaa21343e10c965bc5c9931e49d5e1e65e2a70e647a4d008c7bc5d"
+version = "0.3.6"
 dependencies = [
+ "async-trait",
  "bluer",
  "enum_dispatch",
  "futures",
@@ -908,6 +907,7 @@ dependencies = [
  "ouroboros",
  "serde",
  "tokio",
+ "windows 0.62.2",
  "winit",
 ]
 

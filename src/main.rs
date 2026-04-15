@@ -702,6 +702,7 @@ impl eframe::App for MyEguiApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         ui.ctx().request_repaint();
+        ui.options_mut(|w| w.input_options.max_click_dist = 10.0);
         self.common.radio.connect();
         if self.common.radio.ping().is_err() {
             self.common.radio.disconnect();

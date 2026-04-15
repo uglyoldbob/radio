@@ -4,10 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-android-auto = { version = "0.3.6", optional = true }
+android-auto = { version = "0.3.7", optional = true }
 async-trait = "0.1.88"
 bincode = {version = "2.0.1", features = ["serde"]}
-bluetooth-rust = { version = "0.2.4", optional = true}
+bluetooth-rust = { version = "0.3.6", optional = true}
 chrono = { version = "0.4.43", features = ["serde"] }
 clap = { version = "4.5.38", features = ["derive"] }
 cpal = "0.15.3"
@@ -78,3 +78,4 @@ swupdate = ["dep:swupdate-ipc"]
 #this patch is needed for the v1 certificate in the android-auto crate of src/cert.rs
 [patch.crates-io]
 rustls-webpki = { path = "./webpki" }
+bluetooth-rust = { path = "./bluetooth-rust/bluetooth-rust" }

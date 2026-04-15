@@ -257,7 +257,7 @@ impl SubwindowTrait for Config {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, true])
                         .show(ui, |ui| {
-                            ui.label("Future expansion here for bluetooth settings");
+                            ui.label("Future expansion here for bluetooth settings2");
                             if ui.big_button(&theme, "Enable discovery").clicked() {
                                 let _ = common.radio.send_packet(
                                     uobradio_comms::MessageFromApp::SetBluetoothDiscovery(true),

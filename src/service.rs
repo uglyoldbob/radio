@@ -427,15 +427,31 @@ impl AndroidAutoService {
         let aautochan = tokio::sync::mpsc::channel(150);
 
         #[cfg(feature = "bluetooth")]
-        let blue_addresses: Vec<[u8; 6]> = com.bluetooth.addresses().await;
+        let blue_addresses: Vec<bluetooth_rust::BluetoothAdapterAddress> = {
+            if let Some(bluetooth) = com.bluetooth.supports_async() {
+                let a = bluetooth.addresses().await;
+                log::info!("Found {} bluetooth addresses8", a.len());
+                a
+            } else {
+                panic!("Async not supported");
+            }
+        };
         #[cfg(feature = "bluetooth")]
-        let bluetooth_address = blue_addresses.first().map(|b| {
-            let a = format!(
-                "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                b[0], b[1], b[2], b[3], b[4], b[5]
-            );
-            android_auto::BluetoothInformation { address: a }
-        });
+        let bluetooth_address = Some(blue_addresses
+            .first()
+            .map(|b| match b {
+                bluetooth_rust::BluetoothAdapterAddress::String(s) => {
+                    android_auto::BluetoothInformation { address: s.to_owned() }
+                },
+                bluetooth_rust::BluetoothAdapterAddress::Byte(b) => {
+                    let a = format!(
+                        "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                        b[0], b[1], b[2], b[3], b[4], b[5]
+                    );
+                    android_auto::BluetoothInformation { address: a }
+                }
+            })
+            .expect("No bluetooth hardware found"));
 
         let config = android_auto::AndroidAutoConfiguration {
             unit: HeadUnitInfo {
@@ -1131,7 +1147,17 @@ async fn receive_message_from_app(
             #[cfg(feature = "bluetooth")]
             uobradio_comms::MessageFromApp::SetBluetoothDiscovery(val) => {
                 let common2 = common.lock().await;
-                if common2.bluetooth.set_discoverable(val).await.is_ok() {
+                let a = {
+                    if let Some(bluetooth) = common2.bluetooth.supports_async() {
+                        Some(bluetooth
+                            .set_discoverable(true)
+                            .await
+                            .expect("Failed to make bluetooth discoverable"))
+                    } else {
+                        None
+                    }
+                };
+                if let Some(_) = a {
                     let a = uobradio_comms::ActualMessageToBluetoothHost::BluetoothEnabled(val);
                     let packet = uobradio_comms::MessageToApp::BluetoothMessage(a);
                     packet.send_to_stream(&streamw).await?;
@@ -1901,10 +1927,14 @@ impl android_auto::AndroidAutoWirelessTrait for AndroidAutoStuff {
     async fn setup_bluetooth_profile(
         &self,
         suggestions: &bluetooth_rust::BluetoothRfcommProfileSettings,
-    ) -> Result<bluetooth_rust::BluetoothRfcommProfile, String> {
-        self.bluetooth
-            .register_rfcomm_profile(suggestions.clone())
-            .await
+    ) -> Result<bluetooth_rust::BluetoothRfcommProfileAsync, String> {
+        if let Some(b) = self.bluetooth.supports_async() {
+            b
+                .register_rfcomm_profile(suggestions.clone())
+                .await
+        } else {
+            Err("Async not supported".to_string())
+        }
     }
 
     fn get_wifi_details(&self) -> android_auto::NetworkInformation {
@@ -2142,7 +2172,9 @@ async fn smain() {
         let bluechan = tokio::sync::mpsc::channel(5);
         let mut bluetooth = bluetooth_rust::BluetoothAdapterBuilder::new();
         bluetooth.with_sender(bluechan.0);
-        let bluetooth = Arc::new(bluetooth.build().await.expect("Could not open bluetooth"));
+        service::log::info!("Building bluetooth object 3");
+        let bluetooth = Arc::new(bluetooth.async_build().await.expect("Could not open bluetooth"));
+        service::log::info!("Building bluetooth object success");
         (bluechan.1, bluetooth)
     };
 
@@ -2283,7 +2315,8 @@ service::ServiceAsyncMacro!(service_starter, smain, u64);
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() -> Result<(), u32> {
     let service = service::Service::new("uobradio".to_string());
-    service.new_log(service::LogLevel::Info);
+    //service.new_log(service::LogLevel::Info);
+    simple_logger::SimpleLogger::new().with_level(service::LogLevel::Info.level_filter()).init().unwrap();
     if let Err(e) = service::DispatchAsync!(service, service_starter) {
         Err(e)
     } else {
