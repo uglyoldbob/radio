@@ -1415,10 +1415,10 @@ impl MnsServer {
                         .await
                     {
                         Ok(stream) => {
-                            log::info!("MNS: phone connected");
+                            log::info!("MNS: phone connected to {:02x?}, {}", stream.1, stream.2);
                             let s = self.send.clone();
                             tokio::spawn(async move {
-                                Self::handle_client(stream, s).await;
+                                Self::handle_client(stream.0, s).await;
                             });
                         }
                         Err(e) => {
@@ -1434,7 +1434,10 @@ impl MnsServer {
         }
     }
 
-    async fn handle_client(mut stream: bluetooth_rust::BluetoothStream, send: tokio::sync::mpsc::Sender<BluetoothNotification>) {
+    async fn handle_client(
+        mut stream: bluetooth_rust::BluetoothStream,
+        send: tokio::sync::mpsc::Sender<BluetoothNotification>,
+    ) {
         use tokio::io::AsyncWriteExt;
 
         // ---- 1. Expect OBEX CONNECT ----
@@ -1572,9 +1575,12 @@ impl MnsServer {
     }
 }
 
-pub async fn start_mns(adapter: &bluetooth_rust::BluetoothAdapter, chan: u16, send: tokio::sync::mpsc::Sender<BluetoothNotification>) -> Result<(), String> {
-    let mns = MnsServer::new(adapter, chan, send)
-        .await?;
+pub async fn start_mns(
+    adapter: &bluetooth_rust::BluetoothAdapter,
+    chan: u16,
+    send: tokio::sync::mpsc::Sender<BluetoothNotification>,
+) -> Result<(), String> {
+    let mns = MnsServer::new(adapter, chan, send).await?;
     tokio::spawn(async move { mns.run().await });
     Ok(())
 }
@@ -1587,18 +1593,20 @@ pub struct BluetoothNotification {
     msg_type: Option<String>,
 }
 
-pub async fn connect_to_mas(adapter: &bluetooth_rust::BluetoothAdapter, mut dev: bluetooth_rust::BluetoothDevice) -> Result<(), String> {
+pub async fn connect_to_mas(
+    adapter: &bluetooth_rust::BluetoothAdapter,
+    mut dev: bluetooth_rust::BluetoothDevice,
+) -> Result<(), String> {
     match dev.get_uuids() {
         Ok(uuids) => {
             if !uuids.contains(&bluetooth_rust::BluetoothUuid::ObexMas) {
                 return Err("No MAS service on device".to_string());
             }
-            let channel =
-                if let Ok(sdp) = dev.run_sdp(bluetooth_rust::BluetoothUuid::ObexMas) {
-                    sdp.rfcomm_channel().unwrap_or(1)
-                } else {
-                    1
-                };
+            let channel = if let Ok(sdp) = dev.run_sdp(bluetooth_rust::BluetoothUuid::ObexMas) {
+                sdp.rfcomm_channel().unwrap_or(1)
+            } else {
+                1
+            };
             match try_map_connect(&mut dev, channel) {
                 Ok(s) => {
                     log::info!("MAP socket on ch {} — processing immediately", channel);

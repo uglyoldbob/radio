@@ -442,21 +442,25 @@ impl AndroidAutoService {
             }
         };
         #[cfg(feature = "bluetooth")]
-        let bluetooth_address = Some(blue_addresses
-            .first()
-            .map(|b| match b {
-                bluetooth_rust::BluetoothAdapterAddress::String(s) => {
-                    android_auto::BluetoothInformation { address: s.to_owned() }
-                },
-                bluetooth_rust::BluetoothAdapterAddress::Byte(b) => {
-                    let a = format!(
-                        "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-                        b[0], b[1], b[2], b[3], b[4], b[5]
-                    );
-                    android_auto::BluetoothInformation { address: a }
-                }
-            })
-            .expect("No bluetooth hardware found"));
+        let bluetooth_address = Some(
+            blue_addresses
+                .first()
+                .map(|b| match b {
+                    bluetooth_rust::BluetoothAdapterAddress::String(s) => {
+                        android_auto::BluetoothInformation {
+                            address: s.to_owned(),
+                        }
+                    }
+                    bluetooth_rust::BluetoothAdapterAddress::Byte(b) => {
+                        let a = format!(
+                            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+                            b[0], b[1], b[2], b[3], b[4], b[5]
+                        );
+                        android_auto::BluetoothInformation { address: a }
+                    }
+                })
+                .expect("No bluetooth hardware found"),
+        );
 
         let config = android_auto::AndroidAutoConfiguration {
             unit: HeadUnitInfo {
@@ -1154,10 +1158,12 @@ async fn receive_message_from_app(
                 let common2 = common.lock().await;
                 let a = {
                     if let Some(bluetooth) = common2.bluetooth.supports_async() {
-                        Some(bluetooth
-                            .set_discoverable(true)
-                            .await
-                            .expect("Failed to make bluetooth discoverable"))
+                        Some(
+                            bluetooth
+                                .set_discoverable(true)
+                                .await
+                                .expect("Failed to make bluetooth discoverable"),
+                        )
                     } else {
                         None
                     }
@@ -1956,9 +1962,7 @@ impl android_auto::AndroidAutoWirelessTrait for AndroidAutoStuff {
         suggestions: &bluetooth_rust::BluetoothRfcommProfileSettings,
     ) -> Result<bluetooth_rust::BluetoothRfcommProfileAsync, String> {
         if let Some(b) = self.bluetooth.supports_async() {
-            b
-                .register_rfcomm_profile(suggestions.clone())
-                .await
+            b.register_rfcomm_profile(suggestions.clone()).await
         } else {
             Err("Async not supported".to_string())
         }
@@ -2171,7 +2175,6 @@ pub async fn obex_main(adapter: &bluetooth_rust::BluetoothAdapter) -> Result<(),
     }
 }
 
-
 /// The main function for the service
 async fn smain() {
     #[cfg(target_family = "windows")]
@@ -2219,7 +2222,12 @@ async fn smain() {
         let mut bluetooth = bluetooth_rust::BluetoothAdapterBuilder::new();
         bluetooth.with_sender(bluechan.0);
         service::log::info!("Building bluetooth object 3");
-        let bluetooth = Arc::new(bluetooth.async_build().await.expect("Could not open bluetooth"));
+        let bluetooth = Arc::new(
+            bluetooth
+                .async_build()
+                .await
+                .expect("Could not open bluetooth"),
+        );
         service::log::info!("Building bluetooth object success");
         (bluechan.1, bluetooth)
     };
@@ -2372,7 +2380,10 @@ service::ServiceAsyncMacro!(service_starter, smain, u64);
 async fn main() -> Result<(), u32> {
     let service = service::Service::new("uobradio".to_string());
     //service.new_log(service::LogLevel::Info);
-    simple_logger::SimpleLogger::new().with_level(service::LogLevel::Info.level_filter()).init().unwrap();
+    simple_logger::SimpleLogger::new()
+        .with_level(service::LogLevel::Info.level_filter())
+        .init()
+        .unwrap();
     if let Err(e) = service::DispatchAsync!(service, service_starter) {
         Err(e)
     } else {
