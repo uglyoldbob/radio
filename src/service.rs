@@ -44,6 +44,11 @@ use crate::sensors::{
     TemperatureSensorConfig, VoltageSensorConfig,
 };
 
+#[cfg(feature = "bluetooth")]
+mod messages;
+#[cfg(feature = "bluetooth")]
+use messages::*;
+
 mod outputs;
 mod sensors;
 mod video_service;
@@ -2126,6 +2131,25 @@ async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
     }
 }
 
+/// Run the main obex code on all paired devices
+pub async fn obex_main(adapter: &bluetooth_rust::BluetoothAdapter) -> Result<(), String> {
+    if let Some(a) = adapter.supports_async() {
+        if let Some(devs) = a.get_paired_devices() {
+            for mut dev in devs {
+                use bluetooth_rust::BluetoothDeviceTrait;
+                log::info!("Connect to {:?}", dev.get_address());
+                let a = connect_to_mas(adapter, dev).await;
+                log::info!("Result of connect: {:?}", a);
+            }
+        }
+    }
+    log::info!("All devices processed, waiting for MNS connections...");
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
+
+
 /// The main function for the service
 async fn smain() {
     #[cfg(target_family = "windows")]
@@ -2226,6 +2250,15 @@ async fn smain() {
     hvac.set_auto_setpoint(s.hvac.auto_target);
     hvac.set_heat_setpoint(s.hvac.heat_target);
     hvac.set_mode(s.hvac.current_mode);
+
+    #[cfg(feature = "bluetooth")]
+    let test = start_mns(&bluetooth, 17).await;
+    log::info!("Register mns {:?}", test);
+    let b = bluetooth.clone();
+    tokio::spawn(async move {
+        log::info!("Running mas code now");
+        obex_main(&b).await;
+    });
 
     let auc = AppUserCommon {
         args,

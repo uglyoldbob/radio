@@ -7,7 +7,7 @@ edition = "2021"
 android-auto = { version = "0.3.7", optional = true }
 async-trait = "0.1.88"
 bincode = {version = "2.0.1", features = ["serde"]}
-bluetooth-rust = { version = "0.3.6", optional = true}
+bluetooth-rust = { version = "0.3.7", optional = true}
 chrono = { version = "0.4.43", features = ["serde"] }
 clap = { version = "4.5.38", features = ["derive"] }
 cpal = "0.15.3"
@@ -41,7 +41,7 @@ tokio = { version = "1.40.0", features = ["full"] }
 tokio-tungstenite = "0.28.0"
 toml = "0.8.20"
 uobradio-comms = { path = "./uobradio-comms" }
-zbus = "5.13.2"
+zbus = { version = "5.13.2", features = ["tokio"] }
 zvariant = "5.9.2"
 
 [dependencies.service]
