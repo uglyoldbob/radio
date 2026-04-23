@@ -1576,6 +1576,28 @@ enum MessageToSensorPollThread {
     NewLogInterval(u8),
 }
 
+#[cfg(feature = "bluetooth")]
+/// runs the bluetooth stuff for the service
+async fn bluetooth_task(
+    common: Arc<tokio::sync::Mutex<AppUserCommon>>,
+    mut kill: tokio::sync::broadcast::Receiver<()>,
+) -> Result<(), String> {
+    let b = {
+        let common2 = common.lock().await;
+        common2.bluetooth.clone()
+    };
+    let mut notifications = tokio::sync::mpsc::channel(5);
+    start_mns(&b, 17, notifications.0).await?;
+    tokio::spawn(async move {
+        log::info!("Running mas code now");
+        obex_main(&b).await;
+    });
+    while let Some(m) = notifications.1.recv().await {
+        log::info!("Received notification : {:?}", m);
+    }
+    Ok(())
+}
+
 /// Polls the sensors in the system
 async fn sensor_polling(
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
@@ -2243,6 +2265,7 @@ async fn smain() {
         swupdate.run().await;
     });
     let shutdown_recv2 = shutdown_send.subscribe();
+    let shutdown_recv3 = shutdown_send.subscribe();
     let polling_channel = tokio::sync::mpsc::channel(5);
 
     let mut hvac = HvacController::new();
@@ -2250,15 +2273,6 @@ async fn smain() {
     hvac.set_auto_setpoint(s.hvac.auto_target);
     hvac.set_heat_setpoint(s.hvac.heat_target);
     hvac.set_mode(s.hvac.current_mode);
-
-    #[cfg(feature = "bluetooth")]
-    let test = start_mns(&bluetooth, 17).await;
-    log::info!("Register mns {:?}", test);
-    let b = bluetooth.clone();
-    tokio::spawn(async move {
-        log::info!("Running mas code now");
-        obex_main(&b).await;
-    });
 
     let auc = AppUserCommon {
         args,
@@ -2327,6 +2341,15 @@ async fn smain() {
             .await
             .inspect_err(|a| log::error!("Sensor polling ended: {:?}", a))
     });
+    #[cfg(feature = "bluetooth")]
+    {
+        let common2 = common.clone();
+        tasks.spawn(async move {
+            bluetooth_task(common2, shutdown_recv3)
+                .await
+                .inspect_err(|a| log::error!("Bluetooth task ended: {:?}", a))
+        });
+    }
 
     tokio::select! {
         r = tasks.join_next() => {

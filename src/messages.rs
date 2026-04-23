@@ -1327,12 +1327,14 @@ fn try_map_connect(dev: &mut BluetoothDevice, channel: u8) -> Result<BluetoothSo
 
 pub struct MnsServer {
     profile: bluetooth_rust::BluetoothRfcommProfileAsync,
+    send: tokio::sync::mpsc::Sender<BluetoothNotification>,
 }
 
 impl MnsServer {
     pub async fn new(
         adapter: &bluetooth_rust::BluetoothAdapter,
         channel: u16,
+        send: tokio::sync::mpsc::Sender<BluetoothNotification>,
     ) -> Result<Self, String> {
         // Build a proper MAP MNS SDP record so the phone can discover the MNS
         // service via SDP and know which RFCOMM channel to connect back to.
@@ -1393,7 +1395,7 @@ impl MnsServer {
                 .register_rfcomm_profile(psettings)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(Self { profile })
+            Ok(Self { profile, send })
         } else {
             Err("Async not supported".to_string())
         }
@@ -1414,9 +1416,9 @@ impl MnsServer {
                     {
                         Ok(stream) => {
                             log::info!("MNS: phone connected");
-
+                            let s = self.send.clone();
                             tokio::spawn(async move {
-                                Self::handle_client(stream).await;
+                                Self::handle_client(stream, s).await;
                             });
                         }
                         Err(e) => {
@@ -1432,7 +1434,7 @@ impl MnsServer {
         }
     }
 
-    async fn handle_client(mut stream: bluetooth_rust::BluetoothStream) {
+    async fn handle_client(mut stream: bluetooth_rust::BluetoothStream, send: tokio::sync::mpsc::Sender<BluetoothNotification>) {
         use tokio::io::AsyncWriteExt;
 
         // ---- 1. Expect OBEX CONNECT ----
@@ -1487,7 +1489,9 @@ impl MnsServer {
 
                     log::info!("MAP EVENT:\n{}", body);
 
-                    Self::parse_event(&body);
+                    if let Some(notification) = Self::parse_event(&body) {
+                        send.send(notification).await;
+                    }
 
                     // ACK success
                     stream.write_all(&[0xA0, 0x00, 0x03]).await.ok();
@@ -1543,7 +1547,7 @@ impl MnsServer {
         reply
     }
 
-    fn parse_event(xml: &str) {
+    fn parse_event(xml: &str) -> Option<BluetoothNotification> {
         // <MAP-event-report version="1.0">
         //   <event type="NewMessage" handle="..." folder="..." msg_type="SMS_GSM"/>
         // </MAP-event-report>
@@ -1556,23 +1560,31 @@ impl MnsServer {
                     let e = tag[s..].find('"')? + s;
                     Some(tag[s..e].to_string())
                 };
-                log::info!(
-                    "MAP Event: type={:?} handle={:?} folder={:?} msg_type={:?}",
-                    get("type"),
-                    get("handle"),
-                    get("folder"),
-                    get("msg_type")
-                );
+                return Some(BluetoothNotification {
+                    t: get("type"),
+                    handle: get("handle"),
+                    folder: get("folder"),
+                    msg_type: get("msg_type"),
+                });
             }
         }
+        None
     }
 }
 
-pub async fn start_mns(adapter: &bluetooth_rust::BluetoothAdapter, chan: u16) -> Result<(), String> {
-    let mns = MnsServer::new(adapter, chan)
+pub async fn start_mns(adapter: &bluetooth_rust::BluetoothAdapter, chan: u16, send: tokio::sync::mpsc::Sender<BluetoothNotification>) -> Result<(), String> {
+    let mns = MnsServer::new(adapter, chan, send)
         .await?;
     tokio::spawn(async move { mns.run().await });
     Ok(())
+}
+
+#[derive(Debug)]
+pub struct BluetoothNotification {
+    t: Option<String>,
+    handle: Option<String>,
+    folder: Option<String>,
+    msg_type: Option<String>,
 }
 
 pub async fn connect_to_mas(adapter: &bluetooth_rust::BluetoothAdapter, mut dev: bluetooth_rust::BluetoothDevice) -> Result<(), String> {
