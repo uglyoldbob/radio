@@ -8,11 +8,28 @@ use bluetooth_rust::{
     BluetoothSocket, BluetoothSocketTrait,
 };
 
+#[derive(Debug, Default)]
 pub enum MessageType {
+    #[default]
     Email,
     SmsGsm,
     SmsCdma,
     Mms,
+}
+
+impl TryFrom<&str> for MessageType {
+    type Error = String;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Ok(match value {
+            "EMAIL" => Self::Email,
+            "SMS_GSM" => Self::SmsGsm,
+            "SMS_CDMA" => Self::SmsCdma,
+            "MMS" => Self::Mms,
+            _ => {
+                return Err("Invalid message type".to_string());
+            }
+        })
+    }
 }
 
 impl std::fmt::Display for MessageType {
@@ -40,7 +57,7 @@ impl MessageType {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct VCard {
     version: String,
     formatted_name: Option<String>,
@@ -83,13 +100,6 @@ impl std::fmt::Display for VCard {
 impl VCard {
     pub fn parse(c: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
         let mut out = Self::default();
-        if let Some(Ok(line)) = c.next() {
-            if line.as_str() != "BEGIN:VCARD" {
-                return Err("No begin line found".to_string());
-            }
-        } else {
-            return Err("No begin line found".to_string());
-        }
         loop {
             if let Some(Ok(line)) = c.next() {
                 if line.as_str() == "END:VCARD" {
@@ -138,17 +148,213 @@ impl VCard {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct BContent {
+    part: Option<String>,
+    encoding: Option<String>,
+    charset: Option<String>,
+    language: Option<String>,
+    length: usize,
+    message: String,
+}
+
+impl BContent {
+    pub fn parse(lines: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
+        let mut content = BContent::default();
+
+        // Parse BBODY headers first
+        loop {
+            let line = lines.next()
+                .ok_or("Unexpected end of input in BBODY")?
+                .map_err(|e| e.to_string())?;
+            let line = line.trim();
+
+            if line == "BEGIN:MSG" {
+                break;
+            } else if line == "END:BBODY" {
+                return Err("END:BBODY before BEGIN:MSG".to_string());
+            } else if let Some(val) = line.strip_prefix("PART:") {
+                content.part = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("ENCODING:") {
+                content.encoding = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("CHARSET:") {
+                content.charset = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("LANGUAGE:") {
+                content.language = Some(val.trim().to_string());
+            } else if let Some(val) = line.strip_prefix("LENGTH:") {
+                content.length = val.trim().parse::<usize>().map_err(|_| "Invalid LENGTH".to_string())?;
+            }
+            // unknown headers silently skipped
+        }
+
+        // Now collect message body lines until END:MSG,
+        // using LENGTH as the source of truth if available.
+        let mut body_lines: Vec<String> = Vec::new();
+
+        if content.length > 0 {
+            // Collect exactly `length` bytes worth of content.
+            // The LENGTH field in the spec counts from the first byte after BEGIN:MSG\n
+            // up to and including the END:MSG\r\n terminator.
+            // We accumulate lines until our byte count reaches or exceeds LENGTH.
+            let suffix = b"END:MSG";
+            let mut byte_count = 0;
+
+            loop {
+                let line = lines.next()
+                    .ok_or("Unexpected end of input reading MSG body")?
+                    .map_err(|e| e.to_string())?;
+
+                // +1 for the newline that was consumed
+                byte_count += line.len() + 1;
+
+                if line.trim() == "END:MSG" || byte_count >= content.length {
+                    // This line is the real END:MSG terminator (or we hit the length
+                    // boundary). Don't include it in the body.
+                    break;
+                }
+
+                // If the line happens to contain "END:MSG" but we haven't hit
+                // the length boundary yet, it's part of the message body.
+                body_lines.push(line);
+            }
+
+            // Sanity check: if the last body line is END:MSG we over-collected
+            if body_lines.last().map(|l| l.trim()) == Some("END:MSG") {
+                body_lines.pop();
+            }
+        } else {
+            // No LENGTH — fall back to rfind strategy: collect everything,
+            // then trim from the last END:MSG backwards.
+            let mut all_lines: Vec<String> = Vec::new();
+
+            loop {
+                let line = lines.next()
+                    .ok_or("Unexpected end of input reading MSG body")?
+                    .map_err(|e| e.to_string())?;
+
+                if line.trim() == "END:MSG" {
+                    // Keep consuming to find if there's another END:MSG
+                    // (we can't distinguish body from terminator without LENGTH)
+                    all_lines.push(line);
+                    // Peek ahead: if the next line is END:BBODY or END:BENV we're done
+                    // Since we can't peek a Lines iterator, we settle for rfind below.
+                    break;
+                }
+                all_lines.push(line);
+            }
+
+            // Find the last END:MSG and treat everything before it as body
+            let last_end = all_lines.iter().rposition(|l| l.trim() == "END:MSG");
+            let body_end = last_end.unwrap_or(all_lines.len());
+            body_lines = all_lines[..body_end].to_vec();
+        }
+
+        content.message = body_lines.join("\n");
+        Ok(content)
+    }
+}
+
+#[derive(Debug)]
+pub enum BEnvelope {
+    Envelope(Box<BEnvelope>),
+    Content(BContent),
+}
+
+impl BEnvelope {
+    pub fn parse(c: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
+        if let Some(Ok(line)) = c.next() {
+            if line.as_str() == "BEGIN:BENV" {
+                if let Ok(benv) = BEnvelope::parse(c) {
+                    return Ok(Self::Envelope(Box::new(benv)));
+                }
+            }
+            if line.as_str() == "BEGIN:BBODY" {
+                if let Ok(benv) = BContent::parse(c) {
+                    return Ok(Self::Content(benv));
+                }
+            }
+        }
+        Err("Unexpected value for envelope".to_string())
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct BMessage {
+    version: String,
     status_read: bool,
     mtype: MessageType,
     folder: String,
     originator: Vec<VCard>,
+    message: Option<BEnvelope>,
 }
 
 fn last_512(s: &str) -> String {
     let len = s.chars().count();
 
     s.chars().skip(len.saturating_sub(512)).collect()
+}
+
+impl BMessage {
+    pub fn parse(c: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
+        let mut out = Self::default();
+        if let Some(Ok(line)) = c.next() {
+            if line.as_str() != "BEGIN:BMSG" {
+                return Err("No begin line found".to_string());
+            }
+        } else {
+            return Err("No begin line found".to_string());
+        }
+        loop {
+            if let Some(Ok(line)) = c.next() {
+                if line.as_str() == "END:BMSG" {
+                    break;
+                }
+                if line.starts_with("VERSION:") {
+                    if let Some(v) = line.split_once(":") {
+                        out.version = v.1.to_string();
+                    }
+                }
+                if line.starts_with("STATUS:") {
+                    out.status_read = if let Some(v) = line.split_once(":") {
+                        match v.1 {
+                            "UNREAD" => false,
+                            "READ" => true,
+                            _ => {
+                                return Err(format!("Invalid message status {}", v.1));
+                            }
+                        }
+                    } else {
+                        return Err("Invalid message status line".to_string());
+                    };
+                }
+                if line.starts_with("TYPE:") {
+                    if let Some(v) = line.split_once(":") {
+                        out.mtype = v.1.try_into()?;
+                    } else {
+                        return Err("Invalid message line".to_string());
+                    }
+                }
+                if line.starts_with("FOLDER:") {
+                    if let Some(v) = line.split_once(":") {
+                        out.folder = v.1.to_string();
+                    }
+                }
+                if line.as_str() == "BEGIN:VCARD" {
+                    if let Ok(v) = VCard::parse(c) {
+                        out.originator.push(v);
+                    }
+                }
+                if line.as_str() == "BEGIN:BENV" {
+                    if let Ok(benv) = BEnvelope::parse(c) {
+                        out.message = Some(benv);
+                    }
+                }
+            } else {
+                return Err("Not enough lines found".to_string());
+            }
+        }
+        Ok(out)
+    }
 }
 
 impl std::fmt::Display for BMessage {
@@ -503,6 +709,70 @@ impl MapGetMessagesListing {
         let total_len = pkt.len() as u16;
         pkt[1] = (total_len >> 8) as u8;
         pkt[2] = (total_len & 0xFF) as u8;
+        pkt
+    }
+}
+
+#[derive(Debug)]
+pub struct MapGetMessage {
+    pub connection_id: u32,
+    pub message_handle: String,  // e.g. "0000000000000001" from the MNS notification
+    pub attachment: bool,
+    pub charset: u8,             // 0x01 = UTF-8
+}
+
+impl MapGetMessage {
+    pub fn serialize(&self) -> Vec<u8> {
+        let type_str = b"x-bt/message\0";
+
+        // App parameters
+        let mut app_params: Vec<u8> = Vec::new();
+
+        // Attachment (tag 0x0A): 0 = no attachment, 1 = with attachment
+        app_params.extend_from_slice(&[0x0A, 0x01, self.attachment as u8]);
+
+        // Charset (tag 0x14): 0x01 = UTF-8
+        app_params.extend_from_slice(&[0x14, 0x01, self.charset]);
+
+        // Name header: the message handle as a UTF-16BE null-terminated string
+        let handle_utf16: Vec<u16> = self.message_handle
+            .encode_utf16()
+            .chain(std::iter::once(0u16))
+            .collect();
+        let handle_bytes: Vec<u8> = handle_utf16
+            .iter()
+            .flat_map(|c| c.to_be_bytes())
+            .collect();
+
+        let mut pkt = vec![0x83, 0x00, 0x00]; // GET | Final
+
+        // Connection ID
+        pkt.push(0xCB);
+        pkt.extend_from_slice(&self.connection_id.to_be_bytes());
+
+        // Name header (0x01) — the message handle
+        let name_len = (3 + handle_bytes.len()) as u16;
+        pkt.push(0x01);
+        pkt.extend_from_slice(&name_len.to_be_bytes());
+        pkt.extend_from_slice(&handle_bytes);
+
+        // Type header (0x42)
+        let type_len = (3 + type_str.len()) as u16;
+        pkt.push(0x42);
+        pkt.extend_from_slice(&type_len.to_be_bytes());
+        pkt.extend_from_slice(type_str);
+
+        // App parameters (0x4C)
+        let app_len = (3 + app_params.len()) as u16;
+        pkt.push(0x4C);
+        pkt.extend_from_slice(&app_len.to_be_bytes());
+        pkt.extend_from_slice(&app_params);
+
+        // Patch in total length
+        let total_len = pkt.len() as u16;
+        pkt[1] = (total_len >> 8) as u8;
+        pkt[2] = (total_len & 0xFF) as u8;
+
         pkt
     }
 }
@@ -1089,6 +1359,130 @@ impl MessageClient {
         String::new()
     }
 
+    pub fn get_message(&mut self, handle: String) -> Result<BMessage, String> {
+        let req = MapGetMessage {
+            connection_id: self.message_handle,
+            message_handle: handle,
+            attachment: false,
+            charset: 0x01, // UTF-8
+        };
+
+        self.socket.write_all(&req.serialize()).ok();
+        self.socket.flush().ok();
+
+        let mut full_body: Vec<u8> = Vec::new();
+        let mut app_params_out: Option<MapListingAppParams> = None;
+        let mut first = true;
+
+        loop {
+            let data = match self.read_obex_packet() {
+                Some(d) => d,
+                None => {
+                    log::error!("Failed to read packet");
+                    break;
+                }
+            };
+
+            let response_code = data[0];
+            let is_final = response_code == 0xA0;
+            let is_continue = response_code == 0x90;
+
+            log::info!(
+                "Packet code={:#X} total_len={} final={} continue={}",
+                response_code,
+                data.len(),
+                is_final,
+                is_continue
+            );
+
+            // Walk headers
+            let mut pos = 3;
+            while pos < data.len() {
+                let header_id = data[pos];
+                pos += 1;
+
+                match header_id {
+                    0xCB => {
+                        if pos + 4 > data.len() {
+                            break;
+                        }
+                        pos += 4;
+                    }
+                    0x4C => {
+                        if pos + 2 > data.len() {
+                            break;
+                        }
+                        let len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+                        pos += 2;
+                        let end = (pos + len - 3).min(data.len());
+                        if first {
+                            app_params_out = Some(parse_map_listing_app_params(&data[pos..end]));
+                        }
+                        pos = end;
+                    }
+                    0x48 | 0x49 => {
+                        if pos + 2 > data.len() {
+                            break;
+                        }
+                        let len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+                        pos += 2;
+                        let data_len = len.saturating_sub(3);
+                        let end = (pos + data_len).min(data.len());
+                        full_body.extend_from_slice(&data[pos..end]);
+                        pos = end;
+                    }
+                    id if (id & 0xC0) == 0xC0 => {
+                        if pos + 4 > data.len() {
+                            break;
+                        }
+                        pos += 4;
+                    }
+                    id if (id & 0xC0) == 0x40 || (id & 0xC0) == 0x00 => {
+                        if pos + 2 > data.len() {
+                            break;
+                        }
+                        let len = u16::from_be_bytes([data[pos], data[pos + 1]]) as usize;
+                        if len < 3 {
+                            break;
+                        }
+                        pos += len - 1;
+                    }
+                    id if (id & 0xC0) == 0x80 => {
+                        if pos + 1 > data.len() {
+                            break;
+                        }
+                        pos += 1;
+                    }
+                    _ => break,
+                }
+            }
+
+            first = false;
+
+            if is_final {
+                log::info!("Final packet, done.");
+                break;
+            }
+
+            if is_continue {
+                // Send empty GET to pull next chunk
+                let cont = self.build_get_continue();
+                self.socket.write_all(&cont).ok();
+                self.socket.flush().ok();
+            } else {
+                log::error!("Unexpected code {:#X}", response_code);
+                break;
+            }
+        }
+
+        let body = String::from_utf8(full_body).unwrap_or_default();
+        log::info!("Message is {}", body);
+        let cursor = std::io::Cursor::new(body.as_str());
+        use std::io::BufRead;
+        let mut lines = cursor.lines();
+        BMessage::parse(&mut lines)
+    }
+
     pub fn get_messages(&mut self) -> Vec<MapMessage> {
         let req = MapGetMessagesListing {
             connection_id: self.message_handle,
@@ -1604,11 +1998,17 @@ pub struct BluetoothNotification {
 
 pub enum BluetoothCommand {
     FetchAllMessages,
+    FetchOneMessage {
+        handle: String,
+    }
 }
 
 pub enum BluetoothCommandResponse {
     Messages {
         m: Vec<MapMessage>,
+    },
+    Message {
+        m: BMessage,
     },
 }
 
@@ -1659,13 +2059,18 @@ pub async fn connect_to_mas(
                                 let msgs = client.get_messages();
                                 send.send(BluetoothCommandResponse::Messages{ m: msgs}).await;
                             }
+                            BluetoothCommand::FetchOneMessage { handle } => {
+                                match client.get_message(handle) {
+                                    Ok(msg) => {
+                                        send.send(BluetoothCommandResponse::Message{ m: msg}).await;
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to parse message: {}", e);
+                                    }
+                                }
+                            }
                         }
                     }
-                    loop {    
-                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                    }
-                    //client.get_folder_listing();
-                    //client.get_messages();
                 }
                 Err(e) => {
                     log::error!("Error trying to connect map: {}", e);

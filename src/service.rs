@@ -2187,13 +2187,18 @@ pub async fn obex_main(adapter: &bluetooth_rust::BluetoothAdapter) -> Result<(),
             Some(m) = notifications.1.recv() => {
                 log::info!("Received notification : {:?}", m);
                 if let Some(dev) = all_devs.get(&m.source) {
-                    let _ = dev.send.send(BluetoothCommand::FetchAllMessages).await;
+                    if let Some(handle) = m.handle {
+                        let _ = dev.send.send(BluetoothCommand::FetchOneMessage { handle }).await;
+                    }
                 }
             }
             Some(m) = chan2.1.recv() => {
                 match m {
                     BluetoothCommandResponse::Messages { m } => {
                         log::info!("Messages received {:#?}", m);
+                    }
+                    BluetoothCommandResponse::Message { m } => {
+                        log::info!("Message received {:#?}", m);
                     }
                 }
             }
