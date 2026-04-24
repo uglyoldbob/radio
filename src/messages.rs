@@ -1089,7 +1089,7 @@ impl MessageClient {
         String::new()
     }
 
-    pub fn get_messages(&mut self) {
+    pub fn get_messages(&mut self) -> Vec<MapMessage> {
         let req = MapGetMessagesListing {
             connection_id: self.message_handle,
             max_list_count: 127,
@@ -1220,6 +1220,7 @@ impl MessageClient {
         for msg in &messages {
             log::info!("msg: {:#?}", msg);
         }
+        messages
     }
 
     /// Empty GET request to continue a multi-packet response
@@ -1418,7 +1419,7 @@ impl MnsServer {
                             log::info!("MNS: phone connected to {:02x?}, {}", stream.1, stream.2);
                             let s = self.send.clone();
                             tokio::spawn(async move {
-                                Self::handle_client(stream.0, s).await;
+                                Self::handle_client(stream.0, stream.1, s).await;
                             });
                         }
                         Err(e) => {
@@ -1436,6 +1437,7 @@ impl MnsServer {
 
     async fn handle_client(
         mut stream: bluetooth_rust::BluetoothStream,
+        source: [u8; 6],
         send: tokio::sync::mpsc::Sender<BluetoothNotification>,
     ) {
         use tokio::io::AsyncWriteExt;
@@ -1492,8 +1494,13 @@ impl MnsServer {
 
                     log::info!("MAP EVENT:\n{}", body);
 
-                    if let Some(notification) = Self::parse_event(&body) {
-                        send.send(notification).await;
+                    match Self::parse_event(&body, source) {
+                        Some(notification) => {
+                            log::info!("Sending notification from device... {:?}", send.send(notification).await);
+                        }
+                        None => {
+                            log::error!("Failed to decode notification");
+                        }
                     }
 
                     // ACK success
@@ -1550,7 +1557,7 @@ impl MnsServer {
         reply
     }
 
-    fn parse_event(xml: &str) -> Option<BluetoothNotification> {
+    fn parse_event(xml: &str, source: [u8; 6],) -> Option<BluetoothNotification> {
         // <MAP-event-report version="1.0">
         //   <event type="NewMessage" handle="..." folder="..." msg_type="SMS_GSM"/>
         // </MAP-event-report>
@@ -1564,6 +1571,7 @@ impl MnsServer {
                     Some(tag[s..e].to_string())
                 };
                 return Some(BluetoothNotification {
+                    source,
                     t: get("type"),
                     handle: get("handle"),
                     folder: get("folder"),
@@ -1587,15 +1595,27 @@ pub async fn start_mns(
 
 #[derive(Debug)]
 pub struct BluetoothNotification {
-    t: Option<String>,
-    handle: Option<String>,
-    folder: Option<String>,
-    msg_type: Option<String>,
+    pub source: [u8; 6],
+    pub t: Option<String>,
+    pub handle: Option<String>,
+    pub folder: Option<String>,
+    pub msg_type: Option<String>,
+}
+
+pub enum BluetoothCommand {
+    FetchAllMessages,
+}
+
+pub enum BluetoothCommandResponse {
+    Messages {
+        m: Vec<MapMessage>,
+    },
 }
 
 pub async fn connect_to_mas(
-    adapter: &bluetooth_rust::BluetoothAdapter,
     mut dev: bluetooth_rust::BluetoothDevice,
+    mut recv: tokio::sync::mpsc::Receiver<BluetoothCommand>,
+    send: tokio::sync::mpsc::Sender<BluetoothCommandResponse>,
 ) -> Result<(), String> {
     match dev.get_uuids() {
         Ok(uuids) => {
@@ -1633,7 +1653,15 @@ pub async fn connect_to_mas(
                     //client.setpath("msg");
                     //client.setpath("inbox");
                     log::info!("Waiting for MNS callback...");
-                    loop {
+                    while let Some(m) = recv.recv().await {
+                        match m {
+                            BluetoothCommand::FetchAllMessages => {
+                                let msgs = client.get_messages();
+                                send.send(BluetoothCommandResponse::Messages{ m: msgs}).await;
+                            }
+                        }
+                    }
+                    loop {    
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                     }
                     //client.get_folder_listing();

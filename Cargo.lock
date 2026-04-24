@@ -4632,6 +4632,7 @@ dependencies = [
  "android-auto",
  "async-trait",
  "bincode",
+ "bluer",
  "bluetooth-rust",
  "chrono",
  "clap",

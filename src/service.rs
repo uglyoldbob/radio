@@ -11,7 +11,7 @@ mod nmrs_extensions;
 use std::collections::HashSet;
 
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     io::{Read, Seek, Write},
     path::PathBuf,
     sync::Arc,
@@ -1592,16 +1592,8 @@ async fn bluetooth_task(
         let common2 = common.lock().await;
         common2.bluetooth.clone()
     };
-    let mut notifications = tokio::sync::mpsc::channel(5);
-    start_mns(&b, 17, notifications.0).await?;
-    tokio::spawn(async move {
-        log::info!("Running mas code now");
-        obex_main(&b).await;
-    });
-    while let Some(m) = notifications.1.recv().await {
-        log::info!("Received notification : {:?}", m);
-    }
-    Ok(())
+    log::info!("Running mas code now");
+    obex_main(&b).await
 }
 
 /// Polls the sensors in the system
@@ -2157,22 +2149,57 @@ async fn setup_wifi(mut common2: tokio::sync::MutexGuard<'_, AppUserCommon>) {
     }
 }
 
+struct BluetoothNotificationDevice {
+    send: tokio::sync::mpsc::Sender<BluetoothCommand>,
+}
+
 /// Run the main obex code on all paired devices
 pub async fn obex_main(adapter: &bluetooth_rust::BluetoothAdapter) -> Result<(), String> {
+    let mut notifications = tokio::sync::mpsc::channel(5);
+    start_mns(adapter, 17, notifications.0).await?;
+    let mut all_devs = HashMap::new();
+    let mut chan2 = tokio::sync::mpsc::channel(10);
     if let Some(a) = adapter.supports_async() {
         if let Some(devs) = a.get_paired_devices() {
             for mut dev in devs {
                 use bluetooth_rust::BluetoothDeviceTrait;
-                log::info!("Connect to {:?}", dev.get_address());
-                let a = connect_to_mas(adapter, dev).await;
-                log::info!("Result of connect: {:?}", a);
+                let mut chan = tokio::sync::mpsc::channel(10);
+                if let Ok(addr) = dev.get_address() {
+                    use std::str::FromStr;
+                    if let Ok(addr) = bluer::Address::from_str(&addr) {
+                        all_devs.insert(addr.0, BluetoothNotificationDevice {
+                            send: chan.0,
+                        });
+                        let chan3 = chan2.0.clone();
+                        tokio::spawn(async move {
+                            log::info!("Connect to {:?}", addr);
+                            let a = connect_to_mas(dev, chan.1, chan3).await;
+                            log::info!("Result of connect: {:?}", a);
+                        });
+                    }
+                }
             }
         }
     }
     log::info!("All devices processed, waiting for MNS connections...");
     loop {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        tokio::select! {
+            Some(m) = notifications.1.recv() => {
+                log::info!("Received notification : {:?}", m);
+                if let Some(dev) = all_devs.get(&m.source) {
+                    let _ = dev.send.send(BluetoothCommand::FetchAllMessages).await;
+                }
+            }
+            Some(m) = chan2.1.recv() => {
+                match m {
+                    BluetoothCommandResponse::Messages { m } => {
+                        log::info!("Messages received {:#?}", m);
+                    }
+                }
+            }
+        }
     }
+    Ok(())
 }
 
 /// The main function for the service
