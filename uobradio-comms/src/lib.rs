@@ -13,6 +13,8 @@ use std::{
 
 #[cfg(feature = "androidauto")]
 pub mod aauto;
+#[cfg(feature = "bluetooth")]
+pub mod bluetooth;
 pub mod settings;
 pub mod video;
 
@@ -768,6 +770,21 @@ pub enum ActualMessageToBluetoothHost {
     BluetoothEnabled(bool),
 }
 
+/// A notification message from a bluetooth device
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct BluetoothNotification {
+    /// The bluetooth address
+    pub source: [u8; 6],
+    /// The type
+    pub t: Option<String>,
+    /// The handle
+    pub handle: Option<String>,
+    /// The location of the remote folder
+    pub folder: Option<String>,
+    /// The message type
+    pub msg_type: Option<String>,
+}
+
 /// A message that can be sent to an app. The main radio application is also considered an app. Therefore anything the main radio can do, the mobile app has the potential to also do.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub enum MessageToApp {
@@ -857,6 +874,9 @@ pub enum MessageToApp {
     GpioConfirmation(Gpio),
     /// The response to a gpio query
     GpioQueryResponse(GpioQuery, bool),
+    #[cfg(feature = "bluetooth")]
+    /// A bluetooth message notification
+    BluetoothMessageNotification(bluetooth::BMessage),
 }
 
 impl MessageFromApp {
@@ -962,6 +982,8 @@ impl UobRadio {
                                         return Err("Invalid packet received".to_string());
                                     }
                                     match &packet {
+                                        #[cfg(feature = "bluetooth")]
+                                        MessageToApp::BluetoothMessageNotification(_) => {}
                                         MessageToApp::GpioQueryResponse(_, _) => {}
                                         MessageToApp::GpioConfirmation(_) => {}
                                         MessageToApp::LogFileCopiesComplete => {}

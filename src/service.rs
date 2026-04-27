@@ -49,6 +49,9 @@ mod messages;
 #[cfg(feature = "bluetooth")]
 use messages::*;
 
+#[cfg(feature = "bluetooth")]
+use uobradio_comms::BluetoothNotification;
+
 mod outputs;
 mod sensors;
 mod video_service;
@@ -657,6 +660,9 @@ pub struct AppUserCommon {
     token: android_auto::AndroidAutoSetup,
     /// The channel for updating the sensor polling thread
     polling_channel: tokio::sync::mpsc::Sender<MessageToSensorPollThread>,
+    #[cfg(feature = "bluetooth")]
+    /// The channel for sending bluetooth notifications
+    blue_notification: Option<BluetoothNotificationService>,
 }
 
 async fn send_log_files(
@@ -754,6 +760,13 @@ async fn receive_message_from_app(
                     let packet = MessageToApp::BluetoothMessage(m.into());
                     packet.send_to_stream(&streamw).await?;
                     log::info!("Sent bluetooth message to bluetooth master");
+                }
+            }
+            if let Some(notifier) = &mut common2.blue_notification {
+                while let Ok(m) = notifier.message_recv.try_recv() {
+                    log::info!("Received notification: {:#?}", m);
+                    let packet = MessageToApp::BluetoothMessageNotification(m);
+                    packet.send_to_stream(&streamw).await?;
                 }
             }
         }
@@ -1179,10 +1192,22 @@ async fn receive_message_from_app(
             }
             #[cfg(feature = "bluetooth")]
             uobradio_comms::MessageFromApp::RequestBluetoothControl => {
+                let make_notifier = {
+                    let mut common = common.lock().await;
+                    common.blue_addr.is_none()
+                };
+                let new_notifier = if make_notifier {
+                    Some(BluetoothNotificationService::run(common.clone()).await)
+                } else {
+                    None
+                };
                 let mut common = common.lock().await;
                 let r = if common.blue_addr.is_none() {
                     log::info!("Setting {:?} as bluetooth master", addr);
                     common.blue_addr = Some(addr);
+                    if let Some(not) = new_notifier {
+                        common.blue_notification = Some(not);
+                    }
                     true
                 } else {
                     false
@@ -1582,20 +1607,6 @@ enum MessageToSensorPollThread {
     NewLogInterval(u8),
 }
 
-#[cfg(feature = "bluetooth")]
-/// runs the bluetooth stuff for the service
-async fn bluetooth_task(
-    common: Arc<tokio::sync::Mutex<AppUserCommon>>,
-    mut kill: tokio::sync::broadcast::Receiver<()>,
-) -> Result<(), String> {
-    let b = {
-        let common2 = common.lock().await;
-        common2.bluetooth.clone()
-    };
-    log::info!("Running mas code now");
-    obex_main(&b).await
-}
-
 /// Polls the sensors in the system
 async fn sensor_polling(
     common: Arc<tokio::sync::Mutex<AppUserCommon>>,
@@ -1761,6 +1772,7 @@ async fn tcp_listener(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Result<
                             if Some(addr) == common3.blue_addr {
                                 log::info!("Setting {:?} as no longer the bluetooth master", addr);
                                 common3.blue_addr.take();
+                                common3.blue_notification.take();
                             }
                             #[cfg(feature = "androidauto")]
                             if let Some(aauto) = &common3.aauto_service {
@@ -2153,28 +2165,71 @@ struct BluetoothNotificationDevice {
     send: tokio::sync::mpsc::Sender<BluetoothCommand>,
 }
 
+struct BluetoothNotificationService {
+    task: tokio::task::JoinHandle<()>,
+    message_recv: tokio::sync::mpsc::Receiver<uobradio_comms::bluetooth::BMessage>,
+}
+
+impl BluetoothNotificationService {
+    pub async fn run(common: Arc<tokio::sync::Mutex<AppUserCommon>>) -> Self {
+        let adapter = {
+            let c = common.lock().await;
+            c.bluetooth.clone()
+        };
+        let chan2 = tokio::sync::mpsc::channel(5);
+        Self {
+            task: tokio::spawn(async move {
+                obex_main(&adapter, common, chan2.0).await;
+            }),
+            message_recv: chan2.1,
+        }
+    }
+}
+
+impl Drop for BluetoothNotificationService {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 /// Run the main obex code on all paired devices
-pub async fn obex_main(adapter: &bluetooth_rust::BluetoothAdapter) -> Result<(), String> {
+pub async fn obex_main(
+    adapter: &bluetooth_rust::BluetoothAdapter,
+    common: Arc<tokio::sync::Mutex<AppUserCommon>>,
+    msend: tokio::sync::mpsc::Sender<uobradio_comms::bluetooth::BMessage>,
+) -> Result<(), String> {
     let mut notifications = tokio::sync::mpsc::channel(5);
     start_mns(adapter, 17, notifications.0).await?;
     let mut all_devs = HashMap::new();
     let mut chan2 = tokio::sync::mpsc::channel(10);
     if let Some(a) = adapter.supports_async() {
-        if let Some(devs) = a.get_paired_devices() {
+        if let Some(devs) = a.get_paired_devices().await {
             for mut dev in devs {
                 use bluetooth_rust::BluetoothDeviceTrait;
                 let mut chan = tokio::sync::mpsc::channel(10);
                 if let Ok(addr) = dev.get_address() {
                     use std::str::FromStr;
                     if let Ok(addr) = bluer::Address::from_str(&addr) {
-                        all_devs.insert(addr.0, BluetoothNotificationDevice {
-                            send: chan.0,
-                        });
+                        all_devs.insert(addr.0, BluetoothNotificationDevice { send: chan.0 });
                         let chan3 = chan2.0.clone();
+                        let mut kill = {
+                            let mut c = common.lock().await;
+                            c.shutdown_send.subscribe()
+                        };
                         tokio::spawn(async move {
                             log::info!("Connect to {:?}", addr);
-                            let a = connect_to_mas(dev, chan.1, chan3).await;
-                            log::info!("Result of connect: {:?}", a);
+                            loop {
+                                tokio::select! {
+                                    a = connect_to_mas(&mut dev, &mut chan.1, &chan3) => {
+                                        log::info!("Result of connect: {:?}", a);
+                                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                    }
+                                    _ = kill.recv() => {
+                                        log::info!("Shutting down obex client");
+                                        break;
+                                    }
+                                }
+                            }
                         });
                     }
                 }
@@ -2199,6 +2254,7 @@ pub async fn obex_main(adapter: &bluetooth_rust::BluetoothAdapter) -> Result<(),
                     }
                     BluetoothCommandResponse::Message { m } => {
                         log::info!("Message received {:#?}", m);
+                        let _ = msend.send(m).await;
                     }
                 }
             }
@@ -2352,6 +2408,8 @@ async fn smain() {
         polling_channel: polling_channel.0,
         outputs,
         inputs,
+        #[cfg(feature = "bluetooth")]
+        blue_notification: None,
     };
 
     let common = Arc::new(tokio::sync::Mutex::new(auc));
@@ -2381,16 +2439,6 @@ async fn smain() {
             .await
             .inspect_err(|a| log::error!("Sensor polling ended: {:?}", a))
     });
-    #[cfg(feature = "bluetooth")]
-    {
-        let common2 = common.clone();
-        tasks.spawn(async move {
-            bluetooth_task(common2, shutdown_recv3)
-                .await
-                .inspect_err(|a| log::error!("Bluetooth task ended: {:?}", a))
-        });
-    }
-
     tokio::select! {
         r = tasks.join_next() => {
             service::log::error!("A task exited {:?}, closing server in 5 seconds", r);

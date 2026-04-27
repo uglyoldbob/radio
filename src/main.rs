@@ -829,6 +829,10 @@ impl eframe::App for MyEguiApp {
                 settings_changed = true;
             }
             match packet {
+                #[cfg(feature = "bluetooth")]
+                uobradio_comms::MessageToApp::BluetoothMessageNotification(m) => {
+                    log::info!("Recieved a message : {:#?}", m)
+                }
                 uobradio_comms::MessageToApp::GpioQueryResponse(query, val) => match query {
                     uobradio_comms::GpioQuery::CameraLedControl(_) => todo!(),
                     uobradio_comms::GpioQuery::LightControl(i) => {

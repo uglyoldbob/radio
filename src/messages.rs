@@ -3,377 +3,13 @@
 
 use std::io::{Read, Write};
 
+use uobradio_comms::bluetooth::BMessage;
+use uobradio_comms::BluetoothNotification;
+
 use bluetooth_rust::{
     BluetoothAdapterBuilder, BluetoothAdapterTrait, BluetoothDevice, BluetoothDeviceTrait,
     BluetoothSocket, BluetoothSocketTrait,
 };
-
-#[derive(Debug, Default)]
-pub enum MessageType {
-    #[default]
-    Email,
-    SmsGsm,
-    SmsCdma,
-    Mms,
-}
-
-impl TryFrom<&str> for MessageType {
-    type Error = String;
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        Ok(match value {
-            "EMAIL" => Self::Email,
-            "SMS_GSM" => Self::SmsGsm,
-            "SMS_CDMA" => Self::SmsCdma,
-            "MMS" => Self::Mms,
-            _ => {
-                return Err("Invalid message type".to_string());
-            }
-        })
-    }
-}
-
-impl std::fmt::Display for MessageType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            MessageType::Email => "EMAIL",
-            MessageType::SmsGsm => "SMS_GSM",
-            MessageType::SmsCdma => "SMS_CDMA",
-            MessageType::Mms => "MMS",
-        };
-        f.write_str(s)?;
-        Ok(())
-    }
-}
-
-impl MessageType {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s {
-            "EMAIL" => Ok(Self::Email),
-            "SMS_GSM" => Ok(Self::SmsGsm),
-            "SMS_CDMA" => Ok(Self::SmsCdma),
-            "MMS" => Ok(Self::Mms),
-            _ => Err(format!("Unknown type {s}")),
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct VCard {
-    version: String,
-    formatted_name: Option<String>,
-    name: Option<String>,
-    numbers: Vec<String>,
-    emails: Vec<String>,
-    bt_uid: Vec<String>,
-    bt_uci: Vec<String>,
-}
-
-impl std::fmt::Display for VCard {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("BEGIN:VCARD\r\n")?;
-        f.write_str(&format!("VERSION:{}\r\n", self.version))?;
-        if self.version.as_str() == "3.0" {
-            if let Some(formatted_name) = &self.formatted_name {
-                f.write_str(&format!("FN:{}\r\n", formatted_name))?;
-            }
-        }
-        if let Some(name) = &self.name {
-            f.write_str(&format!("N:{}\r\n", name))?;
-        }
-        for n in &self.numbers {
-            f.write_str(&format!("TEL:{}\r\n", n))?;
-        }
-        for n in &self.emails {
-            f.write_str(&format!("EMAIL:{}\r\n", n))?;
-        }
-        for n in &self.bt_uid {
-            f.write_str(&format!("X-BT-UID:{}\r\n", n))?;
-        }
-        for n in &self.bt_uci {
-            f.write_str(&format!("X-BT-UCI:{}\r\n", n))?;
-        }
-        f.write_str("END:VCARD\r\n")?;
-        Ok(())
-    }
-}
-
-impl VCard {
-    pub fn parse(c: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
-        let mut out = Self::default();
-        loop {
-            if let Some(Ok(line)) = c.next() {
-                if line.as_str() == "END:VCARD" {
-                    break;
-                }
-                if line.starts_with("VERSION:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.version = v.1.to_string();
-                    }
-                }
-                if line.starts_with("FN:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.formatted_name = Some(v.1.to_string());
-                    }
-                }
-                if line.starts_with("N:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.name = Some(v.1.to_string());
-                    }
-                }
-                if line.starts_with("TEL:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.numbers.push(v.1.to_string());
-                    }
-                }
-                if line.starts_with("EMAIL:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.emails.push(v.1.to_string());
-                    }
-                }
-                if line.starts_with("X-BT-UID:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.bt_uid.push(v.1.to_string());
-                    }
-                }
-                if line.starts_with("X-BT-UCI:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.bt_uci.push(v.1.to_string());
-                    }
-                }
-            } else {
-                return Err("Not enough lines found".to_string());
-            }
-        }
-        Ok(out)
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct BContent {
-    part: Option<String>,
-    encoding: Option<String>,
-    charset: Option<String>,
-    language: Option<String>,
-    length: usize,
-    message: String,
-}
-
-impl BContent {
-    pub fn parse(lines: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
-        let mut content = BContent::default();
-
-        // Parse BBODY headers first
-        loop {
-            let line = lines.next()
-                .ok_or("Unexpected end of input in BBODY")?
-                .map_err(|e| e.to_string())?;
-            let line = line.trim();
-
-            if line == "BEGIN:MSG" {
-                break;
-            } else if line == "END:BBODY" {
-                return Err("END:BBODY before BEGIN:MSG".to_string());
-            } else if let Some(val) = line.strip_prefix("PART:") {
-                content.part = Some(val.trim().to_string());
-            } else if let Some(val) = line.strip_prefix("ENCODING:") {
-                content.encoding = Some(val.trim().to_string());
-            } else if let Some(val) = line.strip_prefix("CHARSET:") {
-                content.charset = Some(val.trim().to_string());
-            } else if let Some(val) = line.strip_prefix("LANGUAGE:") {
-                content.language = Some(val.trim().to_string());
-            } else if let Some(val) = line.strip_prefix("LENGTH:") {
-                content.length = val.trim().parse::<usize>().map_err(|_| "Invalid LENGTH".to_string())?;
-            }
-            // unknown headers silently skipped
-        }
-
-        // Now collect message body lines until END:MSG,
-        // using LENGTH as the source of truth if available.
-        let mut body_lines: Vec<String> = Vec::new();
-
-        if content.length > 0 {
-            // Collect exactly `length` bytes worth of content.
-            // The LENGTH field in the spec counts from the first byte after BEGIN:MSG\n
-            // up to and including the END:MSG\r\n terminator.
-            // We accumulate lines until our byte count reaches or exceeds LENGTH.
-            let suffix = b"END:MSG";
-            let mut byte_count = 0;
-
-            loop {
-                let line = lines.next()
-                    .ok_or("Unexpected end of input reading MSG body")?
-                    .map_err(|e| e.to_string())?;
-
-                // +1 for the newline that was consumed
-                byte_count += line.len() + 1;
-
-                if line.trim() == "END:MSG" || byte_count >= content.length {
-                    // This line is the real END:MSG terminator (or we hit the length
-                    // boundary). Don't include it in the body.
-                    break;
-                }
-
-                // If the line happens to contain "END:MSG" but we haven't hit
-                // the length boundary yet, it's part of the message body.
-                body_lines.push(line);
-            }
-
-            // Sanity check: if the last body line is END:MSG we over-collected
-            if body_lines.last().map(|l| l.trim()) == Some("END:MSG") {
-                body_lines.pop();
-            }
-        } else {
-            // No LENGTH — fall back to rfind strategy: collect everything,
-            // then trim from the last END:MSG backwards.
-            let mut all_lines: Vec<String> = Vec::new();
-
-            loop {
-                let line = lines.next()
-                    .ok_or("Unexpected end of input reading MSG body")?
-                    .map_err(|e| e.to_string())?;
-
-                if line.trim() == "END:MSG" {
-                    // Keep consuming to find if there's another END:MSG
-                    // (we can't distinguish body from terminator without LENGTH)
-                    all_lines.push(line);
-                    // Peek ahead: if the next line is END:BBODY or END:BENV we're done
-                    // Since we can't peek a Lines iterator, we settle for rfind below.
-                    break;
-                }
-                all_lines.push(line);
-            }
-
-            // Find the last END:MSG and treat everything before it as body
-            let last_end = all_lines.iter().rposition(|l| l.trim() == "END:MSG");
-            let body_end = last_end.unwrap_or(all_lines.len());
-            body_lines = all_lines[..body_end].to_vec();
-        }
-
-        content.message = body_lines.join("\n");
-        Ok(content)
-    }
-}
-
-#[derive(Debug)]
-pub enum BEnvelope {
-    Envelope(Box<BEnvelope>),
-    Content(BContent),
-}
-
-impl BEnvelope {
-    pub fn parse(c: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
-        if let Some(Ok(line)) = c.next() {
-            if line.as_str() == "BEGIN:BENV" {
-                if let Ok(benv) = BEnvelope::parse(c) {
-                    return Ok(Self::Envelope(Box::new(benv)));
-                }
-            }
-            if line.as_str() == "BEGIN:BBODY" {
-                if let Ok(benv) = BContent::parse(c) {
-                    return Ok(Self::Content(benv));
-                }
-            }
-        }
-        Err("Unexpected value for envelope".to_string())
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct BMessage {
-    version: String,
-    status_read: bool,
-    mtype: MessageType,
-    folder: String,
-    originator: Vec<VCard>,
-    message: Option<BEnvelope>,
-}
-
-fn last_512(s: &str) -> String {
-    let len = s.chars().count();
-
-    s.chars().skip(len.saturating_sub(512)).collect()
-}
-
-impl BMessage {
-    pub fn parse(c: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
-        let mut out = Self::default();
-        if let Some(Ok(line)) = c.next() {
-            if line.as_str() != "BEGIN:BMSG" {
-                return Err("No begin line found".to_string());
-            }
-        } else {
-            return Err("No begin line found".to_string());
-        }
-        loop {
-            if let Some(Ok(line)) = c.next() {
-                if line.as_str() == "END:BMSG" {
-                    break;
-                }
-                if line.starts_with("VERSION:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.version = v.1.to_string();
-                    }
-                }
-                if line.starts_with("STATUS:") {
-                    out.status_read = if let Some(v) = line.split_once(":") {
-                        match v.1 {
-                            "UNREAD" => false,
-                            "READ" => true,
-                            _ => {
-                                return Err(format!("Invalid message status {}", v.1));
-                            }
-                        }
-                    } else {
-                        return Err("Invalid message status line".to_string());
-                    };
-                }
-                if line.starts_with("TYPE:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.mtype = v.1.try_into()?;
-                    } else {
-                        return Err("Invalid message line".to_string());
-                    }
-                }
-                if line.starts_with("FOLDER:") {
-                    if let Some(v) = line.split_once(":") {
-                        out.folder = v.1.to_string();
-                    }
-                }
-                if line.as_str() == "BEGIN:VCARD" {
-                    if let Ok(v) = VCard::parse(c) {
-                        out.originator.push(v);
-                    }
-                }
-                if line.as_str() == "BEGIN:BENV" {
-                    if let Ok(benv) = BEnvelope::parse(c) {
-                        out.message = Some(benv);
-                    }
-                }
-            } else {
-                return Err("Not enough lines found".to_string());
-            }
-        }
-        Ok(out)
-    }
-}
-
-impl std::fmt::Display for BMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("BEGIN:BMSG\r\n")?;
-        f.write_str("VERSION:1.0\r\n")?;
-        f.write_str(&format!(
-            "STATUS:{}\r\n",
-            if self.status_read { "READ" } else { "UNREAD" }
-        ))?;
-        f.write_str(&format!("TYPE:{}\r\n", self.mtype))?;
-        f.write_str(&format!("FOLDER:{}\r\n", &last_512(&self.folder)))?;
-        for o in &self.originator {
-            f.write_str(&format!("{}", o))?;
-        }
-        f.write_str("END:BMSG\r\n")?;
-        Ok(())
-    }
-}
 
 #[derive(Default)]
 struct ObexConnect {
@@ -716,9 +352,9 @@ impl MapGetMessagesListing {
 #[derive(Debug)]
 pub struct MapGetMessage {
     pub connection_id: u32,
-    pub message_handle: String,  // e.g. "0000000000000001" from the MNS notification
+    pub message_handle: String, // e.g. "0000000000000001" from the MNS notification
     pub attachment: bool,
-    pub charset: u8,             // 0x01 = UTF-8
+    pub charset: u8, // 0x01 = UTF-8
 }
 
 impl MapGetMessage {
@@ -735,14 +371,12 @@ impl MapGetMessage {
         app_params.extend_from_slice(&[0x14, 0x01, self.charset]);
 
         // Name header: the message handle as a UTF-16BE null-terminated string
-        let handle_utf16: Vec<u16> = self.message_handle
+        let handle_utf16: Vec<u16> = self
+            .message_handle
             .encode_utf16()
             .chain(std::iter::once(0u16))
             .collect();
-        let handle_bytes: Vec<u8> = handle_utf16
-            .iter()
-            .flat_map(|c| c.to_be_bytes())
-            .collect();
+        let handle_bytes: Vec<u8> = handle_utf16.iter().flat_map(|c| c.to_be_bytes()).collect();
 
         let mut pkt = vec![0x83, 0x00, 0x00]; // GET | Final
 
@@ -1123,105 +757,104 @@ struct MessageClient {
 }
 
 impl MessageClient {
-    pub fn new(mut socket: BluetoothSocket) -> Self {
-        log::info!("Socket is connected? {:?}", socket.is_connected());
-        // Use a tokio-aware sleep so the async runtime (including the MNS
-        // acceptor task) keeps making progress while we wait for the RFCOMM
-        // connection to settle before sending the OBEX CONNECT.
-        // Because we now process each device immediately after connecting
-        // there is no multi-second idle window during which the phone could
-        // queue unsolicited bytes, so no explicit drain is needed.
-        // Wait for the RFCOMM connection to fully settle, including Bluetooth
-        // security negotiation (authentication / encryption).  The kernel
-        // completes the L2CAP + RFCOMM handshake before connect() returns, but
-        // the security layer runs asynchronously on some stacks and can take
-        // several hundred ms.  Writing too soon produces ENOTCONN.
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(tokio::time::sleep(std::time::Duration::from_secs(1)))
-        });
-        log::info!("Settle wait done, sending OBEX CONNECT");
-        // this is the value for mas obex target
-        // MAP MAS OBEX target UUID: BB582B40-420C-11DB-B0DE-0800200C9A66
-        let mas_obex_uuid = [
-            0xBB, 0x58, 0x2B, 0x40, 0x42, 0x0C, 0x11, 0xDB, 0xB0, 0xDE, 0x08, 0x00, 0x20, 0x0C,
-            0x9A, 0x66,
-        ];
-
-        // MAP 1.2+ requires MapSupportedFeatures (tag 0x27, 4 bytes) in the
-        // OBEX CONNECT Application Parameters. Without it many phones reply
-        // 0xC6 (Not Acceptable) and refuse subsequent operations.
-        // Bits 0-4: Notification Registration, Notification, Browsing,
-        //           Uploading, Delete features (= MAP 1.2 baseline).
-        let map_supported_features: [u8; 6] = [
-            0x27, 0x04, // tag=MapSupportedFeatures, length=4
-            0x00, 0x00, 0x00, 0x1F, // features bitmap
-        ];
-        let packet = ObexConnect::new(0x8000)
-            .target(&mas_obex_uuid)
-            .byte_seq(0x4C, &map_supported_features) // APPLICATION PARAMETERS
-            .build();
-        let a = socket.write_all(&packet);
-        let b = socket.flush();
-        log::info!("Sent OBEX CONNECT: {:?} {:?} {:x?}", a, b, packet);
-
-        // If the write itself failed the socket is dead — skip the read so we
-        // don't block for several seconds waiting for data that will never come.
-        if a.is_err() {
-            log::error!(
-                "OBEX CONNECT write failed ({:?}) — socket is dead, giving up on this device",
-                a
-            );
-            return Self {
-                socket,
-                message_handle: 0,
-                session_ok: false,
-            };
-        }
-
-        let mut buf = [0u8; 1024];
+    pub async fn new(mut socket: BluetoothSocket) -> Self {
         let mut message_handle = 0;
         let mut session_ok = false;
-        if let Ok(a) = socket.read(&mut buf) {
-            if a > 0 {
-                log::info!("OBEX CONNECT response ({} bytes): {:x?}", a, &buf[0..a]);
-                let resp = ObexConnectResponse::parse(&buf[0..a]);
-                log::info!("Parsed response: {:x?}", resp);
-                if let Ok(r) = resp {
-                    if r.is_success() {
-                        log::info!("OBEX CONNECT accepted (0xA0 OK)");
-                        session_ok = true;
-                    } else {
-                        log::warn!(
-                            "OBEX CONNECT non-success code {:#04X} — proceeding if ConnectionId present",
-                            r.response_code
-                        );
-                    }
-                    if let Some(i) = r.connection_id() {
-                        log::info!("Got ConnectionId = {}", i);
-                        message_handle = i;
-                        // Treat any response that provides a ConnectionId as a
-                        // usable session — some phones reply with a non-0xA0 code
-                        // (e.g. 0xC6) but still assign a valid connection ID.
-                        session_ok = true;
-                    } else {
-                        log::error!(
-                            "No ConnectionId in OBEX CONNECT response — session not usable"
-                        );
+        if let Some(asocket) = socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            // Use a tokio-aware sleep so the async runtime (including the MNS
+            // acceptor task) keeps making progress while we wait for the RFCOMM
+            // connection to settle before sending the OBEX CONNECT.
+            // Because we now process each device immediately after connecting
+            // there is no multi-second idle window during which the phone could
+            // queue unsolicited bytes, so no explicit drain is needed.
+            // Wait for the RFCOMM connection to fully settle, including Bluetooth
+            // security negotiation (authentication / encryption).  The kernel
+            // completes the L2CAP + RFCOMM handshake before connect() returns, but
+            // the security layer runs asynchronously on some stacks and can take
+            // several hundred ms.  Writing too soon produces ENOTCONN.
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            log::info!("Settle wait done, sending OBEX CONNECT");
+            // this is the value for mas obex target
+            // MAP MAS OBEX target UUID: BB582B40-420C-11DB-B0DE-0800200C9A66
+            let mas_obex_uuid = [
+                0xBB, 0x58, 0x2B, 0x40, 0x42, 0x0C, 0x11, 0xDB, 0xB0, 0xDE, 0x08, 0x00, 0x20, 0x0C,
+                0x9A, 0x66,
+            ];
+
+            // MAP 1.2+ requires MapSupportedFeatures (tag 0x27, 4 bytes) in the
+            // OBEX CONNECT Application Parameters. Without it many phones reply
+            // 0xC6 (Not Acceptable) and refuse subsequent operations.
+            // Bits 0-4: Notification Registration, Notification, Browsing,
+            //           Uploading, Delete features (= MAP 1.2 baseline).
+            let map_supported_features: [u8; 6] = [
+                0x27, 0x04, // tag=MapSupportedFeatures, length=4
+                0x00, 0x00, 0x00, 0x1F, // features bitmap
+            ];
+            let packet = ObexConnect::new(0x8000)
+                .target(&mas_obex_uuid)
+                .byte_seq(0x4C, &map_supported_features) // APPLICATION PARAMETERS
+                .build();
+            let a = asocket.write_all(&packet).await;
+            let b = asocket.flush().await;
+            log::info!("Sent OBEX CONNECT: {:?} {:?} {:x?}", a, b, packet);
+
+            // If the write itself failed the socket is dead — skip the read so we
+            // don't block for several seconds waiting for data that will never come.
+            if a.is_err() {
+                log::error!(
+                    "OBEX CONNECT write failed ({:?}) — socket is dead, giving up on this device",
+                    a
+                );
+                return Self {
+                    socket,
+                    message_handle: 0,
+                    session_ok: false,
+                };
+            }
+
+            let mut buf = [0u8; 1024];
+            if let Ok(a) = asocket.read(&mut buf).await {
+                if a > 0 {
+                    log::info!("OBEX CONNECT response ({} bytes): {:x?}", a, &buf[0..a]);
+                    let resp = ObexConnectResponse::parse(&buf[0..a]);
+                    log::info!("Parsed response: {:x?}", resp);
+                    if let Ok(r) = resp {
+                        if r.is_success() {
+                            log::info!("OBEX CONNECT accepted (0xA0 OK)");
+                            session_ok = true;
+                        } else {
+                            log::warn!(
+                                "OBEX CONNECT non-success code {:#04X} — proceeding if ConnectionId present",
+                                r.response_code
+                            );
+                        }
+                        if let Some(i) = r.connection_id() {
+                            log::info!("Got ConnectionId = {}", i);
+                            message_handle = i;
+                            // Treat any response that provides a ConnectionId as a
+                            // usable session — some phones reply with a non-0xA0 code
+                            // (e.g. 0xC6) but still assign a valid connection ID.
+                            session_ok = true;
+                        } else {
+                            log::error!(
+                                "No ConnectionId in OBEX CONNECT response — session not usable"
+                            );
+                        }
                     }
                 }
+            } else {
+                log::error!("Failed to read OBEX CONNECT response — socket is dead");
             }
+            // Give the phone's MAP session a moment to finish initialising after
+            // the OBEX CONNECT before we send any further operations.  Some phones
+            // (especially ones that do internal setup asynchronously) return 0xC0
+            // Bad Request if we send the notification registration too quickly.
+            std::thread::sleep(std::time::Duration::from_millis(500));
         } else {
-            log::error!("Failed to read OBEX CONNECT response — socket is dead");
+            panic!("Async not supported")
         }
-        // Give the phone's MAP session a moment to finish initialising after
-        // the OBEX CONNECT before we send any further operations.  Some phones
-        // (especially ones that do internal setup asynchronously) return 0xC0
-        // Bad Request if we send the notification registration too quickly.
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(tokio::time::sleep(std::time::Duration::from_millis(500)))
-        });
         Self {
             socket,
             message_handle,
@@ -1235,45 +868,57 @@ impl MessageClient {
     }
 
     /// Read exactly one complete OBEX packet
-    fn read_obex_packet(&mut self) -> Option<Vec<u8>> {
+    async fn read_obex_packet(&mut self) -> Option<Vec<u8>> {
         // Read the 3-byte fixed header first
-        let mut header = [0u8; 3];
-        self.socket.read_exact(&mut header).ok()?;
+        if let Some(asocket) = self.socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            let mut header = [0u8; 3];
+            asocket.read_exact(&mut header).await.ok()?;
 
-        let packet_len = u16::from_be_bytes([header[1], header[2]]) as usize;
+            let packet_len = u16::from_be_bytes([header[1], header[2]]) as usize;
 
-        if packet_len < 3 {
-            log::error!("Invalid packet length: {}", packet_len);
-            return None;
+            if packet_len < 3 {
+                log::error!("Invalid packet length: {}", packet_len);
+                return None;
+            }
+
+            let remaining = packet_len - 3;
+            let mut full = vec![0u8; packet_len];
+            full[0] = header[0];
+            full[1] = header[1];
+            full[2] = header[2];
+
+            if remaining > 0 {
+                asocket.read_exact(&mut full[3..]).await.ok()?;
+            }
+
+            log::info!("Read packet: code={:#X} len={}", full[0], packet_len);
+            Some(full)
+        } else {
+            None
         }
-
-        let remaining = packet_len - 3;
-        let mut full = vec![0u8; packet_len];
-        full[0] = header[0];
-        full[1] = header[1];
-        full[2] = header[2];
-
-        if remaining > 0 {
-            self.socket.read_exact(&mut full[3..]).ok()?;
-        }
-
-        log::info!("Read packet: code={:#X} len={}", full[0], packet_len);
-        Some(full)
     }
 
-    pub fn setpath(&mut self, p: &str) -> bool {
+    pub async fn setpath(&mut self, p: &str) -> bool {
         let p = SetpathDirection::Child(p.to_string()).build(Some(self.message_handle));
-        self.socket.write_all(&p);
-        self.socket.flush();
-        if let Some(buf) = self.read_obex_packet() {
-            log::info!("READ DATA {:?} BYTES {:x?}", buf.len(), buf);
-            true
+        if let Some(asocket) = self.socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            asocket.write_all(&p).await;
+            asocket.flush().await;
+            if let Some(buf) = self.read_obex_packet().await {
+                log::info!("READ DATA {:?} BYTES {:x?}", buf.len(), buf);
+                true
+            } else {
+                false
+            }
         } else {
             false
         }
     }
 
-    pub fn try_get_messages(&mut self) -> bool {
+    pub async fn try_get_messages(&mut self) -> bool {
         let req = MapGetMessagesListing {
             connection_id: self.message_handle,
             max_list_count: 0, // just get the count, no XML body
@@ -1285,17 +930,21 @@ impl MessageClient {
             filter_period_end: None,
         };
         let p = req.serialize();
-        self.socket.write_all(&p).ok();
-        self.socket.flush().ok();
-        if let Some(buf) = self.read_obex_packet() {
-            let code = buf[0];
-            log::info!("get_messages response: {:#X}", code);
-            return (code & 0x7F) == 0x20;
+        if let Some(asocket) = self.socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            asocket.write_all(&p).await.ok();
+            asocket.flush().await.ok();
+            if let Some(buf) = self.read_obex_packet().await {
+                let code = buf[0];
+                log::info!("get_messages response: {:#X}", code);
+                return (code & 0x7F) == 0x20;
+            }
         }
         false
     }
 
-    pub fn set_root(&mut self) -> bool {
+    pub async fn set_root(&mut self) -> bool {
         log::info!("SETPATH -> root (empty name)");
         let mut pkt = vec![0x85, 0x00, 0x00]; // SETPATH | Final
         pkt.push(0x00); // flags = 0x00 (not backup)
@@ -1316,10 +965,14 @@ impl MessageClient {
         pkt[1] = (total >> 8) as u8;
         pkt[2] = (total & 0xFF) as u8;
 
-        self.socket.write_all(&pkt).ok();
-        self.socket.flush().ok();
+        if let Some(asocket) = self.socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            asocket.write_all(&pkt).await.ok();
+            asocket.flush().await.ok();
+        }
 
-        if let Some(buf) = self.read_obex_packet() {
+        if let Some(buf) = self.read_obex_packet().await {
             let code = buf[0];
             log::info!("set_root response: {:#X}", code);
             (code & 0x7F) == 0x20
@@ -1328,13 +981,17 @@ impl MessageClient {
         }
     }
 
-    pub fn go_to_root(&mut self) {
+    pub async fn go_to_root(&mut self) {
         // Send parent repeatedly until we get an error (means we're at root)
         for _ in 0..10 {
             let pkt = SetpathDirection::Parent.build(Some(self.message_handle));
-            self.socket.write_all(&pkt).ok();
-            self.socket.flush().ok();
-            if let Some(buf) = self.read_obex_packet() {
+            if let Some(asocket) = self.socket.supports_async() {
+                use tokio::io::AsyncWriteExt;
+                use tokio::io::AsyncReadExt;
+                asocket.write_all(&pkt).await.ok();
+                asocket.flush().await.ok();
+            }
+            if let Some(buf) = self.read_obex_packet().await {
                 let code = buf[0];
                 log::info!("go_to_root parent step: {:#X}", code);
                 if (code & 0x7F) != 0x20 {
@@ -1344,13 +1001,17 @@ impl MessageClient {
         }
     }
 
-    pub fn get_folder_listing(&mut self) -> String {
+    pub async fn get_folder_listing(&mut self) -> String {
         let p = build_get_folder_listing(self.message_handle);
         log::info!("Packet to list folder: {:x?}", p);
-        self.socket.write_all(&p).ok();
-        self.socket.flush().ok();
+        if let Some(asocket) = self.socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            asocket.write_all(&p).await.ok();
+            asocket.flush().await.ok();
+        }
         let mut buf = [0u8; 4096];
-        if let Some(buf) = self.read_obex_packet() {
+        if let Some(buf) = self.read_obex_packet().await {
             log::info!("FOLDER LISTING RESPONSE CODE: {:#X}", buf[0]);
             let xml = extract_body(&buf);
             log::info!("FOLDER LISTING XML:\n{}", xml);
@@ -1359,7 +1020,7 @@ impl MessageClient {
         String::new()
     }
 
-    pub fn get_message(&mut self, handle: String) -> Result<BMessage, String> {
+    pub async fn get_message(&mut self, handle: String) -> Result<BMessage, String> {
         let req = MapGetMessage {
             connection_id: self.message_handle,
             message_handle: handle,
@@ -1367,15 +1028,19 @@ impl MessageClient {
             charset: 0x01, // UTF-8
         };
 
-        self.socket.write_all(&req.serialize()).ok();
-        self.socket.flush().ok();
+        if let Some(asocket) = self.socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            asocket.write_all(&req.serialize()).await.ok();
+            asocket.flush().await.ok();
+        }
 
         let mut full_body: Vec<u8> = Vec::new();
         let mut app_params_out: Option<MapListingAppParams> = None;
         let mut first = true;
 
         loop {
-            let data = match self.read_obex_packet() {
+            let data = match self.read_obex_packet().await {
                 Some(d) => d,
                 None => {
                     log::error!("Failed to read packet");
@@ -1467,8 +1132,12 @@ impl MessageClient {
             if is_continue {
                 // Send empty GET to pull next chunk
                 let cont = self.build_get_continue();
-                self.socket.write_all(&cont).ok();
-                self.socket.flush().ok();
+                if let Some(asocket) = self.socket.supports_async() {
+                    use tokio::io::AsyncWriteExt;
+                    use tokio::io::AsyncReadExt;
+                    asocket.write_all(&cont).await.ok();
+                    asocket.flush().await.ok();
+                }
             } else {
                 log::error!("Unexpected code {:#X}", response_code);
                 break;
@@ -1483,7 +1152,7 @@ impl MessageClient {
         BMessage::parse(&mut lines)
     }
 
-    pub fn get_messages(&mut self) -> Vec<MapMessage> {
+    pub async fn get_messages(&mut self) -> Vec<MapMessage> {
         let req = MapGetMessagesListing {
             connection_id: self.message_handle,
             max_list_count: 127,
@@ -1495,15 +1164,19 @@ impl MessageClient {
             filter_period_end: None,
         };
 
-        self.socket.write_all(&req.serialize()).ok();
-        self.socket.flush().ok();
+        if let Some(asocket) = self.socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            asocket.write_all(&req.serialize()).await.ok();
+            asocket.flush().await.ok();
+        }
 
         let mut full_body: Vec<u8> = Vec::new();
         let mut app_params_out: Option<MapListingAppParams> = None;
         let mut first = true;
 
         loop {
-            let data = match self.read_obex_packet() {
+            let data = match self.read_obex_packet().await {
                 Some(d) => d,
                 None => {
                     log::error!("Failed to read packet");
@@ -1595,8 +1268,12 @@ impl MessageClient {
             if is_continue {
                 // Send empty GET to pull next chunk
                 let cont = self.build_get_continue();
-                self.socket.write_all(&cont).ok();
-                self.socket.flush().ok();
+                if let Some(asocket) = self.socket.supports_async() {
+                    use tokio::io::AsyncWriteExt;
+                    use tokio::io::AsyncReadExt;
+                    asocket.write_all(&cont).await.ok();
+                    asocket.flush().await.ok();
+                }
             } else {
                 log::error!("Unexpected code {:#X}", response_code);
                 break;
@@ -1645,7 +1322,7 @@ impl MessageClient {
         pkt
     }
 
-    pub fn register_notification(&mut self, _mns_channel: u8) -> bool {
+    pub async fn register_notification(&mut self, _mns_channel: u8) -> bool {
         // The OBEX spec requires a NUL-terminated string for the TYPE header.
         // Android's ObexHelper reads (length - 3) bytes and then strips the
         // trailing NUL before storing the Java String, so the comparison with
@@ -1679,10 +1356,14 @@ impl MessageClient {
         pkt[2] = (total & 0xFF) as u8;
 
         log::info!("NotificationRegistration: {:02x?}", pkt);
-        self.socket.write_all(&pkt).ok();
-        self.socket.flush().ok();
+        if let Some(asocket) = self.socket.supports_async() {
+            use tokio::io::AsyncWriteExt;
+            use tokio::io::AsyncReadExt;
+            asocket.write_all(&pkt).await.ok();
+            asocket.flush().await.ok();
+        }
 
-        let data = self.read_obex_packet();
+        let data = self.read_obex_packet().await;
 
         if let Some(data) = data {
             if data[0] == 0x90 {
@@ -1690,10 +1371,14 @@ impl MessageClient {
                     0x82, 0x00, 0x07, 0x49, 0x00, 0x04, 0x30, // required filler byte
                 ];
                 log::info!("Final put: {:x?}", final_put);
-                self.socket.write_all(&final_put).ok();
-                self.socket.flush().ok();
+                if let Some(asocket) = self.socket.supports_async() {
+                    use tokio::io::AsyncWriteExt;
+                    use tokio::io::AsyncReadExt;
+                    asocket.write_all(&final_put).await.ok();
+                    asocket.flush().await.ok();
+                }
 
-                let final_resp = self.read_obex_packet();
+                let final_resp = self.read_obex_packet().await;
                 if let Some(resp) = final_resp {
                     log::info!("final notification response: {:x?}", resp);
                     return (resp[0] & 0x7F) == 0x20;
@@ -1706,9 +1391,9 @@ impl MessageClient {
     }
 }
 
-fn try_map_connect(dev: &mut BluetoothDevice, channel: u8) -> Result<BluetoothSocket, String> {
+async fn try_map_connect(dev: &mut BluetoothDevice, channel: u8) -> Result<BluetoothSocket, String> {
     if let Ok(mut socket) = dev.get_rfcomm_socket(channel, true) {
-        match socket.connect() {
+        match socket.async_connect().await {
             Ok(_) => {
                 log::info!("Got a socket");
                 Ok(socket)
@@ -1835,6 +1520,7 @@ impl MnsServer {
         send: tokio::sync::mpsc::Sender<BluetoothNotification>,
     ) {
         use tokio::io::AsyncWriteExt;
+        use tokio::io::AsyncReadExt;
 
         // ---- 1. Expect OBEX CONNECT ----
         let data = match Self::read_packet(&mut stream).await {
@@ -1890,7 +1576,10 @@ impl MnsServer {
 
                     match Self::parse_event(&body, source) {
                         Some(notification) => {
-                            log::info!("Sending notification from device... {:?}", send.send(notification).await);
+                            log::info!(
+                                "Sending notification from device... {:?}",
+                                send.send(notification).await
+                            );
                         }
                         None => {
                             log::error!("Failed to decode notification");
@@ -1951,7 +1640,7 @@ impl MnsServer {
         reply
     }
 
-    fn parse_event(xml: &str, source: [u8; 6],) -> Option<BluetoothNotification> {
+    fn parse_event(xml: &str, source: [u8; 6]) -> Option<BluetoothNotification> {
         // <MAP-event-report version="1.0">
         //   <event type="NewMessage" handle="..." folder="..." msg_type="SMS_GSM"/>
         // </MAP-event-report>
@@ -1987,97 +1676,84 @@ pub async fn start_mns(
     Ok(())
 }
 
-#[derive(Debug)]
-pub struct BluetoothNotification {
-    pub source: [u8; 6],
-    pub t: Option<String>,
-    pub handle: Option<String>,
-    pub folder: Option<String>,
-    pub msg_type: Option<String>,
-}
-
 pub enum BluetoothCommand {
     FetchAllMessages,
-    FetchOneMessage {
-        handle: String,
-    }
+    FetchOneMessage { handle: String },
 }
 
 pub enum BluetoothCommandResponse {
-    Messages {
-        m: Vec<MapMessage>,
-    },
-    Message {
-        m: BMessage,
-    },
+    Messages { m: Vec<MapMessage> },
+    Message { m: BMessage },
 }
 
 pub async fn connect_to_mas(
-    mut dev: bluetooth_rust::BluetoothDevice,
-    mut recv: tokio::sync::mpsc::Receiver<BluetoothCommand>,
-    send: tokio::sync::mpsc::Sender<BluetoothCommandResponse>,
+    dev: &mut bluetooth_rust::BluetoothDevice,
+    recv: &mut tokio::sync::mpsc::Receiver<BluetoothCommand>,
+    send: &tokio::sync::mpsc::Sender<BluetoothCommandResponse>,
 ) -> Result<(), String> {
-    match dev.get_uuids() {
-        Ok(uuids) => {
-            if !uuids.contains(&bluetooth_rust::BluetoothUuid::ObexMas) {
-                return Err("No MAS service on device".to_string());
-            }
-            let channel = if let Ok(sdp) = dev.run_sdp(bluetooth_rust::BluetoothUuid::ObexMas) {
-                sdp.rfcomm_channel().unwrap_or(1)
-            } else {
-                1
-            };
-            match try_map_connect(&mut dev, channel) {
-                Ok(s) => {
-                    log::info!("MAP socket on ch {} — processing immediately", channel);
-                    let mut client = MessageClient::new(s);
-                    if !client.has_session() {
-                        log::warn!("OBEX session not established, skipping device");
-                        return Err("Faild to establish obex session".to_string());
-                    }
-                    let not = client.register_notification(17);
-                    tokio::task::yield_now().await;
-                    log::info!("Registered for notifications : {}", not);
-                    if !not {
-                        // Keep going even on failure: some phones return 0xC0 but
-                        // still process the registration internally and connect to
-                        // the MNS server.  We log the failure but do not skip, so
-                        // we can observe whether MNS gets a connection anyway.
-                        log::warn!(
-                            "Notification registration returned failure — \
-                                proceeding anyway to see if MNS still connects"
-                        );
-                    }
-                    //client.set_root();
-                    //client.setpath("telecom");
-                    //client.setpath("msg");
-                    //client.setpath("inbox");
-                    log::info!("Waiting for MNS callback...");
-                    while let Some(m) = recv.recv().await {
-                        match m {
-                            BluetoothCommand::FetchAllMessages => {
-                                let msgs = client.get_messages();
-                                send.send(BluetoothCommandResponse::Messages{ m: msgs}).await;
-                            }
-                            BluetoothCommand::FetchOneMessage { handle } => {
-                                match client.get_message(handle) {
-                                    Ok(msg) => {
-                                        send.send(BluetoothCommandResponse::Message{ m: msg}).await;
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to parse message: {}", e);
+    if let Some(adev) = dev.supports_async() {
+        match adev.get_uuids().await {
+            Ok(uuids) => {
+                if !uuids.contains(&bluetooth_rust::BluetoothUuid::ObexMas) {
+                    return Err("No MAS service on device".to_string());
+                }
+                let channel = if let Ok(sdp) = dev.run_sdp(bluetooth_rust::BluetoothUuid::ObexMas) {
+                    sdp.rfcomm_channel().unwrap_or(1)
+                } else {
+                    1
+                };
+                match try_map_connect(dev, channel).await {
+                    Ok(s) => {
+                        log::info!("MAP socket on ch {} — processing immediately", channel);
+                        let mut client = MessageClient::new(s).await;
+                        if !client.has_session() {
+                            log::warn!("OBEX session not established, skipping device");
+                            return Err("Faild to establish obex session".to_string());
+                        }
+                        let not = client.register_notification(17).await;
+                        tokio::task::yield_now().await;
+                        log::info!("Registered for notifications : {}", not);
+                        if !not {
+                            // Keep going even on failure: some phones return 0xC0 but
+                            // still process the registration internally and connect to
+                            // the MNS server.  We log the failure but do not skip, so
+                            // we can observe whether MNS gets a connection anyway.
+                            log::warn!(
+                                "Notification registration returned failure — \
+                                    proceeding anyway to see if MNS still connects"
+                            );
+                        }
+                        log::info!("Waiting for MNS callback...");
+                        while let Some(m) = recv.recv().await {
+                            match m {
+                                BluetoothCommand::FetchAllMessages => {
+                                    let msgs = client.get_messages().await;
+                                    send.send(BluetoothCommandResponse::Messages { m: msgs })
+                                        .await;
+                                }
+                                BluetoothCommand::FetchOneMessage { handle } => {
+                                    match client.get_message(handle).await {
+                                        Ok(msg) => {
+                                            send.send(BluetoothCommandResponse::Message { m: msg })
+                                                .await;
+                                        }
+                                        Err(e) => {
+                                            log::error!("Failed to parse message: {}", e);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    log::error!("Error trying to connect map: {}", e);
+                    Err(e) => {
+                        log::error!("Error trying to connect map: {}", e);
+                    }
                 }
             }
+            Err(e) => log::error!("Error getting uuids: {}", e),
         }
-        Err(e) => log::error!("Error getting uuids: {}", e),
+        Ok(())
+    } else {
+        Err("Async not supported".to_string())
     }
-    Ok(())
 }
