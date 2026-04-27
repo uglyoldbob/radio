@@ -1,7 +1,7 @@
 //! Code for bluetooth messages from bluetooth devices
 
 /// The type of a message that can be received
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum MessageType {
     /// An email message
     #[default]
@@ -56,7 +56,7 @@ impl MessageType {
 }
 
 /// A struct representing a contact for sending or receiving a message
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct VCard {
     version: String,
     formatted_name: Option<String>,
@@ -97,6 +97,22 @@ impl std::fmt::Display for VCard {
 }
 
 impl VCard {
+    /// Get the contact details in plain text
+    pub fn sender(&self) -> String {
+        if let Some(n) = &self.formatted_name {
+            return n.to_string();
+        } else if let Some(n) = &self.name {
+            return n.to_string();
+        }
+        if !self.numbers.is_empty() {
+            return self.numbers.join("\n");
+        }
+        if !self.emails.is_empty() {
+            return self.emails.join("\n");
+        }
+        "<Unknown sender>".to_string()
+    }
+
     /// Attempt to parse a Self from the given Lines object
     pub fn parse(c: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
         let mut out = Self::default();
@@ -149,7 +165,7 @@ impl VCard {
 }
 
 /// The content of a message
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct BContent {
     part: Option<String>,
     encoding: Option<String>,
@@ -160,6 +176,11 @@ pub struct BContent {
 }
 
 impl BContent {
+    /// Get the contents of the message
+    pub fn message_contents(&self) -> Option<&str> {
+        Some(&self.message)
+    }
+
     /// Attempt to parse a Self from the given Lines object
     pub fn parse(lines: &mut std::io::Lines<std::io::Cursor<&str>>) -> Result<Self, String> {
         let mut content = BContent::default();
@@ -257,7 +278,7 @@ impl BContent {
 }
 
 /// The envelope of a message, it might be recursive
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum BEnvelope {
     /// A nested object
     Envelope(Box<BEnvelope>),
@@ -282,10 +303,18 @@ impl BEnvelope {
         }
         Err("Unexpected value for envelope".to_string())
     }
+
+    /// Get the contents of the message
+    pub fn message_contents(&self) -> Option<&str> {
+        match self {
+            Self::Envelope(b) => b.message_contents(),
+            Self::Content(b) => b.message_contents(),
+        }
+    }
 }
 
 /// A message received over bluetooth from a device
-#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct BMessage {
     version: String,
     status_read: bool,
@@ -293,6 +322,22 @@ pub struct BMessage {
     folder: String,
     originator: Vec<VCard>,
     message: Option<BEnvelope>,
+}
+
+impl BMessage {
+    /// Get the contents of the message
+    pub fn message_contents(&self) -> Option<&str> {
+        self.message.as_ref().map(|a| a.message_contents()).flatten()
+    }
+
+    /// Get the sender of the message
+    pub fn sender(&self) -> String {
+        let mut s = Vec::new();
+        for sender in &self.originator {
+            s.push(sender.sender());
+        }
+        s.join("\n")
+    }
 }
 
 fn last_512(s: &str) -> String {

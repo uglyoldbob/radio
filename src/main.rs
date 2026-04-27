@@ -18,7 +18,7 @@ mod gauge;
 mod h264;
 mod swipable;
 
-use std::io::Write;
+use std::{collections::VecDeque, io::Write};
 
 #[cfg(feature = "androidauto")]
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -420,6 +420,9 @@ struct CommonWindowProperties {
     offroad_lights: [uobradio_comms::ToggleBool; 4],
     /// The button inputs
     buttons: Buttons,
+    #[cfg(feature = "bluetooth")]
+    /// The bluetooth message notifications
+    bluetooth_message_list: VecDeque<uobradio_comms::bluetooth::BMessage>,
 }
 
 impl CommonWindowProperties {
@@ -446,6 +449,8 @@ impl CommonWindowProperties {
             usb_writing: false,
             offroad_lights: [Default::default(); 4],
             buttons: bc.build_buttons().expect("Failed to load buttons"),
+            #[cfg(feature = "bluetooth")]
+            bluetooth_message_list: VecDeque::new(),
         }
     }
 }
@@ -831,7 +836,7 @@ impl eframe::App for MyEguiApp {
             match packet {
                 #[cfg(feature = "bluetooth")]
                 uobradio_comms::MessageToApp::BluetoothMessageNotification(m) => {
-                    log::info!("Recieved a message : {:#?}", m)
+                    self.common.bluetooth_message_list.push_back(m.to_owned());
                 }
                 uobradio_comms::MessageToApp::GpioQueryResponse(query, val) => match query {
                     uobradio_comms::GpioQuery::CameraLedControl(_) => todo!(),
@@ -982,53 +987,71 @@ impl eframe::App for MyEguiApp {
         }
         egui_extras::install_image_loaders(ui.ctx());
         #[cfg(feature = "bluetooth")]
+        {
+            let mut dismiss_message = false;
+            if let Some(msg) = self.common.bluetooth_message_list.front() {
+                egui::Window::new("Bluetooth message")
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .fixed_size(ui.ctx().content_rect().size() / 2.0)
+                    .collapsible(false)
+                    .show(ui.ctx(), |ui| {
+                        if ui.big_button(&self.theme, "Dismiss").clicked() {
+                            dismiss_message = true;
+                        }
+                        ui.label(&format!("From: {}", msg.sender()));
+                        if let Some(msg) = msg.message_contents() {
+                            ui.label(msg);
+                        }
+                    });
+            }
+            if dismiss_message {
+                self.common.bluetooth_message_list.pop_front();
+            }
+        }
+        #[cfg(feature = "bluetooth")]
         if let Some(pass) = &self.common.radio.display_passkey {
-            let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
-            let builder = egui::ViewportBuilder::default()
-                .with_title("Bluetooth passkey")
-                .with_always_on_top()
-                .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
-            ui.ctx().show_viewport_immediate(id, builder, |ui, _class| {
-                egui::CentralPanel::default().show_inside(ui, |ui| {
+            egui::Window::new("Bluetooth message")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .fixed_size(ui.ctx().content_rect().size() / 2.0)
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
                     ui.label(format!("Passkey: {:06}", 1));
                     ui.label(format!("Passkey: {:06}", pass));
                 });
-            });
         } else if let Some(pass) = self.common.radio.confirm_passkey {
-            let id: egui::ViewportId = egui::ViewportId::from_hash_of("bluetooth_show_passkey");
-            let builder = egui::ViewportBuilder::default()
-                .with_title("Bluetooth passkey")
-                .with_always_on_top()
-                .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
-            ui.ctx().show_viewport_immediate(id, builder, |ui, _class| {
-                egui::CentralPanel::default().show_inside(ui, |ui| {
-                    ui.vertical_centered(|ui| {
-                        let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
-                        ui.label(t);
-                        if ui.big_button(&self.theme, "Confirm").clicked() {
-                            let r = bluetooth_rust::ResponseToPasskey::Yes;
-                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            let _ = self.common.radio.send_packet(packet);
-                            log::info!("Got confirm request from user for bluetooth passkey");
-                        }
-                        if ui.big_button(&self.theme, "Reject").clicked() {
-                            let r = bluetooth_rust::ResponseToPasskey::No;
-                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            let _ = self.common.radio.send_packet(packet);
-                            log::info!("Got reject request from user for bluetooth passkey");
-                        }
-                        if ui.big_button(&self.theme, "Cancel").clicked() {
-                            let r = bluetooth_rust::ResponseToPasskey::Cancel;
-                            let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
-                            let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
-                            let _ = self.common.radio.send_packet(packet);
-                            log::info!("Got cancel request from user for bluetooth passkey");
-                        }
-                    })
+            egui::Window::new("Bluetooth message")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .fixed_size(ui.ctx().content_rect().size() / 2.0)
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
+                    egui::CentralPanel::default().show_inside(ui, |ui| {
+                        ui.vertical_centered(|ui| {
+                            let t = egui::RichText::new(format!("Passkey: {:06}", pass)).heading();
+                            ui.label(t);
+                            if ui.big_button(&self.theme, "Confirm").clicked() {
+                                let r = bluetooth_rust::ResponseToPasskey::Yes;
+                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                                let _ = self.common.radio.send_packet(packet);
+                                log::info!("Got confirm request from user for bluetooth passkey");
+                            }
+                            if ui.big_button(&self.theme, "Reject").clicked() {
+                                let r = bluetooth_rust::ResponseToPasskey::No;
+                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                                let _ = self.common.radio.send_packet(packet);
+                                log::info!("Got reject request from user for bluetooth passkey");
+                            }
+                            if ui.big_button(&self.theme, "Cancel").clicked() {
+                                let r = bluetooth_rust::ResponseToPasskey::Cancel;
+                                let m = bluetooth_rust::MessageFromBluetoothHost::PasskeyMessage(r);
+                                let packet = uobradio_comms::MessageFromApp::BluetoothMessage(m);
+                                let _ = self.common.radio.send_packet(packet);
+                                log::info!("Got cancel request from user for bluetooth passkey");
+                            }
+                        })
+                    });
                 });
-            });
         }
         {
             egui::Panel::top("status_bar")

@@ -761,8 +761,8 @@ impl MessageClient {
         let mut message_handle = 0;
         let mut session_ok = false;
         if let Some(asocket) = socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             // Use a tokio-aware sleep so the async runtime (including the MNS
             // acceptor task) keeps making progress while we wait for the RFCOMM
             // connection to settle before sending the OBEX CONNECT.
@@ -871,8 +871,8 @@ impl MessageClient {
     async fn read_obex_packet(&mut self) -> Option<Vec<u8>> {
         // Read the 3-byte fixed header first
         if let Some(asocket) = self.socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             let mut header = [0u8; 3];
             asocket.read_exact(&mut header).await.ok()?;
 
@@ -903,8 +903,8 @@ impl MessageClient {
     pub async fn setpath(&mut self, p: &str) -> bool {
         let p = SetpathDirection::Child(p.to_string()).build(Some(self.message_handle));
         if let Some(asocket) = self.socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             asocket.write_all(&p).await;
             asocket.flush().await;
             if let Some(buf) = self.read_obex_packet().await {
@@ -931,8 +931,8 @@ impl MessageClient {
         };
         let p = req.serialize();
         if let Some(asocket) = self.socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             asocket.write_all(&p).await.ok();
             asocket.flush().await.ok();
             if let Some(buf) = self.read_obex_packet().await {
@@ -966,8 +966,8 @@ impl MessageClient {
         pkt[2] = (total & 0xFF) as u8;
 
         if let Some(asocket) = self.socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             asocket.write_all(&pkt).await.ok();
             asocket.flush().await.ok();
         }
@@ -986,8 +986,8 @@ impl MessageClient {
         for _ in 0..10 {
             let pkt = SetpathDirection::Parent.build(Some(self.message_handle));
             if let Some(asocket) = self.socket.supports_async() {
-                use tokio::io::AsyncWriteExt;
                 use tokio::io::AsyncReadExt;
+                use tokio::io::AsyncWriteExt;
                 asocket.write_all(&pkt).await.ok();
                 asocket.flush().await.ok();
             }
@@ -1005,8 +1005,8 @@ impl MessageClient {
         let p = build_get_folder_listing(self.message_handle);
         log::info!("Packet to list folder: {:x?}", p);
         if let Some(asocket) = self.socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             asocket.write_all(&p).await.ok();
             asocket.flush().await.ok();
         }
@@ -1029,8 +1029,8 @@ impl MessageClient {
         };
 
         if let Some(asocket) = self.socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             asocket.write_all(&req.serialize()).await.ok();
             asocket.flush().await.ok();
         }
@@ -1133,8 +1133,8 @@ impl MessageClient {
                 // Send empty GET to pull next chunk
                 let cont = self.build_get_continue();
                 if let Some(asocket) = self.socket.supports_async() {
-                    use tokio::io::AsyncWriteExt;
                     use tokio::io::AsyncReadExt;
+                    use tokio::io::AsyncWriteExt;
                     asocket.write_all(&cont).await.ok();
                     asocket.flush().await.ok();
                 }
@@ -1165,8 +1165,8 @@ impl MessageClient {
         };
 
         if let Some(asocket) = self.socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             asocket.write_all(&req.serialize()).await.ok();
             asocket.flush().await.ok();
         }
@@ -1269,8 +1269,8 @@ impl MessageClient {
                 // Send empty GET to pull next chunk
                 let cont = self.build_get_continue();
                 if let Some(asocket) = self.socket.supports_async() {
-                    use tokio::io::AsyncWriteExt;
                     use tokio::io::AsyncReadExt;
+                    use tokio::io::AsyncWriteExt;
                     asocket.write_all(&cont).await.ok();
                     asocket.flush().await.ok();
                 }
@@ -1357,8 +1357,8 @@ impl MessageClient {
 
         log::info!("NotificationRegistration: {:02x?}", pkt);
         if let Some(asocket) = self.socket.supports_async() {
-            use tokio::io::AsyncWriteExt;
             use tokio::io::AsyncReadExt;
+            use tokio::io::AsyncWriteExt;
             asocket.write_all(&pkt).await.ok();
             asocket.flush().await.ok();
         }
@@ -1372,8 +1372,8 @@ impl MessageClient {
                 ];
                 log::info!("Final put: {:x?}", final_put);
                 if let Some(asocket) = self.socket.supports_async() {
-                    use tokio::io::AsyncWriteExt;
                     use tokio::io::AsyncReadExt;
+                    use tokio::io::AsyncWriteExt;
                     asocket.write_all(&final_put).await.ok();
                     asocket.flush().await.ok();
                 }
@@ -1391,7 +1391,10 @@ impl MessageClient {
     }
 }
 
-async fn try_map_connect(dev: &mut BluetoothDevice, channel: u8) -> Result<BluetoothSocket, String> {
+async fn try_map_connect(
+    dev: &mut BluetoothDevice,
+    channel: u8,
+) -> Result<BluetoothSocket, String> {
     if let Ok(mut socket) = dev.get_rfcomm_socket(channel, true) {
         match socket.async_connect().await {
             Ok(_) => {
@@ -1519,8 +1522,8 @@ impl MnsServer {
         source: [u8; 6],
         send: tokio::sync::mpsc::Sender<BluetoothNotification>,
     ) {
-        use tokio::io::AsyncWriteExt;
         use tokio::io::AsyncReadExt;
+        use tokio::io::AsyncWriteExt;
 
         // ---- 1. Expect OBEX CONNECT ----
         let data = match Self::read_packet(&mut stream).await {

@@ -44,27 +44,25 @@ impl SubwindowTrait for Settings {
         theme: &mut super::GraphicsTheme,
     ) -> Option<Subwindow> {
         if let Some(p) = self.show_usb_page.clone() {
-            let id: egui::ViewportId = egui::ViewportId::from_hash_of("usb_page");
-            let builder = egui::ViewportBuilder::default()
-                .with_title("Usb actions")
-                .with_always_on_top()
-                .with_position((ui.ctx().content_rect().size() / 4.0).to_pos2())
-                .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
-            ui.ctx().show_viewport_immediate(id, builder, |ui, _class| {
-                if ui.big_button(theme, "Close").clicked() {
-                    self.show_usb_page = None;
-                }
-                if !common.usb_writing {
-                    if ui.big_button(theme, "Copy log data to USB").clicked() {
-                        common.usb_writing = true;
-                        let _ = common
-                            .radio
-                            .send_packet(uobradio_comms::MessageFromApp::StartLogCopy);
+            egui::Window::new("Bluetooth message")
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .fixed_size(ui.ctx().content_rect().size() / 2.0)
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
+                    if ui.big_button(theme, "Close").clicked() {
+                        self.show_usb_page = None;
                     }
-                } else {
-                    ui.label("Copying");
-                }
-            });
+                    if !common.usb_writing {
+                        if ui.big_button(theme, "Copy log data to USB").clicked() {
+                            common.usb_writing = true;
+                            let _ = common
+                                .radio
+                                .send_packet(uobradio_comms::MessageFromApp::StartLogCopy);
+                        }
+                    } else {
+                        ui.label("Copying");
+                    }
+                });
         }
         egui::Panel::left("Settings tabs")
             .resizable(false)

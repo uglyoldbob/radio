@@ -114,99 +114,95 @@ impl SubwindowTrait for MainPage {
                 }
             }
             if let Some(index) = self.history_popup {
-                let id: egui::ViewportId = egui::ViewportId::from_hash_of("gauge_history");
-                let builder = egui::ViewportBuilder::default()
-                    .with_title("Gauge history")
-                    .with_always_on_top()
-                    .with_position((ui.ctx().content_rect().size() / 4.0).to_pos2())
-                    .with_max_inner_size(ui.ctx().content_rect().size() / 2.0);
-                ui.ctx().show_viewport_immediate(id, builder, |ui, _class| {
-                    self.historical.poll_action(|| {
-                        common
-                            .radio
-                            .send_packet(uobradio_comms::MessageFromApp::GetHistoricalData);
-                    });
-                    egui::CentralPanel::default().show_inside(ui, |ui| {
-                        if ui.big_button(theme, "Close").clicked() {
-                            self.history_popup = None;
-                        }
-                        ui.vertical_centered(|ui| {
-                            if let Some(hp) = self.historical.value() {
-                                let points: Vec<[f64; 2]> = hp
-                                    .iter()
-                                    .enumerate()
-                                    .map(|v| {
-                                        let a = match index {
-                                            GaugeValue::OrientationX => {
-                                                v.1.orientation
-                                                    .clone()
-                                                    .unwrap_or(InclinometerOrientation {
-                                                        x: 0.0,
-                                                        y: 0.0,
-                                                    })
-                                                    .x
-                                                    as f64
-                                            }
-                                            GaugeValue::OrientationY => {
-                                                v.1.orientation
-                                                    .clone()
-                                                    .unwrap_or(InclinometerOrientation {
-                                                        x: 0.0,
-                                                        y: 0.0,
-                                                    })
-                                                    .y
-                                                    as f64
-                                            }
-                                            GaugeValue::CoolantTemp => {
-                                                v.1.engine_coolant_temp.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::OilTemp => {
-                                                v.1.engine_oil_temp.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::IntakeTemp => {
-                                                v.1.intake_air_temperature.unwrap_or_default()
-                                                    as f64
-                                            }
-                                            GaugeValue::ExhaustTemp => {
-                                                v.1.engine_exhaust_temp.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::FrontAxleTemp => {
-                                                v.1.front_diff_temp.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::RearAxleTemp => {
-                                                v.1.rear_diff_temp.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::TranmissionTemp => {
-                                                v.1.trans_temp.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::TCaseTemp => {
-                                                v.1.transfer_temp.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::EngineRpm => {
-                                                v.1.engine_rpm.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::MainVoltage => {
-                                                v.1.main_voltage.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::OilPressure => {
-                                                v.1.engine_oil_pressure.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::CoolantPressure => {
-                                                v.1.coolant_pressure.unwrap_or_default() as f64
-                                            }
-                                            GaugeValue::VehicleSpeed => 42.42,
-                                            GaugeValue::FuelLevel => 0.25,
-                                        };
-                                        [v.0 as f64, a]
-                                    })
-                                    .collect();
-                                let line = egui_plot::Line::new("Gauge", points);
-                                egui_plot::Plot::new("gauge_plot")
-                                    .show(ui, |plot_ui| plot_ui.line(line));
+                egui::Window::new("Bluetooth message")
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .fixed_size(ui.ctx().content_rect().size() / 2.0)
+                    .collapsible(false)
+                    .show(ui.ctx(), |ui| {
+                        egui::CentralPanel::default().show_inside(ui, |ui| {
+                            if ui.big_button(theme, "Close").clicked() {
+                                self.history_popup = None;
                             }
-                        })
+                            ui.vertical_centered(|ui| {
+                                if let Some(hp) = self.historical.value() {
+                                    let points: Vec<[f64; 2]> = hp
+                                        .iter()
+                                        .enumerate()
+                                        .map(|v| {
+                                            let a = match index {
+                                                GaugeValue::OrientationX => {
+                                                    v.1.orientation
+                                                        .clone()
+                                                        .unwrap_or(InclinometerOrientation {
+                                                            x: 0.0,
+                                                            y: 0.0,
+                                                        })
+                                                        .x
+                                                        as f64
+                                                }
+                                                GaugeValue::OrientationY => {
+                                                    v.1.orientation
+                                                        .clone()
+                                                        .unwrap_or(InclinometerOrientation {
+                                                            x: 0.0,
+                                                            y: 0.0,
+                                                        })
+                                                        .y
+                                                        as f64
+                                                }
+                                                GaugeValue::CoolantTemp => {
+                                                    v.1.engine_coolant_temp.unwrap_or_default()
+                                                        as f64
+                                                }
+                                                GaugeValue::OilTemp => {
+                                                    v.1.engine_oil_temp.unwrap_or_default() as f64
+                                                }
+                                                GaugeValue::IntakeTemp => {
+                                                    v.1.intake_air_temperature.unwrap_or_default()
+                                                        as f64
+                                                }
+                                                GaugeValue::ExhaustTemp => {
+                                                    v.1.engine_exhaust_temp.unwrap_or_default()
+                                                        as f64
+                                                }
+                                                GaugeValue::FrontAxleTemp => {
+                                                    v.1.front_diff_temp.unwrap_or_default() as f64
+                                                }
+                                                GaugeValue::RearAxleTemp => {
+                                                    v.1.rear_diff_temp.unwrap_or_default() as f64
+                                                }
+                                                GaugeValue::TranmissionTemp => {
+                                                    v.1.trans_temp.unwrap_or_default() as f64
+                                                }
+                                                GaugeValue::TCaseTemp => {
+                                                    v.1.transfer_temp.unwrap_or_default() as f64
+                                                }
+                                                GaugeValue::EngineRpm => {
+                                                    v.1.engine_rpm.unwrap_or_default() as f64
+                                                }
+                                                GaugeValue::MainVoltage => {
+                                                    v.1.main_voltage.unwrap_or_default() as f64
+                                                }
+                                                GaugeValue::OilPressure => {
+                                                    v.1.engine_oil_pressure.unwrap_or_default()
+                                                        as f64
+                                                }
+                                                GaugeValue::CoolantPressure => {
+                                                    v.1.coolant_pressure.unwrap_or_default() as f64
+                                                }
+                                                GaugeValue::VehicleSpeed => 42.42,
+                                                GaugeValue::FuelLevel => 0.25,
+                                            };
+                                            [v.0 as f64, a]
+                                        })
+                                        .collect();
+                                    let line = egui_plot::Line::new("Gauge", points);
+                                    egui_plot::Plot::new("gauge_plot")
+                                        .show(ui, |plot_ui| plot_ui.line(line));
+                                }
+                            })
+                        });
                     });
-                });
             }
             self.pages.show(ui, |ui, page| match page {
                 0 => {
